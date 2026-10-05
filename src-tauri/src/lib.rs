@@ -446,6 +446,18 @@ async fn file_open(app: AppHandle, path: String) -> Result<(), String> {
     .await
 }
 
+/// Shows a vault file (vault-relative path) in the system's Quick Look panel, as Finder's space bar
+/// does: Office files look as they do in Office, which the window can't draw.
+#[tauri::command]
+fn file_quick_look(app: AppHandle, path: String) -> Result<(), String> {
+    let abs = app.state::<VaultService>().resolve_path(&path)?;
+    if !abs.is_file() {
+        return Err(format!("{path} isn't in the vault any more."));
+    }
+    let w = app.get_webview_window("main").ok_or_else(|| "No window to show Quick Look over.".to_string())?;
+    platform::quick_look(&w, &abs)
+}
+
 /// Shows a vault file (vault-relative path) or the vault folder itself (empty path) in Finder.
 #[tauri::command]
 fn reveal(svc: State<VaultService>, path: String) -> Result<(), String> {
@@ -749,6 +761,7 @@ pub fn run() {
             reviews::automated_suggest,
             paths_exist,
             file_open,
+            file_quick_look,
             activity,
             activity_day,
             listnotes::bookmark_toggle,

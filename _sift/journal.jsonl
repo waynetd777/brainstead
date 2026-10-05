@@ -217,3 +217,4 @@
 {"commit": "3c82b509", "detail": "D-20261005-15 - propose_edit stays gone", "id": "j-20261005-203456-9d0e", "kind": "decision-ref", "ts": "2026-10-05T20:34:56Z", "who": "waynetd777@users.noreply.github.com"}
 {"commit": "995fd84e", "detail": "D-20261005-16 - Every MCP tool takes unattended", "id": "j-20261005-210433-1e6c", "kind": "decision-ref", "ts": "2026-10-05T21:04:33Z", "who": "waynetd777@users.noreply.github.com"}
 {"commit": "995fd84e", "detail": "D-20261005-17 - Image changes are flagged by a check, not always queued", "id": "j-20261005-210644-e221", "kind": "decision-ref", "ts": "2026-10-05T21:06:44Z", "who": "waynetd777@users.noreply.github.com"}
+{"commit": "fb633cf9", "detail": "D-20261005-18 - Office sources: extracted text in the pane, Quick Look for how they look", "id": "j-20261005-215805-81eb", "kind": "decision-ref", "ts": "2026-10-05T21:58:05Z", "who": "waynetd777@users.noreply.github.com"}

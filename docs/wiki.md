@@ -15,7 +15,7 @@ Sources (⌥⌘0) are the files in `sources/`: emails and Teams chats and transc
 - Drag files onto Sources, or click **Import**, to copy them in.
 - The **Outlook** and **Teams** Chrome extensions capture a thread, a chat or a meeting transcript into `sources/` with one click. Set them up in Settings › Capture extensions; each capture also waits in the Inbox.
 - Each source is **New**, **Changed** (since the pages citing it were written) or **Ingested**.
-- A PDF opens with page navigation, zoom and find; Word shows as the document, PowerPoint as its slides' text and Excel as tables; an image with the text read from it (macOS's text recognition), which search uses too.
+- A PDF opens with page navigation, zoom and find; Word, PowerPoint and Excel show the text Brainstead reads from them (slide by slide, sheet by sheet), with **Quick Look** (`Space`) for how they look in their app; an image with the text read from it (macOS's text recognition), which search uses too.
 
 <a href="images/index.md#the-wiki-and-sources"><picture><source media="(prefers-color-scheme: dark)" srcset="images/source-provenance-dark.png"><img alt="A source's provenance: when it was ingested and by which model, and the wiki pages that cite it with the passages they cite" src="images/source-provenance-light.png"></picture></a>
 

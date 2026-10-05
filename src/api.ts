@@ -1056,6 +1056,8 @@ export const api = {
   trashMove: (path: string) => invoke<TrashEntry>("trash_move", { path }),
   /** Quick Look on a trashed file, where it lies. */
   trashQuickLook: (id: string) => invoke<void>("trash_quick_look", { id }),
+  /** A vault file in the system's Quick Look panel, as Finder's space bar shows it. */
+  fileQuickLook: (path: string) => invoke<void>("file_quick_look", { path }),
   trashList: () => invoke<TrashEntry[]>("trash_list"),
   /** Puts it back where it was, or at `as` (vault-relative); refuses with `exists`. */
   trashRestore: (id: string, as: string | null) => invoke<string>("trash_restore", { id, as }),

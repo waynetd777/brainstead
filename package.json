@@ -33,7 +33,6 @@
     "@types/mdast": "^4.0.4",
     "chrono-node": "^2.10.1",
     "d3-force": "^3.0.0",
-    "docx-preview": "^0.4.1",
     "github-slugger": "^2.0.0",
     "hast-util-to-string": "^3.0.1",
     "katex": "^0.18.10",

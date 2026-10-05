@@ -3,10 +3,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Sources that aren't markdown: PDFs through pdf.js (Tauri can't show them reliably in a frame),
-// Word files through docx-preview, images inline with the text read from them, other text as text.
+// Word, PowerPoint and Excel files as the text Brainstead reads from them, with Quick Look for how
+// they look (no web renderer draws Office files well), images inline with the text read from them,
+// other text as text.
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./icons";
 import { SearchBox } from "./ui";
 import { api, FileSummary } from "./api";
@@ -15,11 +17,10 @@ const ext = (p: string) => p.slice(p.lastIndexOf(".") + 1).toLowerCase();
 const IMAGE = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif", "heic"]);
 const TEXT = new Set(["txt", "md", "html", "htm", "json", "csv", "log", "yaml", "yml", "xml", "eml", "vtt", "srt"]);
 
-export function sourceKind(path: string): "pdf" | "docx" | "office" | "image" | "text" | "other" {
+export function sourceKind(path: string): "pdf" | "office" | "image" | "text" | "other" {
   const e = ext(path);
   if (e === "pdf") return "pdf";
-  if (e === "docx") return "docx";
-  if (e === "pptx" || e === "xlsx") return "office";
+  if (e === "docx" || e === "pptx" || e === "xlsx") return "office";
   if (IMAGE.has(e)) return "image";
   if (TEXT.has(e)) return "text";
   return "other";
@@ -38,13 +39,15 @@ export function SourcePreview({ file, root, content }: { file: FileSummary; root
   const url = urlOf(root, file.path);
   if (kind === "image") return <ImageView path={file.path} url={url} alt={file.title} />;
   if (kind === "pdf") return <PdfView url={url} />;
-  if (kind === "docx") return <DocxView url={url} />;
   if (kind === "office") return <OfficeView path={file.path} />;
   if (kind === "text") return <pre className="srctext">{content}</pre>;
   return (
     <div className="srcnone">
-      <p className="muted">No preview for this kind of file.</p>
-      <OpenInApp path={file.path} />
+      <p className="muted">Brainstead can't show this kind of file; Quick Look may.</p>
+      <div className="officebar">
+        <QuickLook path={file.path} />
+        <OpenInApp path={file.path} />
+      </div>
     </div>
   );
 }
@@ -316,11 +319,45 @@ function PdfView({ url }: { url: string }) {
 
 /** PowerPoint as its slides' text, Excel as its sheets (tab-separated cells drawn as tables),
  *  from the same extraction ingest uses. */
+/** Shows a vault file in the Quick Look panel; Space does the same while the preview is showing. */
+function QuickLook({ path }: { path: string }) {
+  const [err, setErr] = useState<string | null>(null);
+  const look = useCallback(() => {
+    setErr(null);
+    api.fileQuickLook(path).catch((e) => setErr(String(e?.message ?? e)));
+  }, [path]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== " " || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("input, textarea, select, button, [contenteditable=true], .cm-editor")) return;
+      if (document.querySelector(".scrim, [role=dialog]")) return;
+      e.preventDefault();
+      look();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [look]);
+  return (
+    <>
+      <button type="button" className="btn pri" title="See the file as it looks in its app, in Quick Look (Space)" onClick={look}>
+        <Icon name="eye" size={14} />
+        Quick Look
+      </button>
+      {err && <p className="muted">{err}</p>}
+    </>
+  );
+}
+
+/** A Word, PowerPoint or Excel file: the text Brainstead reads from it (what search, ingest and
+ *  quotes use), by slide or sheet, with Quick Look and Open in its app for how it looks. */
 function OfficeView({ path }: { path: string }) {
   const [parts, setParts] = useState<{ label: string; text: string }[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
+    setParts(null);
+    setErr(null);
     void api
       .sourceParts(path)
       .then((x) => live && setParts(x.parts))
@@ -329,14 +366,21 @@ function OfficeView({ path }: { path: string }) {
       live = false;
     };
   }, [path]);
-  const sheet = ext(path) === "xlsx";
-  if (err) return <p className="err">Couldn't read this file: {err}</p>;
-  if (!parts) return <p className="faint">Reading…</p>;
+  const kind = ext(path);
+  const sheet = kind === "xlsx";
+  const label = (p: { label: string }, i: number) => p.label || (sheet ? `Sheet ${i + 1}` : kind === "pptx" ? `Slide ${i + 1}` : "");
   return (
     <div className="officeview">
-      {parts.map((p, i) => (
+      <div className="officebar">
+        <QuickLook path={path} />
+        <OpenInApp path={path} />
+        <span className="faint small grow">The text Brainstead reads from it, which search, ingest and quotes use.</span>
+      </div>
+      {err && <p className="err">Couldn't read this file: {err}</p>}
+      {!err && !parts && <p className="faint">Reading…</p>}
+      {parts?.map((p, i) => (
         <section key={i} className="card officepart">
-          <div className="eyebrow">{p.label || (sheet ? `Sheet ${i + 1}` : `Slide ${i + 1}`)}</div>
+          {label(p, i) && <div className="eyebrow">{label(p, i)}</div>}
           {sheet ? (
             <div className="officetable">
               <table>
@@ -361,31 +405,5 @@ function OfficeView({ path }: { path: string }) {
         </section>
       ))}
     </div>
-  );
-}
-
-function DocxView({ url }: { url: string }) {
-  const box = useRef<HTMLDivElement>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    const el = box.current;
-    if (!el) return;
-    (async () => {
-      const { renderAsync } = await import("docx-preview");
-      const blob = await (await fetch(url)).blob();
-      if (!live) return;
-      el.replaceChildren();
-      await renderAsync(blob, el, undefined, { className: "docx", inWrapper: true, ignoreWidth: true, ignoreHeight: true });
-    })().catch((e) => live && setErr(String(e?.message ?? e)));
-    return () => {
-      live = false;
-    };
-  }, [url]);
-  return (
-    <>
-      {err && <p className="err">Couldn't show this document: {err}</p>}
-      <div ref={box} className="docxview" />
-    </>
   );
 }

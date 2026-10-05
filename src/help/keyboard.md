@@ -59,7 +59,7 @@ The keys below work where their heading says. The quick capture shortcut is the 
 ## Lists
 - `↑` `↓` — Move between rows
 - `↩` — Open
-- `Space` — Quick Look, in the Trash
+- `Space` — Quick Look, in the Trash and on a Word, PowerPoint or Excel source
 
 ## Task lists
 - `↑` `↓` — Choose a task, on into the next list
