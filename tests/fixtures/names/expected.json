@@ -1,0 +1,50 @@
+{
+  "Meeting. Orbit App Steerco - 2026-09-30.md": {
+    "yes": {
+      "text": "# Steerco\n\nLena Fischer and Sam Carter joined. Sam Carter took notes; Sam Smith was away.\nZara asked about Orbit App and OAuth; Zoë and Zoë agreed.\nDr Omer, then Omar, then Mr. Omer.\nSam\nLinas and Lena Fischer's notes.\n",
+      "changes": [
+        ["Lina", "Lena", 2],
+        ["Sam", "Sam Carter", 1],
+        ["Zarah", "Zara", 1],
+        ["Omer", "Omar", 1],
+        ["OA", "Orbit App", 1],
+        ["Zoe", "Zoë", 1],
+        ["Lena", "Lena Fischer", 2]
+      ]
+    },
+    "no": {
+      "text": "# Steerco\n\nLena Fischer and Sam Carter joined. Sam Carter took notes; Sam Smith was away.\nZarah asked about Orbit App and OAuth; Zoë and Zoë agreed.\nDr Omer, then Omar, then Mr. Omer.\nSam\nLinas and Lena Fischer's notes.\n",
+      "changes": [
+        ["Lina", "Lena", 2],
+        ["Sam", "Sam Carter", 1],
+        ["Omer", "Omar", 1],
+        ["OA", "Orbit App", 1],
+        ["Zoe", "Zoë", 1],
+        ["Lena", "Lena Fischer", 2]
+      ]
+    }
+  },
+  "1-1. Hugh Bennett - 2026-09-01.md": {
+    "yes": {
+      "text": "Hugh said Theo will lead. Hugh again.\n",
+      "changes": [["Theodore", "Theo", 1]]
+    },
+    "no": {
+      "text": "Hugh said Theo will lead. Hugh again.\n",
+      "changes": [["Theodore", "Theo", 1]]
+    }
+  },
+  "Meeting. Planning - 2026-09-02.md": {
+    "yes": {
+      "text": "Hugo and Theodore Ward met Theodore. Zara, Zara.\nAnd Zara again.\n",
+      "changes": [
+        ["Zarah", "Zara", 3],
+        ["Hugh", "Hugo", 1]
+      ]
+    },
+    "no": {
+      "text": "Hugo and Theodore Ward met Theodore. Zarah, Zarah.\nAnd Zarah again.\n",
+      "changes": [["Hugh", "Hugo", 1]]
+    }
+  }
+}

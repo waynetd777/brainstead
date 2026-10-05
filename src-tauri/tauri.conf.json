@@ -1,0 +1,94 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Brainstead",
+  "version": "1.0.0",
+  "identifier": "com.wayned.brainstead",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1440",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Brainstead",
+        "width": 1320,
+        "height": 840,
+        "minWidth": 1040,
+        "minHeight": 640,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 22
+        },
+        "visible": false
+      },
+      {
+        "label": "capture",
+        "url": "index.html?view=capture",
+        "title": "Quick capture",
+        "width": 700,
+        "height": 230,
+        "decorations": false,
+        "transparent": true,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "shadow": false,
+        "center": true,
+        "visibleOnAllWorkspaces": true
+      },
+      {
+        "label": "tray",
+        "url": "index.html?view=tray",
+        "title": "Brainstead",
+        "width": 360,
+        "height": 480,
+        "decorations": false,
+        "transparent": true,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "shadow": true,
+        "visibleOnAllWorkspaces": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' asset: http://asset.localhost data: blob:; media-src 'self' asset: http://asset.localhost; connect-src ipc: http://ipc.localhost asset: http://asset.localhost; worker-src 'self' blob:",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' asset: http://asset.localhost data: blob:; media-src 'self' asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost ws://localhost:1440; worker-src 'self' blob:",
+      "dangerousDisableAssetCspModification": ["style-src"],
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
+    },
+    "macOSPrivateApi": true
+  },
+  "bundle": {
+    "active": true,
+    "copyright": "Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or later.",
+    "targets": [
+      "app"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "entitlements": "Entitlements.plist"
+    },
+    "resources": {
+      "../extensions/outlook-capture/": "extensions/outlook-capture/",
+      "../extensions/teams-capture/": "extensions/teams-capture/"
+    }
+  }
+}

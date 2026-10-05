@@ -1,0 +1,833 @@
+// Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or
+// later. See LICENSE for the full text.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! Agent changes (decided 2026-10-05): agents act, and the user is asked only when it's needed. A
+//! change the user started (Ask, a terminal session, a run started by hand) is applied at once,
+//! flagged when a check fails; a scheduled one is applied when it passes every check and held
+//! otherwise. Renames and moves to the Trash apply at once. Every applied change is recorded in
+//! `changes/` (core/src/changes.rs) for the Changes screen and Revert.
+
+use std::path::{Path, PathBuf};
+
+use brainstead_core::changes::{self, Change, Facts, Instruction, Status, Store};
+use brainstead_core::proposals::{self, Kind, Origin, Quote};
+use brainstead_core::{reviews, write};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager};
+
+use crate::edits::{writable, written, EditError, FileUndo, Res, UndoEntry, UndoStack};
+use crate::platform;
+use crate::vault::VaultService;
+use crate::AppState;
+
+fn store() -> Store {
+    Store::new(&platform::data_dir())
+}
+
+fn invalid(m: impl Into<String>) -> EditError {
+    write::WriteError::Invalid(m.into()).into()
+}
+
+fn root(app: &AppHandle) -> Res<PathBuf> {
+    Ok(app.state::<VaultService>().root().ok_or("No vault is open.".to_string())?)
+}
+
+fn read_opt(p: &Path) -> Option<String> {
+    std::fs::read(p).ok().map(|b| String::from_utf8_lossy(&b).into_owned())
+}
+
+pub fn emit_changed(app: &AppHandle) {
+    let _ = app.emit("changes-changed", ());
+}
+
+/// A change an agent or a run asks for.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Submit {
+    pub page: String,
+    pub kind: Kind,
+    pub title: String,
+    #[serde(default)]
+    pub reason: String,
+    pub instruction: Instruction,
+    #[serde(default)]
+    pub quotes: Vec<Quote>,
+    /// Worth knowing, not a problem: a link to a page that doesn't exist.
+    #[serde(default)]
+    pub warnings: Vec<String>,
+    /// Checks the maker ran that didn't pass (an ingest's quotes, text read from an image).
+    #[serde(default)]
+    pub flags: Vec<String>,
+    #[serde(default)]
+    pub origin: Origin,
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Held whatever the checks say, and why: a job the user set to hold its changes.
+    #[serde(default)]
+    pub hold: Option<String>,
+}
+
+impl Submit {
+    pub fn new(page: &str, kind: Kind, title: &str, reason: &str, origin: Origin, instruction: Instruction) -> Submit {
+        Submit {
+            page: page.into(),
+            kind,
+            title: title.into(),
+            reason: reason.into(),
+            instruction,
+            quotes: vec![],
+            warnings: vec![],
+            flags: vec![],
+            origin,
+            model: None,
+            hold: None,
+        }
+    }
+}
+
+/// What became of it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Outcome {
+    pub id: String,
+    pub applied: bool,
+    /// The page as it is now (a rename's new path).
+    pub page: String,
+    /// Checks it didn't pass: why it's held, or what to look at.
+    pub flags: Vec<String>,
+    /// For the toast and the assistant: "Changed Orbit App: …".
+    pub message: String,
+}
+
+/// Applies a change, or holds it, by the rule; records it either way.
+pub fn submit(app: &AppHandle, s: Submit) -> Res<Outcome> {
+    Ok(submit_many(app, vec![s])?.remove(0))
+}
+
+/// One change worked out, before it's applied or held.
+struct Staged {
+    c: Change,
+    /// Why only the user can accept it (a template, code that runs, a job set to hold).
+    why: Option<String>,
+    /// The page as it was, for a whole-page rewrite to be checked against when it's accepted.
+    current: Option<String>,
+    scheduled: bool,
+}
+
+/// Changes that belong together (an Inbox item clarified: a task added to a project and taken out
+/// of the To Do list), each worked out on the page as the ones before it leave it. Held together
+/// when any of them is held, else applied one after another. Each is recorded in Changes.
+pub fn submit_many(app: &AppHandle, list: Vec<Submit>) -> Res<Vec<Outcome>> {
+    if list.is_empty() {
+        return Err(invalid("No change given."));
+    }
+    let root = root(app)?;
+    let read_only = writable(&app.state::<AppState>()).is_err();
+    // The pages as the changes before leave them.
+    let mut pages: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
+    let mut staged = Vec::new();
+    for s in list {
+        brainstead_core::trash::safe_rel(&s.page).map_err(EditError::from)?;
+        let scheduled = changes::scheduled(&s.origin);
+        if read_only && !scheduled {
+            writable(&app.state::<AppState>())?;
+        }
+        let mut c = Change::new(&s.page, s.kind, &s.title, &s.reason, s.origin, s.model, s.instruction);
+        c.quotes = s.quotes;
+        c.warnings = s.warnings;
+        c.flags = s.flags;
+        let current = match pages.get(&c.page) {
+            Some(t) => t.clone(),
+            None => read_opt(&root.join(&c.page)),
+        };
+        if read_only {
+            c.flags.push("Brainstead was read-only when it came.".into());
+        }
+        if c.instruction.moves() {
+            if current.is_none() {
+                return Err(invalid(format!("{} isn't in the vault.", c.page)));
+            }
+            let why = s.hold.or(move_needs_the_user(app, &c)?);
+            pages.insert(c.page.clone(), None);
+            staged.push(Staged { c, why, current: None, scheduled });
+            continue;
+        }
+        if c.kind == Kind::New && current.is_some() {
+            return Err(invalid(format!("There's already a page at {}.", c.page)));
+        }
+        let after = preview(&c, current.as_deref()).map_err(invalid)?;
+        if current.as_deref().map(|t| t.replace("\r\n", "\n")) == Some(after.replace("\r\n", "\n")) {
+            return Err(invalid(format!("That changes nothing in {}.", brainstead_core::filename::stem(&c.page))));
+        }
+        let checks = checks(app, &c, current.as_deref(), &after);
+        c.flags.extend(checks);
+        // Code that runs, or a template: held whoever started it.
+        let why = s.hold.or_else(|| changes::needs_the_user(&c.page, current.as_deref(), &after));
+        pages.insert(c.page.clone(), Some(after));
+        staged.push(Staged { c, why, current, scheduled });
+    }
+    let held = staged.iter().any(|x| x.why.is_some() || (x.scheduled && !x.c.flags.is_empty()));
+    let together = staged.len() > 1;
+    staged
+        .into_iter()
+        .map(|mut x| {
+            if held {
+                if together && x.why.is_none() && x.c.flags.is_empty() {
+                    x.c.flags.push("Held with the rest of this change, which belongs with it.".into());
+                }
+                hold(app, x.c, x.why, x.current.as_deref())
+            } else {
+                apply(app, &root, x.c, None)
+            }
+        })
+        .collect()
+}
+
+/// Why a rename or move to the Trash waits for the user: a template, or links rewritten in one.
+fn move_needs_the_user(app: &AppHandle, c: &Change) -> Res<Option<String>> {
+    Ok(match &c.instruction {
+        Instruction::Rename { to } => {
+            let plan = tauri::async_runtime::block_on(crate::notes::rename_preview(app.clone(), c.page.clone(), to.clone()))?;
+            changes::move_needs_the_user(&c.page, Some(to), plan.changes.iter().map(|l| l.path.as_str()))
+        }
+        _ => changes::move_needs_the_user(&c.page, None, []),
+    })
+}
+
+/// The page's text once the change is made: the instruction run on it, with the assistant's mark
+/// on a new note.
+fn preview(c: &Change, current: Option<&str>) -> Result<String, String> {
+    let after = c.instruction.text(&c.page, current)?;
+    if c.kind == Kind::New && !c.page.starts_with("wiki/") {
+        return write::with_property(&after, proposals::ASSISTANT_MARK.0, Some(proposals::ASSISTANT_MARK.1)).map_err(|e| e.to_string());
+    }
+    Ok(after)
+}
+
+/// Every check: the text's (core), and the app's own (unsaved edits, a contradiction).
+fn checks(app: &AppHandle, c: &Change, before: Option<&str>, after: &str) -> Vec<String> {
+    let mut out = changes::checks(&Facts { page: &c.page, before, after: Some(after), quotes: &c.quotes });
+    if app.state::<brainstead_core::drafts::Drafts>().read(&c.page).is_some() {
+        out.push("The page is open in Brainstead with unsaved edits.".into());
+    }
+    if c.origin.kind != "contradiction" && crate::contradict::open_contradiction(&c.page) {
+        out.push("The contradiction check found this page contradicts another.".into());
+    }
+    out
+}
+
+fn hold(app: &AppHandle, mut c: Change, why: Option<String>, current: Option<&str>) -> Res<Outcome> {
+    c.for_user = why.clone();
+    c.flags.extend(why);
+    c.status = Status::Held;
+    // A whole-page rewrite keeps the page as it was, so accepting it can tell whether it's changed.
+    if c.instruction.whole_page() {
+        c.before = current.map(|t| store().put_text(t)).transpose()?;
+    }
+    store().save(&c)?;
+    emit_changed(app);
+    let message = format!("Held for the user in Changes: {}. {}", c.title, c.flags.join(" "));
+    Ok(Outcome { id: c.id.clone(), applied: false, page: c.page.clone(), flags: c.flags.clone(), message })
+}
+
+/// Runs the change's instruction on the page as it is, writes it through the safe write with its
+/// `log.md` line and a ⌘Z entry, and records it as applied. `base` is the page's version it must
+/// still be at (a held whole-page rewrite's), else the write refuses.
+fn apply(app: &AppHandle, root: &Path, mut c: Change, base: Option<String>) -> Res<Outcome> {
+    writable(&app.state::<AppState>())?;
+    let name = brainstead_core::filename::stem(&c.page).to_string();
+    let message = match c.instruction.clone() {
+        Instruction::Rename { to } => {
+            let plan = tauri::async_runtime::block_on(crate::notes::rename_preview(app.clone(), c.page.clone(), to))?;
+            let to = tauri::async_runtime::block_on(crate::notes::rename_commit(app.clone(), plan))?;
+            c.to = Some(to.clone());
+            format!("Renamed {} to {to}", c.page)
+        }
+        Instruction::Trash => {
+            let e = tauri::async_runtime::block_on(crate::notes::trash_move(app.clone(), c.page.clone()))?;
+            c.trash = Some(e.id);
+            format!("Moved {} to the Trash", c.page)
+        }
+        _ => {
+            let abs = root.join(&c.page);
+            let current = read_opt(&abs);
+            let after = preview(&c, current.as_deref()).map_err(invalid)?;
+            let version = match &current {
+                Some(t) => {
+                    let now = write::version(t.as_bytes());
+                    if base.as_ref().is_some_and(|b| *b != now) {
+                        return Err(invalid(format!(
+                            "{name} has changed since this change was held, and it rewrites the whole page, so accepting it would write over those edits. Use Edit before accepting, or reject it."
+                        )));
+                    }
+                    write::save_file(&abs, &after, base.as_deref().unwrap_or(&now))?
+                }
+                None => {
+                    if let Some(d) = abs.parent() {
+                        std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+                    }
+                    write::create_file(&abs, &after)?
+                }
+            };
+            // The text as written: a CRLF page keeps its endings.
+            let written_text = read_opt(&abs).unwrap_or(after);
+            let st = store();
+            c.before = current.as_deref().map(|t| st.put_text(t)).transpose()?;
+            c.after = Some(st.put_text(&written_text)?);
+            let mut files = vec![FileUndo { path: c.page.clone(), before: current, version }];
+            if let Some(line) = log_line(&c) {
+                match crate::edits::add_log(root, &line) {
+                    Ok(f) => files.push(f),
+                    Err(e) => crate::applog!("change log line: {e}"),
+                }
+            }
+            let label = format!("{} {name}: {}", if c.kind == Kind::New { "Made" } else { "Changed" }, c.title);
+            app.state::<UndoStack>().push(UndoEntry::files(label.clone(), files));
+            written(app, &[abs, root.join("log.md")]);
+            label
+        }
+    };
+    c.status = Status::Applied;
+    c.decided = Some(proposals::now_local());
+    store().save(&c)?;
+    emit_changed(app);
+    let mut message = format!("{message}. Revert it in Changes.");
+    if !c.flags.is_empty() {
+        message.push_str(&format!(" Flagged: {}", c.flags.join(" ")));
+    }
+    Ok(Outcome { id: c.id.clone(), applied: true, page: c.to.clone().unwrap_or(c.page.clone()), flags: c.flags.clone(), message })
+}
+
+/// The log line for an applied change: one per ingest run (with its first page), else one each.
+fn log_line(c: &Change) -> Option<String> {
+    let now = chrono::Local::now().naive_local();
+    Some(match c.origin.kind.as_str() {
+        "ingest" => return c.origin.run.as_deref().or(c.origin.chat.as_deref()).and_then(crate::ingest::take_log),
+        "review" => reviews::log_entry("review", c.origin.label.as_deref().unwrap_or(&c.title), None, now),
+        "lint" => reviews::log_entry("lint-fix", "Knowledge health", Some(&c.title), now),
+        _ => reviews::log_entry(
+            if c.kind == Kind::New { "create" } else { "update" },
+            brainstead_core::filename::stem(&c.page),
+            Some(&c.title),
+            now,
+        ),
+    })
+}
+
+/// A run's applied changes, undone by its own Undo (a summary's): marked reverted.
+pub fn mark_reverted(app: &AppHandle, group: &str) {
+    let st = store();
+    for mut c in st.list().into_iter().filter(|c| c.status == Status::Applied && c.group() == group) {
+        c.status = Status::Reverted;
+        c.decided = Some(proposals::now_local());
+        let _ = st.save(&c);
+    }
+    emit_changed(app);
+}
+
+// ── The Changes screen ────────────────────────────────────────────────────────
+
+/// A change in the feed: everything but the page's text.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Row {
+    id: String,
+    created: String,
+    origin: Origin,
+    model: Option<String>,
+    page: String,
+    kind: Kind,
+    title: String,
+    reason: String,
+    status: Status,
+    decided: Option<String>,
+    flags: Vec<String>,
+    warnings: Vec<String>,
+    to: Option<String>,
+    /// The run it belongs to.
+    group: String,
+    /// Has the texts Revert needs (a move is reverted by moving it back).
+    revertable: bool,
+}
+
+fn row(c: &Change) -> Row {
+    Row {
+        id: c.id.clone(),
+        created: c.created.clone(),
+        origin: c.origin.clone(),
+        model: c.model.clone(),
+        page: c.page.clone(),
+        kind: c.kind,
+        title: c.title.clone(),
+        reason: c.reason.clone(),
+        status: c.status,
+        decided: c.decided.clone(),
+        flags: c.flags.clone(),
+        warnings: c.warnings.clone(),
+        to: c.to.clone(),
+        group: c.group().to_string(),
+        revertable: c.status == Status::Applied && (c.after.is_some() || c.instruction.moves()),
+    }
+}
+
+/// One change opened: its diff (for a held one, what it would do to the page as it is now, or why
+/// it can't any more) and its quotes.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct View {
+    #[serde(flatten)]
+    row: Row,
+    quotes: Vec<Quote>,
+    changes: Vec<changes::Hunk>,
+    /// A held change that can't be applied any more, and why.
+    problem: Option<String>,
+}
+
+fn view(app: &AppHandle, id: &str) -> Res<View> {
+    let st = store();
+    let c = st.get(id)?;
+    let (mut hunks, mut problem) = (vec![], None);
+    if !c.instruction.moves() {
+        if c.status == Status::Held {
+            let current = read_opt(&root(app)?.join(&c.page));
+            match preview(&c, current.as_deref()) {
+                Ok(after) => hunks = changes::hunks(current.as_deref().unwrap_or(""), &after),
+                Err(e) => problem = Some(e),
+            }
+        } else if let Some(a) = c.after.as_deref().and_then(|h| st.text(h)) {
+            let b = c.before.as_deref().and_then(|h| st.text(h)).unwrap_or_default();
+            hunks = changes::hunks(&b, &a);
+        } else if c.status == Status::Rejected {
+            // A rejected change was never applied: what it asked for, against nothing.
+            if let Ok(a) = c.instruction.text(&c.page, Some("")) {
+                hunks = changes::hunks("", &a);
+            }
+        }
+    }
+    Ok(View { row: row(&c), quotes: c.quotes.clone(), changes: hunks, problem })
+}
+
+/// Deciding on a change (accept, reject, revert, edit before accepting), one at a time: two at
+/// once could both find it waiting, or applied, and act on it twice.
+static DECIDING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Accepts a held change. `assistant`: an assistant asked (the MCP changes tool), which may accept
+/// only a change held because a check failed (D-20261005-09), never one only the user can accept.
+fn accept_one(app: &AppHandle, id: &str, assistant: bool) -> Res<Outcome> {
+    let _one = crate::lock(&DECIDING);
+    let c = store().get(id)?;
+    if c.status != Status::Held {
+        return Err(invalid("That change isn't waiting any more."));
+    }
+    let root = root(app)?;
+    if c.kind == Kind::New && root.join(&c.page).exists() {
+        return Err(invalid(format!("There's already a page at {}.", c.page)));
+    }
+    if assistant {
+        if let Some(why) = for_the_user(app, &root, &c)? {
+            return Err(invalid(format!(
+                "Only the user can accept “{}”, on Brainstead's Changes screen: {why} Ask them to look at it there.",
+                c.title
+            )));
+        }
+    }
+    let base = if c.instruction.whole_page() && root.join(&c.page).exists() {
+        Some(c.before.clone().ok_or_else(|| {
+            invalid(format!(
+                "“{}” rewrites the whole of {}, and the page as it was when it was held wasn't kept, so accepting it could write over later edits. Use Edit before accepting, or reject it.",
+                c.title,
+                brainstead_core::filename::stem(&c.page)
+            ))
+        })?)
+    } else {
+        None
+    };
+    apply(app, &root, c, base)
+}
+
+/// Why only the user can accept a held change: what it was held for, or, for one held before that
+/// was kept, what it would do to the page as it is now.
+fn for_the_user(app: &AppHandle, root: &Path, c: &Change) -> Res<Option<String>> {
+    if c.for_user.is_some() {
+        return Ok(c.for_user.clone());
+    }
+    if c.instruction.moves() {
+        return move_needs_the_user(app, c);
+    }
+    let current = read_opt(&root.join(&c.page));
+    let after = preview(c, current.as_deref()).map_err(invalid)?;
+    Ok(changes::needs_the_user(&c.page, current.as_deref(), &after))
+}
+
+fn reject_one(app: &AppHandle, id: &str) -> Res<()> {
+    let _one = crate::lock(&DECIDING);
+    let st = store();
+    let mut c = st.get(id)?;
+    if c.status != Status::Held {
+        return Err(invalid("That change isn't waiting any more."));
+    }
+    c.status = Status::Rejected;
+    c.decided = Some(proposals::now_local());
+    st.save(&c)?;
+    emit_changed(app);
+    Ok(())
+}
+
+/// Every held change in a run, oldest first. Accepting them one after another runs each on the
+/// page as the one before left it.
+fn held_in(group: &str) -> Vec<Change> {
+    let mut v: Vec<Change> = store().list().into_iter().filter(|c| c.status == Status::Held && c.group() == group).collect();
+    v.reverse();
+    v
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Many {
+    done: usize,
+    /// Those that couldn't be applied, and why.
+    failed: Vec<String>,
+}
+
+/// What Revert did: put back, or why it couldn't and the page as it was before, to copy from.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reverted {
+    ok: bool,
+    message: String,
+    before: Option<String>,
+}
+
+/// Undoes an applied change on the page as it is now: its lines put back, wherever they are. When
+/// they've been edited since, it says so and gives the page as it was before the change.
+fn revert_one(app: &AppHandle, id: &str) -> Res<Reverted> {
+    writable(&app.state::<AppState>())?;
+    let _one = crate::lock(&DECIDING);
+    let st = store();
+    let mut c = st.get(id)?;
+    if c.status != Status::Applied {
+        return Err(invalid("Only an applied change can be reverted."));
+    }
+    let root = root(app)?;
+    let name = brainstead_core::filename::stem(&c.page).to_string();
+    let message = match c.instruction.clone() {
+        Instruction::Rename { .. } => {
+            let to = c.to.clone().ok_or_else(|| invalid("This rename says nowhere it went."))?;
+            let plan = tauri::async_runtime::block_on(crate::notes::rename_preview(app.clone(), to.clone(), c.page.clone()))?;
+            tauri::async_runtime::block_on(crate::notes::rename_commit(app.clone(), plan))?;
+            format!("Renamed {to} back to {}", c.page)
+        }
+        Instruction::Trash => {
+            let id = c.trash.clone().ok_or_else(|| invalid("This move to the Trash has no Trash entry to restore."))?;
+            tauri::async_runtime::block_on(crate::notes::trash_restore(app.clone(), id, None))?;
+            format!("Restored {name} from the Trash")
+        }
+        _ => {
+            let after = c.after.as_deref().and_then(|h| st.text(h)).ok_or_else(|| invalid("This change's history is gone."))?;
+            let before = c.before.as_deref().and_then(|h| st.text(h));
+            let abs = root.join(&c.page);
+            let Some(current) = read_opt(&abs) else {
+                return Ok(Reverted { ok: false, message: format!("{name} isn't in the vault any more."), before });
+            };
+            let undo = match &before {
+                Some(b) => changes::revert_text(b, &after, &current),
+                // A page it made: still as it made it, it goes to the Trash.
+                None => (current.replace("\r\n", "\n") == after.replace("\r\n", "\n")).then(String::new),
+            };
+            let Some(text) = undo else {
+                return Ok(Reverted {
+                    ok: false,
+                    message: format!("The lines this change made in {name} have been edited since, so it can't be undone line by line. Here's the page as it was before it, to copy from."),
+                    before,
+                });
+            };
+            // Its ⌘Z entry would undo it a second time.
+            let made = c.after.clone();
+            app.state::<UndoStack>().forget(|e| e.files.iter().any(|f| f.path == c.page && Some(&f.version) == made.as_ref()));
+            match &before {
+                Some(_) => {
+                    let v = write::save_file(&abs, &text, &write::version(current.as_bytes()))?;
+                    app.state::<UndoStack>().push(UndoEntry::files(
+                        format!("Reverted {name}: {}", c.title),
+                        vec![FileUndo { path: c.page.clone(), before: Some(current), version: v }],
+                    ));
+                }
+                None => {
+                    brainstead_core::trash::undo_created(&root, &c.page, "note").map_err(EditError::from)?;
+                }
+            }
+            written(app, &[abs]);
+            format!("Reverted {name}: {}", c.title)
+        }
+    };
+    c.status = Status::Reverted;
+    c.decided = Some(proposals::now_local());
+    st.save(&c)?;
+    emit_changed(app);
+    Ok(Reverted { ok: true, message, before: None })
+}
+
+/// "Edit before accepting": the page with the held change made becomes its draft, which the editor
+/// offers to restore when it opens; saving there is the write. Refused when the page already has
+/// unsaved edits, which the draft would replace. The change keeps the page before and the text it
+/// offered, so Revert can still take its lines out once it's saved. Returns the page.
+fn for_editing(app: &AppHandle, id: &str) -> Res<String> {
+    let _one = crate::lock(&DECIDING);
+    let st = store();
+    let mut c = st.get(id)?;
+    if c.status != Status::Held {
+        return Err(invalid("That change isn't waiting any more."));
+    }
+    let Some(current) = read_opt(&root(app)?.join(&c.page)) else {
+        return Err(invalid("The page doesn't exist yet: accept it, then edit it."));
+    };
+    let drafts = app.state::<brainstead_core::drafts::Drafts>();
+    if drafts.read(&c.page).is_some_and(|d| d.content.replace("\r\n", "\n") != current.replace("\r\n", "\n")) {
+        return Err(invalid(format!(
+            "{} has unsaved edits in Brainstead's editor. Save or discard them there first, then Edit before accepting.",
+            brainstead_core::filename::stem(&c.page)
+        )));
+    }
+    let content = preview(&c, Some(&current)).map_err(invalid)?;
+    let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0);
+    c.before = Some(st.put_text(&current)?);
+    c.after = Some(st.put_text(&content)?);
+    drafts.write(&brainstead_core::drafts::Draft { path: c.page.clone(), content, base: write::version(current.as_bytes()), at })?;
+    // Yours from here: the editor's save is the write. Revert takes out the lines it offered,
+    // where they still are.
+    c.status = Status::Applied;
+    c.decided = Some(proposals::now_local());
+    c.flags.push("Opened to edit before accepting: it's made when the page is saved in the editor.".into());
+    st.save(&c)?;
+    emit_changed(app);
+    Ok(c.page)
+}
+
+/// How long history is kept: Settings › AI assistants.
+fn retention(app: &AppHandle) -> (i64, u64) {
+    let s = app.state::<AppState>();
+    let ui = &crate::lock(&s.settings).ui;
+    let days = ui.get("changesKeepDays").and_then(|v| v.as_i64()).filter(|d| *d > 0).unwrap_or(changes::KEEP_DAYS);
+    let mb = ui.get("changesKeepMb").and_then(|v| v.as_u64()).filter(|m| *m > 0).unwrap_or(changes::KEEP_MB);
+    (days, mb)
+}
+
+/// Once the vault is open: the old review queue moved in (once), and history past its time or size
+/// pruned, then again each day.
+pub fn start(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || loop {
+        let (days, mb) = retention(&app);
+        let today = chrono::Local::now().date_naive();
+        if let Some(root) = app.state::<VaultService>().root() {
+            match changes::migrate(&platform::data_dir(), &root, today, days) {
+                Ok(0) => {}
+                Ok(n) => {
+                    crate::applog!("changes: moved {n} from the old review queue");
+                    emit_changed(&app);
+                }
+                Err(e) => crate::applog!("changes: the old review queue wasn't moved: {e}"),
+            }
+        }
+        if store().prune(today, days, mb * 1024 * 1024) > 0 {
+            emit_changed(&app);
+        }
+        std::thread::sleep(std::time::Duration::from_secs(if app.state::<VaultService>().root().is_some() { 24 * 3600 } else { 30 }));
+    });
+}
+
+// The window's commands, each off the main thread.
+
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Res<T> + Send + 'static) -> Res<T> {
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| EditError::from(e.to_string()))?
+}
+
+/// The feed and the held changes, newest first; with `page`, only that page's.
+#[tauri::command]
+pub async fn changes_list(page: Option<String>) -> Res<Vec<Row>> {
+    blocking(move || {
+        Ok(store().list().iter().filter(|c| page.as_ref().is_none_or(|p| &c.page == p || c.to.as_ref() == Some(p))).map(row).collect())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn change_get(app: AppHandle, id: String) -> Res<View> {
+    blocking(move || view(&app, &id)).await
+}
+
+#[tauri::command]
+pub async fn change_submit(app: AppHandle, change: Submit) -> Res<Outcome> {
+    blocking(move || submit(&app, change)).await
+}
+
+#[tauri::command]
+pub async fn change_accept(app: AppHandle, id: String, assistant: Option<bool>) -> Res<Outcome> {
+    blocking(move || accept_one(&app, &id, assistant == Some(true))).await
+}
+
+/// Changes that belong together, made or held together (src/mcpActions.ts's task, Inbox and
+/// project tools).
+#[tauri::command]
+pub async fn changes_submit_many(app: AppHandle, changes: Vec<Submit>) -> Res<Vec<Outcome>> {
+    blocking(move || submit_many(&app, changes)).await
+}
+
+#[tauri::command]
+pub async fn change_reject(app: AppHandle, id: String) -> Res<()> {
+    blocking(move || reject_one(&app, &id)).await
+}
+
+/// Accepts every held change in a run (`group`), or every held change when None.
+#[tauri::command]
+pub async fn changes_accept_all(app: AppHandle, group: Option<String>, assistant: Option<bool>) -> Res<Many> {
+    blocking(move || {
+        let todo: Vec<Change> = match &group {
+            Some(g) => held_in(g),
+            None => store().list().into_iter().rev().filter(|c| c.status == Status::Held).collect(),
+        };
+        let mut m = Many { done: 0, failed: vec![] };
+        for c in todo {
+            match accept_one(&app, &c.id, assistant == Some(true)) {
+                Ok(_) => m.done += 1,
+                Err(e) => m.failed.push(format!("{}: {}", c.title, e.message())),
+            }
+        }
+        Ok(m)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn changes_reject_all(app: AppHandle, group: Option<String>) -> Res<Many> {
+    blocking(move || {
+        let todo: Vec<Change> = match &group {
+            Some(g) => held_in(g),
+            None => store().list().into_iter().filter(|c| c.status == Status::Held).collect(),
+        };
+        let mut m = Many { done: 0, failed: vec![] };
+        for c in todo {
+            reject_one(&app, &c.id)?;
+            m.done += 1;
+        }
+        Ok(m)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn change_revert(app: AppHandle, id: String) -> Res<Reverted> {
+    blocking(move || revert_one(&app, &id)).await
+}
+
+#[tauri::command]
+pub async fn change_for_editing(app: AppHandle, id: String) -> Res<String> {
+    blocking(move || for_editing(&app, &id)).await
+}
+
+// ── Working out an assistant's task and project edits, without writing ─────────────────────────
+// The MCP tools' task, Inbox and project edits go through Changes (D-20261005-10): the window works
+// out the new lines with these and src/tasksq/edits.ts, then submits them as instructions.
+
+/// One edit to a task's line, as the task screens make it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum LineEdit {
+    /// Ticked (with `today`'s ✅) or unticked; a recurring task's next occurrence is the window's.
+    Toggle {
+        done: bool,
+        today: String,
+    },
+    Date {
+        kind: write::DateKind,
+        date: Option<String>,
+    },
+    Contexts {
+        names: Vec<String>,
+    },
+    Effort {
+        effort: Option<String>,
+    },
+    /// Linked to a project note (its vault path), in place of any project it links; None unlinks.
+    Project {
+        project: Option<String>,
+    },
+    /// Ranked between two neighbours in the manual order.
+    Rank {
+        prev: Option<i64>,
+        next: Option<i64>,
+    },
+}
+
+/// The task's line once `edit` is made: what the matching task command would write.
+#[tauri::command]
+pub async fn change_task_line(app: AppHandle, line: String, edit: LineEdit) -> Res<String> {
+    blocking(move || {
+        Ok(match edit {
+            LineEdit::Toggle { done, today } => {
+                if chrono::NaiveDate::parse_from_str(&today, "%Y-%m-%d").is_err() {
+                    return Err(invalid(format!("Not a date: {today}")));
+                }
+                write::toggled(&line, done, &today)
+            }
+            LineEdit::Date { kind, date } => write::with_date(&line, kind, date.as_deref())?,
+            LineEdit::Contexts { names } => write::with_contexts(&line, &names)?,
+            LineEdit::Effort { effort } => write::with_effort(&line, effort.as_deref().filter(|e| !e.trim().is_empty()))?,
+            LineEdit::Rank { prev, next } => {
+                let rank = write::rank_in_gap(prev, next).ok_or_else(|| {
+                    invalid("There's no room between those two in the manual order; give tasks that are next to each other, or drag it in the Tasks screen.")
+                })?;
+                write::with_rank(&line, rank)
+            }
+            LineEdit::Project { project } => {
+                use brainstead_core::projects;
+                if let Some(p) = &project {
+                    if !projects::is_project_path(p) {
+                        return Err(invalid(format!("Not a project note: {p}")));
+                    }
+                }
+                // Which of the line's links go to a project note, by the index (as task_set_project).
+                let targets: Vec<String> = brainstead_core::links::parse_links(&brainstead_core::markdown::lines(&line, 0))
+                    .into_iter()
+                    .map(|l| l.target)
+                    .filter(|t| !t.is_empty())
+                    .collect();
+                let resolved = app.state::<VaultService>().with_index(|ix, _| ix.resolve(&targets))?;
+                let to_project: Vec<String> = targets
+                    .into_iter()
+                    .zip(resolved)
+                    .filter(|(t, r)| r.as_deref().is_some_and(projects::is_project_path) || projects::is_project_path(&format!("{t}.md")))
+                    .map(|(t, _)| t)
+                    .collect();
+                let stem = project.as_deref().map(|p| brainstead_core::filename::stem(p).to_string());
+                write::with_project_link(&line, stem.as_deref(), |t| to_project.iter().any(|x| x == &brainstead_core::links::nfc(t)))
+            }
+        })
+    })
+    .await
+}
+
+/// A new project note, as the Projects screen makes it: its path and text.
+#[derive(Serialize)]
+pub struct ProjectNote {
+    path: String,
+    content: String,
+}
+
+#[tauri::command]
+pub fn change_project_note(name: String, status: String, area: Option<String>, outcome: Option<String>) -> Res<ProjectNote> {
+    use brainstead_core::projects;
+    let n = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    if n.is_empty() || n.starts_with('.') || n.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|', '[', ']', '#', '^']) {
+        return Err(invalid(format!("“{name}” can't be a project name: leave out / \\ : * ? \" < > | [ ] # ^")));
+    }
+    let status = projects::parse_status(&status).ok_or_else(|| invalid(format!("Not a project status: {status}")))?;
+    if area.iter().chain(outcome.iter()).any(|v| v.contains(['\n', '\r'])) {
+        return Err(invalid("Area and outcome are one line each."));
+    }
+    Ok(ProjectNote {
+        path: format!("{}{n}.md", projects::PREFIX),
+        content: projects::project_note(status, area.as_deref(), outcome.as_deref()),
+    })
+}

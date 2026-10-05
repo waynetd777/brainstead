@@ -1,0 +1,4 @@
+# Modification times (local, +02:00) for the lint tests' copy of the fixture vault. Every other file gets 2026-01-01 12:00.
+log.md	2026-10-02 09:00
+wiki/entities/Northwind.md	2026-10-03 10:00
+sources/Roadmap Update 2026-09-18.md	2026-10-01 08:00

@@ -1,0 +1,19 @@
+{
+  "stuck": [
+    {
+      "id": "Meeting. Orbit App Steerco - 2026-09-30.md:32",
+      "description": "Confirm the launch date with Sam 📅 2026-10-03 #followup",
+      "file": "Meeting. Orbit App Steerco - 2026-09-30.md",
+      "heading": "Actions"
+    }
+  ],
+  "count": 1,
+  "priorReviews": ["2026-W39", "2026-W38"],
+  "enough": true,
+  "notEnough": {
+    "stuck": [],
+    "priorReviews": ["2026-W38"],
+    "enough": false,
+    "note": "only 1 prior weekly review(s) on file; the check needs 2. Say so in the section rather than guessing."
+  }
+}

@@ -1,0 +1,7 @@
+# Lint and format rules for tools/*.py (`make lint` checks, `make fmt` fixes). Same 140 columns as Prettier and rustfmt.
+line-length = 140
+target-version = "py312"
+include = ["tools/**/*.py"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP"]

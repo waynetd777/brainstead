@@ -1,0 +1,49 @@
+{
+  "attributes": ["role", "role", "go_live_date", "go_live_date", "other:_tools_built", "headcount", "colour"],
+  "values": ["head of platform", "orbit app team", "new owner", "28 november", "apple"],
+  "quotes": [true, true, false, true, false],
+  "clashes": [
+    {
+      "subject": "Hub Platform",
+      "attribute": "owner",
+      "claims": [
+        {
+          "page": "wiki/entities/Orbit App.md",
+          "value": "Lena",
+          "as_of": "",
+          "quote": "Lena owns the hub"
+        },
+        {
+          "page": "wiki/concepts/Hub Platform.md",
+          "value": "Theo",
+          "as_of": "",
+          "quote": "Theo owns it"
+        }
+      ]
+    },
+    {
+      "subject": "Orbit App",
+      "attribute": "go_live_date",
+      "claims": [
+        {
+          "page": "wiki/entities/Orbit App.md",
+          "value": "14 November",
+          "as_of": "2026-09-18",
+          "quote": "Soft launch to staff is planned for 14 November"
+        },
+        {
+          "page": "wiki/concepts/Hub Platform.md",
+          "value": "28 November",
+          "as_of": "2026-09-28",
+          "quote": "Staff launch now targeted for 28 November"
+        },
+        {
+          "page": "wiki/concepts/Hub Platform.md",
+          "value": "the 14 November.",
+          "as_of": "2026-09-20 (page updated)",
+          "quote": "launch on 14 November"
+        }
+      ]
+    }
+  ]
+}

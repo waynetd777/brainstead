@@ -1,0 +1,496 @@
+// Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or later.
+// See LICENSE for the full text.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! The server against a temp copy of the fixture vault, indexed as the app indexes it.
+
+use super::*;
+
+struct Fixture {
+    _tmp: tempfile::TempDir,
+    ctx: Ctx,
+}
+
+fn fixture() -> Fixture {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let from = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/vault");
+    for e in walkdir::WalkDir::new(&from) {
+        let e = e.unwrap();
+        let dest = vault.join(e.path().strip_prefix(&from).unwrap());
+        if e.file_type().is_dir() {
+            std::fs::create_dir_all(&dest).unwrap();
+        } else {
+            std::fs::copy(e.path(), &dest).unwrap();
+        }
+    }
+    let data = tmp.path().join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(data.join("settings.json"), serde_json::to_vec(&json!({"vaultPath": vault})).unwrap()).unwrap();
+    let mut ix = Index::open(&data.join("index.db")).unwrap();
+    ix.sync(&brainstead_core::vault::Vault::new(vault.clone(), vec![])).unwrap();
+    drop(ix);
+    let ctx = Ctx::from_args(&["--chat".into(), "chat-1".into(), "--model".into(), "claude:sonnet".into()], data).unwrap();
+    let ctx = Ctx { today: chrono::NaiveDate::from_ymd_opt(2026, 10, 2).unwrap(), ..ctx };
+    Fixture { _tmp: tmp, ctx }
+}
+
+fn rpc(ctx: &Ctx, id: i64, method: &str, params: Value) -> Value {
+    handle(ctx, json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})).unwrap()
+}
+
+/// A tool's text, and whether it was an error.
+fn tool(ctx: &Ctx, name: &str, args: Value) -> (String, bool) {
+    let r = rpc(ctx, 1, "tools/call", json!({"name": name, "arguments": args}));
+    let res = &r["result"];
+    (res["content"][0]["text"].as_str().unwrap().to_string(), res["isError"].as_bool().unwrap_or(false))
+}
+
+fn ok(ctx: &Ctx, name: &str, args: Value) -> String {
+    let (t, err) = tool(ctx, name, args);
+    assert!(!err, "{name}: {t}");
+    t
+}
+
+fn refused(ctx: &Ctx, name: &str, args: Value) -> String {
+    let (t, err) = tool(ctx, name, args);
+    assert!(err, "{name} should have been refused: {t}");
+    t
+}
+
+#[test]
+fn speaks_the_protocol() {
+    let f = fixture();
+    let init = rpc(&f.ctx, 1, "initialize", json!({"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t"}}));
+    assert_eq!(init["result"]["protocolVersion"], "2025-03-26");
+    assert_eq!(init["result"]["serverInfo"]["name"], "brainstead");
+    // Unknown versions get the newest.
+    let init = rpc(&f.ctx, 2, "initialize", json!({"protocolVersion": "1999-01-01"}));
+    assert_eq!(init["result"]["protocolVersion"], VERSIONS[0]);
+    // Notifications get no answer.
+    assert!(handle(&f.ctx, json!({"jsonrpc": "2.0", "method": "notifications/initialized"})).is_none());
+    let list = rpc(&f.ctx, 3, "tools/list", json!({}));
+    let names: Vec<&str> = list["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert_eq!(names, brainstead_core::ask::MCP_TOOLS, "core's list (for Copilot) must match");
+    // Every tool has a title and all four hints; reads say so.
+    for t in list["result"]["tools"].as_array().unwrap() {
+        let h = &t["annotations"];
+        assert!(t["title"].is_string() && h["title"].is_string(), "{}", t["name"]);
+        for k in ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] {
+            assert!(h[k].is_boolean(), "{} has no {k}", t["name"]);
+        }
+    }
+    let hint =
+        |n: &str, k: &str| list["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == n).unwrap()["annotations"][k].clone();
+    assert_eq!(hint("search", "readOnlyHint"), true);
+    assert_eq!(hint("edit_task", "readOnlyHint"), false);
+    assert_eq!(hint("changes", "destructiveHint"), true);
+    assert_eq!(hint("edit_page", "destructiveHint"), false);
+    assert_eq!(hint("start_run", "openWorldHint"), true);
+    // An unknown tool and arguments that don't fit are protocol errors; a tool that runs and
+    // can't do it says so in its result.
+    let r = rpc(&f.ctx, 8, "tools/call", json!({"name": "nope", "arguments": {}}));
+    assert_eq!(r["error"]["code"], -32602);
+    let r = rpc(&f.ctx, 9, "tools/call", json!({"name": "search", "arguments": {"query": 3}}));
+    assert_eq!(r["error"]["code"], -32602);
+    let r = rpc(&f.ctx, 10, "tools/call", json!({"name": "read_section", "arguments": {"page": "Nowhere at all"}}));
+    assert_eq!(r["result"]["isError"], true);
+    assert_eq!(rpc(&f.ctx, 4, "nope", json!({}))["error"]["code"], -32601);
+    // Over stdio: one line in, one line out.
+    let input = b"{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"}\n\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n";
+    let mut out = Vec::new();
+    serve(&f.ctx, &input[..], &mut out).unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), "{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{}}\n");
+}
+
+#[test]
+fn reading_tools() {
+    let f = fixture();
+    let s = ok(&f.ctx, "search", json!({"query": "soft launch"}));
+    assert!(s.contains("wiki/entities/Orbit App.md"), "{s}");
+    let only_sources = ok(&f.ctx, "search", json!({"query": "orbit", "layers": ["sources"]}));
+    assert!(!only_sources.contains("wiki/"), "{only_sources}");
+    assert!(refused(&f.ctx, "search", json!({"query": "x", "layers": ["mail"]})).contains("Not a part"));
+
+    let sec = ok(&f.ctx, "read_section", json!({"page": "[[Orbit App]]", "heading": "Current state"}));
+    assert!(sec.contains("Soft launch to staff") && !sec.contains("Pilot ran"), "{sec}");
+    let missing = refused(&f.ctx, "read_section", json!({"page": "Orbit App", "heading": "Risks"}));
+    assert!(missing.contains("Current state") && missing.contains("History"));
+    assert!(refused(&f.ctx, "read_section", json!({"page": "No Such Page"})).contains("no page called"));
+
+    let bl = ok(&f.ctx, "backlinks", json!({"page": "Orbit App"}));
+    assert!(bl.contains("wiki/concepts/Hub Platform.md"), "{bl}");
+
+    assert!(ok(&f.ctx, "resolve_entity", json!({"name": "OA"})).contains("by an alias"));
+    assert!(ok(&f.ctx, "resolve_entity", json!({"name": "Orbit App"})).contains("by its file name"));
+    assert!(ok(&f.ctx, "resolve_entity", json!({"name": "Orbit Ap"})).contains("wiki/entities/Orbit App.md"));
+
+    let pending = ok(&f.ctx, "pending_sources", json!({}));
+    assert!(pending.contains("sources/Programme Update Steerco 2026-09-28.pdf"));
+    // Images are ingested too (their text read from the picture), so they're listed.
+    assert!(pending.contains("sources/Whiteboard photo.png"), "{pending}");
+    let lint = ok(&f.ctx, "lint", json!({"page": "Hub Platform"}));
+    assert!(lint.contains("[[Missing Concept]]"), "{lint}");
+}
+
+/// Runs a change tool against a stand-in app; its reply, and the change the app was sent.
+fn submitted(f: &Fixture, name: &str, args: Value) -> (String, Value) {
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Changed it. Revert it in Changes."), error: None });
+    let t = ok(&f.ctx, name, args);
+    let req = app.join().unwrap();
+    assert_eq!(req.action, "change.submit");
+    (t, req.args["change"].clone())
+}
+
+/// The page's text once the change's instruction is run on it as it is.
+fn made(f: &Fixture, c: &Value) -> String {
+    let i: Instruction = serde_json::from_value(c["instruction"].clone()).unwrap();
+    let page = c["page"].as_str().unwrap();
+    let now = std::fs::read_to_string(f.ctx.vault.join(page)).ok();
+    i.text(page, now.as_deref()).unwrap()
+}
+
+#[test]
+fn edit_page_sends_a_checked_change() {
+    let f = fixture();
+    let page = f.ctx.vault.join("wiki/entities/Orbit App.md");
+    let before = std::fs::read_to_string(&page).unwrap();
+    let (t, c) = submitted(
+        &f,
+        "edit_page",
+        json!({
+            "page": "Orbit App",
+            "title": "Launch date from the steerco",
+            "section": "Current state",
+            "content": "Soft launch to staff is planned for 28 November ([[Roadmap Update 2026-09-18]]).",
+            "quotes": [{"source": "Roadmap Update 2026-09-18", "text": "Staff soft launch remains on track"}]
+        }),
+    );
+    assert!(t.contains("Revert it in Changes"), "{t}");
+    // The server writes nothing itself: the app makes the change.
+    assert_eq!(std::fs::read_to_string(&page).unwrap(), before);
+    assert_eq!(c["page"], "wiki/entities/Orbit App.md");
+    assert_eq!(c["kind"], "edit");
+    assert_eq!(c["origin"]["chat"], "chat-1");
+    assert_eq!(c["origin"]["run"], "chat-1");
+    assert!(c["origin"]["trigger"].is_null());
+    assert_eq!(c["model"], "claude:sonnet");
+    assert_eq!(c["quotes"][0]["checked"], true);
+    assert!(made(&f, &c).contains("planned for 28 November"));
+    // unattended marks it scheduled.
+    let (_, c) = submitted(
+        &f,
+        "edit_page",
+        json!({"page": "Orbit App", "title": "x", "edits": [{"find": "Soft launch to staff", "replace": "Staff soft launch"}], "unattended": true}),
+    );
+    assert_eq!(c["origin"]["trigger"], "scheduled");
+}
+
+#[test]
+fn edit_page_flags_a_quote_and_refuses_what_cant_be_done() {
+    let f = fixture();
+    // A quote that isn't in its source: still sent, flagged.
+    let (t, c) = submitted(
+        &f,
+        "edit_page",
+        json!({"page": "Orbit App", "title": "x", "edits": [{"find": "14 November", "replace": "28 November"}],
+               "quotes": [{"source": "Roadmap Update 2026-09-18", "text": "launch moved to 28 November"}]}),
+    );
+    // Marked on the quote, which the app's checks flag: not flagged a second time here.
+    assert!(t.contains("isn't in") && c.get("flags").is_none(), "{t} {c}");
+    assert_eq!(c["quotes"][0]["checked"], false);
+    assert!(refused(&f.ctx, "edit_page", json!({"page": "Orbit App", "title": "x", "edits": [{"find": "Nope", "replace": "y"}]}))
+        .contains("isn't in the page"));
+    assert!(refused(&f.ctx, "edit_page", json!({"page": "Orbit App", "title": "x"})).contains("exactly one"));
+    assert!(refused(&f.ctx, "edit_page", json!({"page": "Orbit App", "title": "x", "section": "A", "content": "b", "edits": []}))
+        .contains("exactly one"));
+    assert!(refused(&f.ctx, "edit_page", json!({"page": "notes/New.md", "title": "x", "content": "# New\n"}))
+        .contains("A new note is create_note"));
+    assert!(refused(&f.ctx, "edit_page", json!({"page": "wiki/entities/New.md", "title": "x", "section": "A", "content": "b"}))
+        .contains("whole text"));
+    assert!(refused(&f.ctx, "edit_page", json!({"page": "../outside.md", "title": "x", "content": "y"})).contains("Not a path"));
+    let broken = refused(
+        &f.ctx,
+        "edit_page",
+        json!({"page": "Orbit App", "title": "x", "edits": [{"find": "type: entity", "replace": "type: [entity"}]}),
+    );
+    assert!(broken.contains("properties"), "{broken}");
+}
+
+#[test]
+fn new_pages_and_unchecked_quotes() {
+    let f = fixture();
+    let (t, c) = submitted(
+        &f,
+        "edit_page",
+        json!({"page": "wiki/entities/Northwind.md", "title": "New supplier page",
+               "content": "---\ntype: entity\nname: Northwind\n---\n\n## Current state\n\nSupplies hardware; see [[Orbit App]] and [[Ghost Page]].\n",
+               "quotes": [{"source": "Programme Update Steerco 2026-09-28.pdf", "anchor": "page=2", "text": "Northwind"}]}),
+    );
+    assert!(t.contains("couldn't be checked") && t.contains("[[Ghost Page]] goes to no page"), "{t}");
+    assert_eq!(c["kind"], "new");
+    assert_eq!(c["instruction"]["op"], "page");
+    assert!(c["quotes"][0]["checked"].is_null());
+    assert_eq!(c["warnings"], json!(["[[Ghost Page]] goes to no page"]));
+}
+
+#[test]
+fn create_task_sends_a_line() {
+    let f = fixture();
+    let (t, c) = submitted(
+        &f,
+        "create_task",
+        json!({"text": "Call Northwind about the pilot", "context": "calls", "effort": "15m", "due": "2026-10-09"}),
+    );
+    assert!(t.contains("Revert"), "{t}");
+    assert_eq!((c["page"].as_str(), c["kind"].as_str()), (Some("Me. To Do List.md"), Some("task")));
+    assert_eq!(
+        c["instruction"],
+        json!({"op": "add_task", "line": "- [ ] Call Northwind about the pilot #context/calls [effort:: 15m] 📅 2026-10-09"})
+    );
+    let (_, c) = submitted(&f, "create_task", json!({"text": "Book the venue", "project": "Orbit App launch"}));
+    assert_eq!(c["page"], "Project. Orbit App launch.md");
+    assert!(made(&f, &c).contains("- [ ] Book the venue"));
+    assert!(refused(&f.ctx, "create_task", json!({"text": "x", "project": "Nowhere"})).contains("no project"));
+    assert!(refused(&f.ctx, "create_task", json!({"text": "x", "effort": "lots"})).contains("Not an effort"));
+}
+
+#[test]
+fn needs_an_index() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("settings.json"), r#"{"vaultPath": "/nowhere"}"#).unwrap();
+    let ctx = Ctx::from_args(&[], tmp.path().to_path_buf()).unwrap();
+    assert!(refused(&ctx, "search", json!({"query": "x"})).contains("open Brainstead"));
+    assert!(Ctx::from_args(&["--data".into(), tmp.path().join("none").to_string_lossy().into_owned()], PathBuf::new()).is_err());
+}
+
+#[test]
+fn create_note_sends_a_named_note() {
+    let f = fixture();
+    let (t, c) = submitted(
+        &f,
+        "create_note",
+        json!({"type": "Meeting", "title": "Orbit App pilot review", "date": "2026-10-03", "content": "# Orbit App pilot review\n\n## Notes\n- Lena: the pilot went well."}),
+    );
+    assert!(t.contains("Revert"), "{t}");
+    assert_eq!((c["kind"].as_str(), c["page"].as_str()), (Some("new"), Some("Meeting. Orbit App pilot review - 2026-10-03.md")));
+    assert!(c["instruction"]["content"].as_str().unwrap().ends_with("went well.\n"));
+    // In a folder that's there; the name's odd characters go.
+    let (_, c) = submitted(&f, "create_note", json!({"type": "Idea", "title": "Victor's #1 [plan]", "folder": "Victor", "content": "x"}));
+    assert_eq!(c["page"], "Victor/Idea. Victor's 1 plan.md");
+    assert!(refused(&f.ctx, "create_note", json!({"title": "x", "folder": "sources", "content": "x"})).contains("not in sources/"));
+    assert!(refused(&f.ctx, "create_note", json!({"title": "x", "folder": "wiki/entities", "content": "x"})).contains("edit_page"));
+    assert!(refused(&f.ctx, "create_note", json!({"title": "x", "folder": "Nowhere", "content": "x"})).contains("no folder"));
+    refused(&f.ctx, "create_note", json!({"title": "x", "folder": "../out", "content": "x"}));
+    assert!(refused(&f.ctx, "create_note", json!({"title": "x", "date": "3 Oct", "content": "x"})).contains("YYYY-MM-DD"));
+    assert!(refused(&f.ctx, "create_note", json!({"title": "##", "content": "x"})).contains("title"));
+    let exists = refused(&f.ctx, "create_note", json!({"type": "Project", "title": "Garden", "content": "x"}));
+    assert!(exists.contains("exists already") && exists.contains("edit_page"), "{exists}");
+}
+
+#[test]
+fn edit_page_changes_a_note() {
+    let f = fixture();
+    let (_, c) = submitted(
+        &f,
+        "edit_page",
+        json!({"page": "Idea. Accents", "title": "Add a line", "edits": [{"find": "Links to", "replace": "This links to"}]}),
+    );
+    assert_eq!((c["kind"].as_str(), c["page"].as_str()), (Some("edit"), Some("Idea. Accents.md")));
+    assert!(made(&f, &c).contains("This links to"));
+}
+
+#[test]
+fn help_answers_from_the_apps_own_help() {
+    let f = fixture();
+    let list = ok(&f.ctx, "help", json!({}));
+    assert!(list.contains("settings-general") && list.contains("guide-start"));
+    let topic = ok(&f.ctx, "help", json!({"topic": "settings-general"}));
+    assert!(topic.starts_with("# Settings › General"));
+    let found = ok(&f.ctx, "help", json!({"query": "change the quick capture shortcut"}));
+    assert!(found.to_lowercase().contains("capture"), "{found}");
+    assert!(refused(&f.ctx, "help", json!({"topic": "nope"})).contains("No help topic"));
+}
+
+#[test]
+fn rate_limited() {
+    let f = fixture();
+    for _ in 0..120 {
+        tool(&f.ctx, "help", json!({"topic": "tasks"}));
+    }
+    assert!(refused(&f.ctx, "help", json!({"topic": "tasks"})).contains("calls in a minute"));
+}
+
+/// A stand-in for the app: says it's up, and answers the next request with what `answer` makes.
+fn fake_app(
+    data: PathBuf,
+    answer: impl Fn(&bridge::Request) -> bridge::Reply + Send + 'static,
+) -> std::thread::JoinHandle<bridge::Request> {
+    let d = bridge::dir(&data);
+    std::fs::create_dir_all(&d).unwrap();
+    bridge::write_alive(&d.join(bridge::ALIVE), 1).unwrap();
+    std::thread::spawn(move || loop {
+        if let Some((p, r)) = bridge::take_requests(&d.join(bridge::REQUESTS)).into_iter().next() {
+            bridge::write_reply(&d.join(bridge::REPLIES), &r.id, &answer(&r)).unwrap();
+            std::fs::remove_file(p).unwrap();
+            return r;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    })
+}
+
+#[test]
+fn actions_go_to_the_app() {
+    let f = fixture();
+    let app =
+        fake_app(f.ctx.data.clone(), |r| bridge::Reply { ok: true, result: json!(format!("Ticked {}", r.args["task"])), error: None });
+    let t = ok(&f.ctx, "edit_task", json!({"task": "Me. To Do List.md:12", "text": "Call Sam", "done": true}));
+    let req = app.join().unwrap();
+    assert_eq!(req.action, "task.edit");
+    assert_eq!(req.args["done"], true);
+    assert_eq!(t, "Ticked \"Me. To Do List.md:12\"");
+    // The app says why it couldn't.
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply::err("There's no task at Me. To Do List.md:99 any more."));
+    assert!(refused(&f.ctx, "list_tasks", json!({"view": "next"})).contains("no task"));
+    app.join().unwrap();
+    // Not running, and no app to open (the separate binary): it says to open it.
+    std::fs::remove_file(bridge::dir(&f.ctx.data).join(bridge::ALIVE)).unwrap();
+    assert!(refused(&f.ctx, "list_inbox", json!({})).contains("isn't open"));
+}
+
+#[test]
+fn renames_trash_and_deletes_are_sent() {
+    let f = fixture();
+    let (_, c) = submitted(&f, "rename_note", json!({"page": "Idea. Accents", "type": "Idea", "title": "Accents and diacritics"}));
+    assert_eq!((c["page"].as_str(), c["instruction"]["to"].as_str()), (Some("Idea. Accents.md"), Some("Idea. Accents and diacritics.md")));
+    assert!(
+        refused(&f.ctx, "rename_note", json!({"page": "Idea. Accents", "type": "Idea", "title": "Accents"})).contains("its name already")
+    );
+    assert!(
+        refused(&f.ctx, "rename_note", json!({"page": "Idea. Accents", "type": "Project", "title": "Garden"})).contains("exists already")
+    );
+    let (_, c) = submitted(&f, "trash_note", json!({"page": "Idea. Accents", "reason": "Old"}));
+    assert_eq!((c["kind"].as_str(), c["instruction"]["op"].as_str()), (Some("trash"), Some("trash")));
+    // A task's line taken out, found by its text even when the line number is off.
+    let todo = std::fs::read_to_string(f.ctx.vault.join("Me. To Do List.md")).unwrap();
+    let (n, line) = todo.lines().enumerate().find(|(_, l)| l.contains("Walk through the Dashboard")).unwrap();
+    let (_, c) =
+        submitted(&f, "delete_task", json!({"task": format!("Me. To Do List.md:{}", n + 5), "text": "Walk through the Dashboard"}));
+    // Where it is now goes with it, so the app takes out that line and not another the same.
+    assert_eq!(c["instruction"], json!({"op": "delete_line", "line": line, "at": n}));
+    assert!(!made(&f, &c).contains("Walk through the Dashboard"));
+    assert!(refused(&f.ctx, "delete_task", json!({"task": "Me. To Do List.md:1", "text": "no such task"})).contains("no task"));
+}
+
+#[test]
+fn summaries_by_day_or_the_latest() {
+    let f = fixture();
+    std::fs::write(
+        f.ctx.vault.join("Me. Daily Summaries - 2026-10.md"),
+        "> log\n\n## Daily summary 2026-10-02\n\nShipped the pilot.\n\n---\n\n## Daily summary 2026-10-01\n\nPlanned the pilot.\n",
+    )
+    .unwrap();
+    // A week from before the rename, in the old file under the old heading.
+    std::fs::write(f.ctx.vault.join("Me. Weekly Reviews - 2026-09.md"), "## Weekly review 2026-W39\n\nA quiet week.\n").unwrap();
+    let latest = ok(&f.ctx, "summary", json!({}));
+    assert!(
+        latest.starts_with("The daily summary for 2026-10-02") && latest.contains("Shipped") && !latest.contains("Planned"),
+        "{latest}"
+    );
+    let day = ok(&f.ctx, "summary", json!({"kind": "daily", "day": "2026-10-01"}));
+    assert!(day.contains("Planned the pilot") && !day.contains("Shipped"), "{day}");
+    let week = ok(&f.ctx, "summary", json!({"kind": "weekly", "day": "2026-09-23"}));
+    assert!(week.contains("2026-W39") && week.contains("A quiet week"), "{week}");
+    assert!(ok(&f.ctx, "summary", json!({"kind": "weekly"})).contains("A quiet week"));
+    assert!(refused(&f.ctx, "summary", json!({"day": "2026-09-29"})).contains("no daily summary for 2026-09-29"));
+    let r = rpc(&f.ctx, 2, "tools/call", json!({"name": "summary", "arguments": {"kind": "monthly"}}));
+    assert_eq!(r["error"]["code"], -32602);
+}
+
+#[test]
+fn saving_a_chat_goes_to_the_app() {
+    let f = fixture();
+    let app = fake_app(f.ctx.data.clone(), |r| bridge::Reply {
+        ok: true,
+        result: json!(format!("{} {}", r.action, r.args["title"])),
+        error: None,
+    });
+    assert_eq!(ok(&f.ctx, "save_chat", json!({"title": "Orbit App launch"})), "chat.save \"Orbit App launch\"");
+    app.join().unwrap();
+}
+
+#[test]
+fn the_weekly_review_goes_to_the_app() {
+    let f = fixture();
+    let app =
+        fake_app(f.ctx.data.clone(), |r| bridge::Reply { ok: true, result: json!(format!("{} {}", r.action, r.args["id"])), error: None });
+    assert_eq!(ok(&f.ctx, "weekly_suggestion", json!({"id": "s1", "action": "skip"})), "weekly.suggestion \"s1\"");
+    assert_eq!(app.join().unwrap().args["action"], "skip");
+    let app = fake_app(f.ctx.data.clone(), |r| bridge::Reply { ok: true, result: json!(r.action), error: None });
+    assert_eq!(ok(&f.ctx, "weekly_review", json!({})), "weekly.status");
+    app.join().unwrap();
+}
+
+#[test]
+fn task_inbox_and_project_edits_carry_the_session() {
+    let f = fixture();
+    for (tool_name, action, args) in [
+        ("edit_task", "task.edit", json!({"task": "Me. To Do List.md:12", "text": "Call Sam", "done": true, "unattended": true})),
+        ("move_task", "task.move", json!({"task": "Me. To Do List.md:12", "text": "Call Sam", "after": "Me. To Do List.md:13"})),
+        ("clarify_inbox", "inbox.clarify", json!({"item": "task:14", "becomes": "next"})),
+        ("create_project", "project.create", json!({"name": "Orbit App beta"})),
+        ("update_project", "project.update", json!({"project": "Orbit App launch", "status": "done"})),
+    ] {
+        let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Done."), error: None });
+        ok(&f.ctx, tool_name, args.clone());
+        let req = app.join().unwrap();
+        assert_eq!(req.action, action);
+        // Recorded in Changes as this chat's, scheduled when nobody's watching.
+        assert_eq!(req.args["origin"]["chat"], "chat-1", "{tool_name}");
+        let unattended = args.get("unattended").is_some();
+        assert_eq!(req.args["origin"]["trigger"].as_str() == Some("scheduled"), unattended, "{tool_name}");
+    }
+}
+
+#[test]
+fn held_changes_are_accepted_only_while_the_user_is_there() {
+    let f = fixture();
+    // Attended: it goes to the app, which accepts only a change held for a failed check.
+    let app = fake_app(f.ctx.data.clone(), |r| bridge::Reply { ok: true, result: json!(format!("{}", r.args["action"])), error: None });
+    ok(&f.ctx, "changes", json!({"action": "accept", "id": "1-1-1"}));
+    assert_eq!(app.join().unwrap().args["action"], "accept");
+    // Said unattended: refused, and from then on for the whole session.
+    assert!(refused(&f.ctx, "changes", json!({"action": "accept", "id": "1-1-1", "unattended": true})).contains("nobody is watching"));
+    assert!(refused(&f.ctx, "changes", json!({"action": "accept_run", "group": "chat-1"})).contains("nobody is watching"));
+    assert!(refused(&f.ctx, "weekly_start_over", json!({})).contains("unattended"));
+    assert!(refused(&f.ctx, "moving_over", json!({"action": "retire"})).contains("unattended"));
+    // Reading still works.
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Nothing held."), error: None });
+    ok(&f.ctx, "changes", json!({"action": "list"}));
+    app.join().unwrap();
+}
+
+#[test]
+fn every_tool_takes_unattended() {
+    // The instructions ask for unattended: true on every call in a session nobody is watching, and
+    // the schemas allow no other properties, so each one lists it.
+    for t in tools() {
+        assert_eq!(t["inputSchema"]["properties"]["unattended"]["type"], "boolean", "{}", t["name"]);
+    }
+    // A read tool takes it too, and it holds for the rest of the session.
+    let f = fixture();
+    assert!(ok(&f.ctx, "search", json!({"query": "soft launch", "unattended": true})).contains("Orbit App"));
+    assert!(refused(&f.ctx, "weekly_start_over", json!({})).contains("unattended"));
+}
+
+#[test]
+fn moving_over_and_starting_the_review_over_go_to_the_app() {
+    let f = fixture();
+    for (tool_name, action, args) in
+        [("moving_over", "moving_over", json!({"action": "retire"})), ("weekly_start_over", "weekly.start_over", json!({}))]
+    {
+        let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Done."), error: None });
+        ok(&f.ctx, tool_name, args);
+        assert_eq!(app.join().unwrap().action, action);
+    }
+}

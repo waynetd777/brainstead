@@ -1,0 +1,19 @@
+{
+  "id": "demo-3",
+  "created": "2026-10-02T09:05:00",
+  "origin": {
+    "kind": "chat",
+    "chat": "Chat. Launch date.md"
+  },
+  "model": "claude:sonnet",
+  "page": "Project. Orbit App launch.md",
+  "kind": "task",
+  "title": "Add “Confirm the pen-test closure date with Sam”",
+  "reason": "",
+  "base": "2ef67eb4d2d66a5891532df5630adb5a7c3a4f3ea24d56170c0bfbd06be52ba4",
+  "before": "---\nstatus: active\narea: Work\noutcome: Orbit App is live for all staff, with comms sent\naliases: [OA launch]\n---\n\n## Next actions\n\n- [ ] Call Sam about the launch date #context/calls [effort:: 15m] 📅 2026-10-06\n- [ ] Draft the launch comms [effort:: 1h30m]\n\n## Waiting for\n\n- [ ] Security sign-off from Lena #waiting-for\n\n## Notes\n\n- [x] Pick the launch week ✅ 2026-09-15\n- [-] Launch party ❌ 2026-09-16\n",
+  "after": "---\nstatus: active\narea: Work\noutcome: Orbit App is live for all staff, with comms sent\naliases: [OA launch]\n---\n\n## Next actions\n\n- [ ] Call Sam about the launch date #context/calls [effort:: 15m] 📅 2026-10-06\n- [ ] Draft the launch comms [effort:: 1h30m]\n- [ ] Confirm the pen-test closure date with Sam #context/calls [effort:: 15m] 📅 2026-10-09\n\n## Waiting for\n\n- [ ] Security sign-off from Lena #waiting-for\n\n## Notes\n\n- [x] Pick the launch week ✅ 2026-09-15\n- [-] Launch party ❌ 2026-09-16\n",
+  "quotes": [],
+  "warnings": [],
+  "status": "pending"
+}

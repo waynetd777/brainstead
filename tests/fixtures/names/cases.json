@@ -1,0 +1,27 @@
+{
+  "substitutions": [
+    { "wrong": "Lina", "right": "Lena", "note": "notetaker spelling" },
+    { "wrong": "Sam", "right": "Sam Carter", "note": "full name" },
+    { "wrong": "Zarah", "right": "Zara", "ambiguous": true, "note": "also a real Zarah" },
+    { "wrong": "Hugh", "right": "Hugo", "skip_if_filename_contains": ["Hugh Bennett"], "note": "Hugh Bennett is someone else" },
+    { "wrong": "Theodore", "right": "Theo", "skip_if_body_contains": "Theodore Ward", "note": "Theodore Ward is someone else" },
+    { "wrong": "Omer", "right": "Omar", "skip_if_preceded_by": ["Dr ", "Mr. "], "note": "Dr Omer is someone else" },
+    { "wrong": "OA", "right": "Orbit App", "note": "acronym" },
+    { "wrong": "Zoe", "right": "Zoë", "note": "accent" },
+    { "wrong": "Lena", "right": "Lena Fischer", "note": "chained after Lina" }
+  ],
+  "files": [
+    {
+      "name": "Meeting. Orbit App Steerco - 2026-09-30.md",
+      "text": "# Steerco\n\nLina and Sam joined. Sam Carter took notes; Sam Smith was away.\nZarah asked about OA and OAuth; Zoe and Zoë agreed.\nDr Omer, then Omer, then Mr. Omer.\nSam\nLinas and Lina's notes.\n"
+    },
+    {
+      "name": "1-1. Hugh Bennett - 2026-09-01.md",
+      "text": "Hugh said Theodore will lead. Hugh again.\n"
+    },
+    {
+      "name": "Meeting. Planning - 2026-09-02.md",
+      "text": "Hugh and Theodore Ward met Theodore. Zarah, Zarah.\nAnd Zarah again.\n"
+    }
+  ]
+}

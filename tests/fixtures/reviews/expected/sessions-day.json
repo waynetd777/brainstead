@@ -1,0 +1,80 @@
+[
+  {
+    "path": "-home-me-Projects-alpha/a1111111-0000-4000-8000-000000000001.jsonl",
+    "project": "-home-me-Projects-alpha",
+    "cwd": "/home/me/Projects/alpha",
+    "first_in_window": "2026-09-30T00:30:00+02:00",
+    "last_in_window": "2026-09-30T10:00:00+02:00",
+    "session_start": "2026-09-29T22:00:00+02:00",
+    "session_end": "2026-10-01T00:00:00+02:00",
+    "user_msgs_in_window": 2,
+    "user_msgs_total": 4,
+    "kind": "work",
+    "messages": ["Now add the retry logic", "Ship it and write the changelog"]
+  },
+  {
+    "path": "-home-me--batchbot-workdir/b2222222-0000-4000-8000-000000000002.jsonl",
+    "project": "-home-me--batchbot-workdir",
+    "cwd": "/home/me/.batchbot/workdir",
+    "first_in_window": "2026-09-30T07:00:00+02:00",
+    "last_in_window": "2026-09-30T07:00:00+02:00",
+    "session_start": "2026-09-30T07:00:00+02:00",
+    "session_end": "2026-09-30T07:00:05+02:00",
+    "user_msgs_in_window": 1,
+    "user_msgs_total": 1,
+    "kind": "automated: batchbot pending summary",
+    "messages": ["You are writing a one-line summary of pending items"]
+  },
+  {
+    "path": "-home-me--batchbot-workdir/b3333333-0000-4000-8000-000000000003.jsonl",
+    "project": "-home-me--batchbot-workdir",
+    "cwd": "/home/me/.batchbot/workdir",
+    "first_in_window": "2026-09-30T07:10:00+02:00",
+    "last_in_window": "2026-09-30T07:10:00+02:00",
+    "session_start": "2026-09-30T07:10:00+02:00",
+    "session_end": "2026-09-30T07:10:00+02:00",
+    "user_msgs_in_window": 1,
+    "user_msgs_total": 1,
+    "kind": "automated: batchbot record categorisation",
+    "messages": ["Categorise these records"]
+  },
+  {
+    "path": "-home-me-Library-Application-Support-Lexicon-ai/c4444444-0000-4000-8000-000000000004.jsonl",
+    "project": "-home-me-Library-Application-Support-Lexicon-ai",
+    "cwd": "/home/me/Library/Application Support/Lexicon/ai",
+    "first_in_window": "2026-09-30T08:00:00+02:00",
+    "last_in_window": "2026-09-30T08:00:00+02:00",
+    "session_start": "2026-09-30T08:00:00+02:00",
+    "session_end": "2026-09-30T08:00:00+02:00",
+    "user_msgs_in_window": 1,
+    "user_msgs_total": 1,
+    "kind": "automated: Lexicon word lookup",
+    "messages": ["Define: serendipity"]
+  },
+  {
+    "path": "-home-me-Projects/d5555555-0000-4000-8000-000000000005.jsonl",
+    "project": "-home-me-Projects",
+    "cwd": "/home/me/Projects",
+    "first_in_window": "2026-09-30T09:00:00+02:00",
+    "last_in_window": "2026-09-30T09:00:00+02:00",
+    "session_start": "2026-09-30T09:00:00+02:00",
+    "session_end": "2026-09-30T09:00:00+02:00",
+    "user_msgs_in_window": 1,
+    "user_msgs_total": 1,
+    "kind": "automated: document summariser",
+    "messages": ["Summarise the following document in one paragraph"]
+  },
+  {
+    "path": "-/e6666666-0000-4000-8000-000000000006.jsonl",
+    "project": "-",
+    "cwd": "/",
+    "first_in_window": "2026-09-30T09:30:00+02:00",
+    "last_in_window": "2026-09-30T09:30:00+02:00",
+    "session_start": "2026-09-30T09:30:00+02:00",
+    "session_end": "2026-09-30T09:30:00+02:00",
+    "user_msgs_in_window": 1,
+    "user_msgs_total": 1,
+    "kind": "automated: drift report",
+    "messages": ["Read docs/drift-reports/latest.md and act on it"]
+  }
+]

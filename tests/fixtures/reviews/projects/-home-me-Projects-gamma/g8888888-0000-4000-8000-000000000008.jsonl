@@ -1,0 +1,2 @@
+{"type": "user", "timestamp": "2026-09-30T10:00:00.000Z", "message": {"role": "user", "content": "<system-reminder>only harness</system-reminder>"}, "cwd": "/home/me/Projects/gamma"}
+{"type": "assistant", "timestamp": "2026-09-30T10:00:01.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "ok"}]}}

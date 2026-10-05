@@ -1,0 +1,3 @@
+{"type": "user", "timestamp": "2026-09-28T07:00:00.000Z", "message": {"role": "user", "content": "Monday work on beta"}, "cwd": "/home/me/Projects/beta"}
+{"type": "user", "timestamp": "2026-10-04T21:30:00.000Z", "message": {"role": "user", "content": "Sunday night beta"}, "cwd": "/home/me/Projects/beta"}
+{"type": "user", "timestamp": "2026-10-05T06:00:00.000Z", "message": {"role": "user", "content": "Next week beta"}, "cwd": "/home/me/Projects/beta"}

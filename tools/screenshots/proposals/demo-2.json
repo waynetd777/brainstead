@@ -1,0 +1,26 @@
+{
+  "id": "demo-2",
+  "created": "2026-10-02T08:52:00",
+  "origin": {
+    "kind": "chat",
+    "chat": "Chat. Launch date.md"
+  },
+  "model": "claude:sonnet",
+  "page": "wiki/concepts/Steerco Charter.md",
+  "kind": "new",
+  "title": "New page: Steerco Charter",
+  "reason": "Linked from two wiki pages but never written.",
+  "base": null,
+  "before": "",
+  "after": "---\ntype: concept\nname: Steerco Charter\ndescription: How the Orbit App steering committee decides.\nsources: [\"[[Roadmap Update 2026-09-18]]\"]\n---\n\n## Current state\n\nThe steerco meets monthly and owns the launch date for the [[Orbit App]] ([[Roadmap Update 2026-09-18]]).\n",
+  "quotes": [
+    {
+      "source": "Roadmap Update 2026-09-18",
+      "text": "Staff soft launch remains on track for 14 November.",
+      "checked": true,
+      "path": "sources/Roadmap Update 2026-09-18.md"
+    }
+  ],
+  "warnings": [],
+  "status": "pending"
+}

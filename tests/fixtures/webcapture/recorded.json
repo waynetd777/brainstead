@@ -1,0 +1,177 @@
+[
+  {
+    "name": "outlook-thread",
+    "payload": {
+      "type": "outlook",
+      "url": "https://outlook.office.com/mail/inbox/id/AAQk1",
+      "title": "RE: FW: Orbit App — launch plan / Q4?",
+      "messages": [
+        {
+          "sender": "Maya Chen",
+          "to": "Lena Park; Sam Carter",
+          "cc": "Theo Brooks",
+          "date": "Tue 2026/09/29 09:14",
+          "body": "  Launch moves to 28 November.\n\nSee the steerco notes.  "
+        },
+        {
+          "sender": "Lena Park",
+          "date": "Tue 2026/09/29 10:02",
+          "body": "Agreed. I'll update the comms plan."
+        }
+      ]
+    },
+    "file": "Email. Thread. RE FW Orbit App — launch plan Q4 - {DATE}.md",
+    "body": "# RE FW Orbit App — launch plan Q4\n\n**Source:** [Open in Outlook](https://outlook.office.com/mail/inbox/id/AAQk1)\n**Captured:** {CAPTURED}\n\n---\n\n## Maya Chen — Tue 2026/09/29 09:14\n\n**To:** Lena Park; Sam Carter\n\n**Cc:** Theo Brooks\n\nLaunch moves to 28 November.\n\nSee the steerco notes.\n\n---\n\n## Lena Park — Tue 2026/09/29 10:02\n\nAgreed. I'll update the comms plan.\n\n---\n"
+  },
+  {
+    "name": "outlook-thread-again",
+    "payload": {
+      "type": "outlook",
+      "url": "https://outlook.office.com/mail/inbox/id/AAQk1",
+      "title": "RE: FW: Orbit App — launch plan / Q4?",
+      "messages": [
+        {
+          "sender": "Maya Chen",
+          "to": "Lena Park; Sam Carter",
+          "cc": "Theo Brooks",
+          "date": "Tue 2026/09/29 09:14",
+          "body": "  Launch moves to 28 November.\n\nSee the steerco notes.  "
+        },
+        {
+          "sender": "Lena Park",
+          "date": "Tue 2026/09/29 10:02",
+          "body": "Agreed. I'll update the comms plan."
+        }
+      ]
+    },
+    "file": "Email. Thread. RE FW Orbit App — launch plan Q4 - {DATE}-2.md",
+    "body": "# RE FW Orbit App — launch plan Q4\n\n**Source:** [Open in Outlook](https://outlook.office.com/mail/inbox/id/AAQk1)\n**Captured:** {CAPTURED}\n\n---\n\n## Maya Chen — Tue 2026/09/29 09:14\n\n**To:** Lena Park; Sam Carter\n\n**Cc:** Theo Brooks\n\nLaunch moves to 28 November.\n\nSee the steerco notes.\n\n---\n\n## Lena Park — Tue 2026/09/29 10:02\n\nAgreed. I'll update the comms plan.\n\n---\n"
+  },
+  {
+    "name": "outlook-reading-pane",
+    "payload": {
+      "type": "outlook",
+      "url": "https://outlook.office.com/mail/inbox/id/AAQk2",
+      "title": "Invitation: Hub Platform review",
+      "kind": "reading-pane",
+      "messages": [
+        {
+          "sender": "Zara Ali",
+          "recipients": "Maya Chen",
+          "body": "Hub Platform review, Thursday 14:00."
+        }
+      ]
+    },
+    "file": "Email. Item. Invitation Hub Platform review - {DATE}.md",
+    "body": "# Invitation Hub Platform review\n\n**Source:** [Open in Outlook](https://outlook.office.com/mail/inbox/id/AAQk2)\n**Captured:** {CAPTURED}\n**Capture:** reading-pane text only, not a threaded conversation (meeting invitation, card-only mail, or a DOM the thread extractor didn't recognise).\n\n---\n\n## Zara Ali\n\n**To:** Maya Chen\n\nHub Platform review, Thursday 14:00.\n\n---\n"
+  },
+  {
+    "name": "outlook-batch-label",
+    "payload": {
+      "type": "outlook-batch",
+      "label": "Acme renewal",
+      "threads": [
+        {
+          "url": "https://outlook.office.com/mail/inbox/id/AAQk1",
+          "title": "RE: FW: Orbit App — launch plan / Q4?",
+          "messages": [
+            {
+              "sender": "Maya Chen",
+              "to": "Lena Park; Sam Carter",
+              "cc": "Theo Brooks",
+              "date": "Tue 2026/09/29 09:14",
+              "body": "  Launch moves to 28 November.\n\nSee the steerco notes.  "
+            },
+            {
+              "sender": "Lena Park",
+              "date": "Tue 2026/09/29 10:02",
+              "body": "Agreed. I'll update the comms plan."
+            }
+          ]
+        },
+        {
+          "url": "https://outlook.office.com/mail/inbox/id/AAQk3",
+          "title": "Northwind contract",
+          "messages": [
+            {
+              "sender": "Omar Haddad",
+              "body": "Signed copy attached."
+            }
+          ]
+        }
+      ]
+    },
+    "file": "Email. Threads. Acme renewal - {DATE}.md",
+    "body": "# Acme renewal\n\n**Captured:** {CAPTURED}\n**Threads:** 2\n\n---\n\n## RE: FW: Orbit App — launch plan / Q4?\n\n**Source:** [Open in Outlook](https://outlook.office.com/mail/inbox/id/AAQk1)\n\n### Maya Chen — Tue 2026/09/29 09:14\n\n**To:** Lena Park; Sam Carter\n\n**Cc:** Theo Brooks\n\nLaunch moves to 28 November.\n\nSee the steerco notes.\n\n---\n\n### Lena Park — Tue 2026/09/29 10:02\n\nAgreed. I'll update the comms plan.\n\n---\n\n## Northwind contract\n\n**Source:** [Open in Outlook](https://outlook.office.com/mail/inbox/id/AAQk3)\n\n### Omar Haddad\n\nSigned copy attached.\n\n---\n"
+  },
+  {
+    "name": "outlook-batch-nolabel",
+    "payload": {
+      "type": "outlook-batch",
+      "threads": [
+        {
+          "url": "https://outlook.office.com/mail/inbox/id/AAQk4",
+          "title": "Weekly numbers",
+          "messages": [
+            {
+              "sender": "Hugo Brand",
+              "body": "Up 4%."
+            }
+          ]
+        },
+        {
+          "url": "https://outlook.office.com/mail/inbox/id/AAQk5",
+          "title": "Q4 Data plan",
+          "messages": [
+            {
+              "sender": "Victor Lane",
+              "body": "Draft ready."
+            }
+          ]
+        }
+      ]
+    },
+    "file": "Email. Threads. Weekly numbers +1 more - {DATE}.md",
+    "body": "# Weekly numbers +1 more\n\n**Captured:** {CAPTURED}\n**Threads:** 2\n\n---\n\n## Weekly numbers\n\n**Source:** [Open in Outlook](https://outlook.office.com/mail/inbox/id/AAQk4)\n\n### Hugo Brand\n\nUp 4%.\n\n---\n\n## Q4 Data plan\n\n**Source:** [Open in Outlook](https://outlook.office.com/mail/inbox/id/AAQk5)\n\n### Victor Lane\n\nDraft ready.\n\n---\n"
+  },
+  {
+    "name": "teams-chat",
+    "payload": {
+      "type": "teams",
+      "url": "https://teams.microsoft.com/l/chat/1",
+      "title": "Orbit App standup | Microsoft Teams",
+      "kind": "chat",
+      "messages": [
+        {
+          "sender": "Maya Chen",
+          "date": "09:01",
+          "body": "Morning — blockers?"
+        },
+        {
+          "sender": "Sam Carter",
+          "body": "None."
+        }
+      ]
+    },
+    "file": "Teams. Chat. Orbit App standup - {DATE}.md",
+    "body": "# Orbit App standup\n\n**Source:** [Open in Teams](https://teams.microsoft.com/l/chat/1)\n**Captured:** {CAPTURED}\n\n---\n\n## Maya Chen — 09:01\n\nMorning — blockers?\n\n---\n\n## Sam Carter\n\nNone.\n\n---\n"
+  },
+  {
+    "name": "teams-transcript",
+    "payload": {
+      "type": "teams",
+      "url": "https://teams.microsoft.com/l/meetingrecap/1",
+      "title": "Hub Platform sync - Microsoft Teams",
+      "kind": "transcript",
+      "messages": [
+        {
+          "sender": "Theo Brooks",
+          "date": "0:00:05",
+          "body": "Let's start with the API."
+        }
+      ]
+    },
+    "file": "Teams. Transcript. Hub Platform sync - {DATE}.md",
+    "body": "# Hub Platform sync\n\n**Source:** [Open meeting recap](https://teams.microsoft.com/l/meetingrecap/1)\n**Captured:** {CAPTURED}\n\n---\n\n## Theo Brooks — 0:00:05\n\nLet's start with the API.\n\n---\n"
+  }
+]

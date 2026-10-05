@@ -1,0 +1,7 @@
+# LF everywhere, Windows checkouts included: the fixtures and the tests that read them count bytes and lines.
+* text=auto eol=lf
+
+# sift: append-only files merge by union
+_sift/journal.jsonl    merge=union
+_sift/files.jsonl      merge=union
+_sift/decisions.jsonl  merge=union

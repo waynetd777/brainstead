@@ -1,0 +1,22 @@
+[
+  {
+    "name": "heading",
+    "text": "# Log\n\nAppend-only record of vault writes (newest first).\n\n## [2026-09-30 18:00] review | daily-review 2026-09-29\n"
+  },
+  {
+    "name": "heading-tight",
+    "text": "# Log\n## [2026-09-30 18:00] review | daily-review 2026-09-29\n"
+  },
+  {
+    "name": "frontmatter",
+    "text": "---\ntitle: Log\n---\n\n## [2026-09-30 18:00] review | x\n"
+  },
+  {
+    "name": "bare",
+    "text": "## [2026-09-30 18:00] review | x\n"
+  },
+  {
+    "name": "empty",
+    "text": ""
+  }
+]

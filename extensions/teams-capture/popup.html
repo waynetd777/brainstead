@@ -1,0 +1,113 @@
+<!doctype html>
+<!-- Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or later. -->
+<!-- See LICENSE for the full text. -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Ingest Teams conversation</title>
+    <style>
+      /* Same token system as outlook-capture/popup.html (accent is Teams purple
+         rather than Outlook blue). Colours must come from tokens: the first
+         version hardcoded light values (#455A64 status text, #2E7D32 green)
+         which are near-invisible dark-on-dark in a dark-mode browser. */
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #21313c;
+        --muted: #4b5c66;
+        --ok: #1b7031;
+        --err: #b3261e;
+        --accent: #5b5fa6;
+        --accent-hover: #4a4e8c;
+        --on-accent: #ffffff;
+        --disabled-bg: #e8e9f0;
+        --disabled-fg: #5b5d75;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1f2124;
+          --fg: #eceff1;
+          --muted: #b3c0c8;
+          --ok: #81c784;
+          --err: #f28b82;
+          --accent: #5b5fa6;
+          --accent-hover: #4a4e8c;
+          --on-accent: #ffffff;
+          --disabled-bg: #43455c;
+          --disabled-fg: #b9bbd0;
+        }
+      }
+      body {
+        font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 0;
+        padding: 14px 16px;
+        width: 320px;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      h1 { font-size: 13px; font-weight: 600; margin: 0 0 10px; }
+      button {
+        appearance: none;
+        background: var(--accent);
+        color: var(--on-accent);
+        border: 0;
+        border-radius: 4px;
+        padding: 8px 12px;
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+        width: 100%;
+      }
+      button:hover:not(:disabled) { background: var(--accent-hover); }
+      button:disabled {
+        background: var(--disabled-bg);
+        color: var(--disabled-fg);
+        cursor: not-allowed;
+      }
+      #status {
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--fg);
+      }
+      #status:empty {
+        display: none;
+      }
+      #status.error { color: var(--err); }
+      #status.ok { color: var(--ok); }
+      .hint {
+        margin-top: 10px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .hint p {
+        margin: 0 0 6px;
+      }
+      .hint p:last-child {
+        margin-bottom: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Brainstead — Teams capture</h1>
+    <button id="go">Ingest current conversation</button>
+    <div class="hint">
+      <p>
+        Chat or channel thread (scrolls <em>up</em> to the top) &rarr; writes
+        "sources/Teams. Chat. &lt;title&gt; - &lt;date&gt;.md".
+      </p>
+      <p>
+        Meeting Recap &rarr; Transcript (scrolls <em>down</em> to the end) &rarr;
+        writes "sources/Teams. Transcript. &lt;title&gt; - &lt;date&gt;.md".
+      </p>
+      <p>
+        Long conversations take several scroll passes. The capture continues if
+        you close this popup or switch tabs — the toolbar badge shows it running,
+        and reopening shows where it got to.
+      </p>
+    </div>
+    <div id="status"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,1322 @@
+// Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or later.
+// See LICENSE for the full text.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { Fragment, useEffect, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { api, AppInfo, CliInfo, CliName, Skill, Theme } from "./api";
+import appIconDark from "../src-tauri/icons/128x128@2x.png";
+import appIconLight from "../src-tauri/icons/about-light.png";
+import { Icon, TrayMark } from "./icons";
+import { nav, place, SettingsPane } from "./nav";
+import { chooseVault, FullDiskAccessCard, useRecheckOnFocus } from "./Permissions";
+import { useVaultVersion, vaultStatus } from "./state";
+import { LookPicker } from "./LookPicker";
+import { DEFAULT_SCRIPTS, TemplaterDocsLink } from "./notes/TemplateRun";
+import { useDocDefaults, useDocLook } from "./docLook";
+import { Markdown } from "./md/Markdown";
+import { applyTheme, settings, settingsError, useStore } from "./store";
+import { toast } from "./Toast";
+import { errText } from "./notes/actions";
+import { Switchover } from "./Switchover";
+import { TopBar } from "./TopBar";
+import { Jobs } from "./Jobs";
+import { CLI_LABEL, clis, DEFAULT_MODEL, findClis, modelLabel } from "./askState";
+import { ModelMenu } from "./Ask";
+import { ago, fmtCount, Popover, Seg, Switch } from "./ui";
+import { sayTest, speechSettingsChanged, voices } from "./speech/player";
+import { SpeedSlider, VoiceSelect } from "./speech/ReadAloud";
+import { DocButton, useIsGone } from "./docButton";
+
+const PANES: [SettingsPane, string, string][] = [
+  ["general", "General", "settings"],
+  ["notes", "Notes", "note"],
+  ["vault", "Vault", "folder"],
+  ["assistants", "AI assistants", "cpu"],
+  ["jobs", "Jobs & schedule", "calendar"],
+  ["capture", "Capture extensions", "source"],
+  ["permissions", "Permissions", "shield"],
+  ["about", "About", "info"],
+];
+
+export function SettingsScreen() {
+  const p = useStore(place).place;
+  const pane = p.pane ?? "general";
+  const title = PANES.find((x) => x[0] === pane)?.[1] ?? "Settings";
+  return (
+    <main className="main">
+      <TopBar title="Settings" sub={title} ask={{ about: `Settings › ${title}`, prompt: `About Settings › ${title}: ` }} />
+      <div className="body settings">
+        <nav className="spanes" aria-label="Settings">
+          {PANES.map(([id, label, icon]) => (
+            <button
+              key={id}
+              type="button"
+              className={`navi ${id === pane ? "on" : ""}`}
+              aria-current={id === pane ? "page" : undefined}
+              title={`${label} settings`}
+              onClick={() => nav.go({ screen: "settings", pane: id })}
+            >
+              <Icon name={icon} />
+              {label}
+            </button>
+          ))}
+        </nav>
+        <div className="spane">
+          {pane === "general" && <General />}
+          {pane === "notes" && <Notes />}
+          {pane === "vault" && <Vault />}
+          {pane === "assistants" && <Assistants />}
+          {pane === "jobs" && <Jobs />}
+          {pane === "capture" && <CapturePane />}
+          {pane === "permissions" && <PermissionsPane />}
+          {pane === "about" && <About />}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+/** "Control+Alt+Space" as macOS writes it: ⌃⌥Space. */
+export function prettyShortcut(spec: string): string {
+  const sym: Record<string, string> = {
+    control: "⌃",
+    ctrl: "⌃",
+    alt: "⌥",
+    option: "⌥",
+    shift: "⇧",
+    super: "⌘",
+    command: "⌘",
+    cmd: "⌘",
+    meta: "⌘",
+  };
+  return spec
+    .split("+")
+    .map((p) => sym[p.toLowerCase()] ?? (p.toLowerCase().startsWith("key") ? p.slice(3) : p))
+    .join("");
+}
+
+/** The shortcut a key press makes, in the plugin's terms ("Control+Alt+Space"), or null for a bare key. */
+export function shortcutFromEvent(e: {
+  ctrlKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  metaKey: boolean;
+  code: string;
+}): string | null {
+  const mods = [e.ctrlKey && "Control", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Super"].filter(Boolean) as string[];
+  if (!mods.length || /^(Control|Alt|Shift|Meta)/.test(e.code)) return null;
+  const key = e.code.replace(/^Key/, "").replace(/^Digit/, "");
+  return [...mods, key].join("+");
+}
+
+function CaptureShortcut() {
+  const s = useStore(settings);
+  const [status, setStatus] = useState<[string | null, string | null]>([null, null]);
+  const [recording, setRecording] = useState(false);
+  const spec = s.captureShortcut ?? "Control+Alt+Space";
+  useEffect(() => {
+    let live = true;
+    // The shortcut is registered when settings are saved, so ask a moment later.
+    const t = window.setTimeout(() => {
+      api
+        .captureShortcutStatus()
+        .then((x) => live && setStatus(x))
+        .catch(() => {});
+    }, 600);
+    return () => {
+      live = false;
+      window.clearTimeout(t);
+    };
+  }, [spec]);
+  return (
+    <section className="sgroup">
+      <h2 className="h3">Quick capture</h2>
+      <p className="muted">
+        A shortcut that works over any app and opens a capture box. Tasks go to the To Do list, thoughts to the Scratchpad.
+      </p>
+      <div className="row">
+        <button
+          type="button"
+          className={`btn ${recording ? "pri" : ""}`}
+          title={
+            recording
+              ? "Press the keys for the new shortcut; click elsewhere to keep the old one"
+              : "Click, then press a new shortcut for quick capture"
+          }
+          onClick={() => setRecording(true)}
+          onBlur={() => setRecording(false)}
+          onKeyDown={(e) => {
+            if (!recording) return;
+            e.preventDefault();
+            if (e.key === "Escape") return setRecording(false);
+            const sc = shortcutFromEvent(e);
+            if (sc) {
+              settings.update({ captureShortcut: sc });
+              setRecording(false);
+            }
+          }}
+        >
+          {recording ? "Press the new shortcut…" : prettyShortcut(spec)}
+        </button>
+        {spec !== "Control+Alt+Space" && (
+          <button
+            type="button"
+            className="btn ghost sm"
+            title="Put the quick capture shortcut back to ⌃⌥Space"
+            onClick={() => settings.update({ captureShortcut: "Control+Alt+Space" })}
+          >
+            Reset to ⌃⌥Space
+          </button>
+        )}
+      </div>
+      {status[1] && <p className="err">{status[1]}</p>}
+    </section>
+  );
+}
+
+const JOBS: [string, string, string][] = [
+  ["reviews", "Daily and weekly summaries", "calendar"],
+  ["weekprep", "Weekly review preparation", "review"],
+  ["find", "Find tasks and projects", "zap"],
+  ["ingest", "Ingest", "wiki"],
+  ["meeting", "Meeting notes from transcripts", "note"],
+  ["clarify", "Clarify suggestions", "inbox"],
+  ["contradictions", "Contradiction checks", "shield"],
+  ["skills", "Triage, Draft reply and Doc check", "send"],
+  ["suggest", "Next-message suggestions in Ask", "ask"],
+];
+
+/** A model for each background job, or the default (Settings › AI assistants). */
+function JobModels({ found, fallback }: { found: CliInfo[] | null; fallback: string }) {
+  const s = useStore(settings);
+  const [at, setAt] = useState<{ job: string; rect: DOMRect } | null>(null);
+  const models = s.jobModels ?? {};
+  // The weekly review's preparation falls back to the summaries' model (src-tauri/src/weekprep.rs).
+  const fallbackFor = (job: string) => (job === "weekprep" && models.reviews ? models.reviews : fallback);
+  const fallbackName = (job: string) => (job === "weekprep" && models.reviews ? "As the summaries" : "As new chats");
+  return (
+    <section className="sgroup">
+      <h2 className="h3">Models by job</h2>
+      <div className="card">
+        {JOBS.map(([job, label, icon]) => (
+          <div key={job} className="srow">
+            <Icon name={icon} />
+            <div className="t">
+              <div className="pt">{label}</div>
+            </div>
+            <button
+              type="button"
+              className="btn sm"
+              title={`Choose the model for ${label.toLowerCase()}`}
+              onClick={(e) => setAt({ job, rect: e.currentTarget.getBoundingClientRect() })}
+            >
+              {models[job] ? (
+                modelLabel(models[job], found)
+              ) : (
+                <span className="faint">
+                  {fallbackName(job)} ({modelLabel(fallbackFor(job), found)})
+                </span>
+              )}
+              <Icon name="chevdown" size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+      {at && (
+        <Popover anchor={at.rect} onClose={() => setAt(null)} width={300}>
+          {models[at.job] && (
+            <div className="menu">
+              <button
+                type="button"
+                title={`Use the same model as ${fallbackName(at.job).replace(/^As /, "")} for this job`}
+                onClick={() => {
+                  const { [at.job]: _, ...rest } = models;
+                  settings.update({ jobModels: rest });
+                  setAt(null);
+                }}
+              >
+                <Icon name="refresh" size={14} />
+                {fallbackName(at.job)}
+              </button>
+              <div className="sep" />
+            </div>
+          )}
+          <ModelMenu
+            found={found}
+            value={models[at.job] ?? fallbackFor(at.job)}
+            onPick={(m) => {
+              settings.update({ jobModels: { ...models, [at.job]: m } });
+              setAt(null);
+            }}
+          />
+        </Popover>
+      )}
+    </section>
+  );
+}
+
+/** Open at login (macOS's login item for the app; not shown where macOS can't say, as for a build
+ *  run from a folder), and the menu-bar icon (src-tauri/src/tray.rs): shown, and whether closing
+ *  the window leaves Brainstead in the menu bar alone. */
+function OpenAtLogin() {
+  const s = useStore(settings);
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    void api
+      .loginItem()
+      .then(setOn)
+      .catch(() => {});
+  }, []);
+  const menuBar = s.menuBar !== false;
+  return (
+    <section className="sgroup">
+      <div className="card">
+        <div className="srow">
+          <TrayMark />
+          <div className="t">
+            <div className="pt">Show in the menu bar</div>
+            <div className="faint">
+              An icon in the menu bar opens a small window: today at a glance, a capture box, what's running and what waits for you. It
+              shows dots while a run is going, and a dot when something waits.
+            </div>
+          </div>
+          <Switch label="Show in the menu bar" on={menuBar} onChange={(v) => settings.update({ menuBar: v })} />
+        </div>
+        {menuBar && (
+          <div className="srow">
+            <Icon name="eye" />
+            <div className="t">
+              <div className="pt">Only in the menu bar when the window is closed</div>
+              <div className="faint">Closing the window takes Brainstead out of the Dock; the menu-bar icon brings it back.</div>
+            </div>
+            <Switch
+              label="Only in the menu bar when the window is closed"
+              on={!!s.menuBarOnly}
+              onChange={(v) => settings.update({ menuBarOnly: v })}
+            />
+          </div>
+        )}
+        {on !== null && (
+          <div className="srow">
+            <Icon name="start" />
+            <div className="t">
+              <div className="pt">Open at login</div>
+              <div className="faint">
+                Brainstead starts when you log in, so quick capture, captures from the browser, the daily summary and the weekly summary are
+                ready.
+              </div>
+            </div>
+            <Switch
+              label="Open at login"
+              on={on}
+              onChange={(v) =>
+                void api
+                  .loginItemSet(v)
+                  .then(setOn)
+                  .catch((e) => toast(String(e), undefined, "bad"))
+              }
+            />
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function General() {
+  const s = useStore(settings);
+  return (
+    <>
+      <Switchover />
+      <OpenAtLogin />
+      <CaptureShortcut />
+      <section className="sgroup">
+        <h2 className="h3">Your name</h2>
+        <label className="inp" style={{ maxWidth: 320 }}>
+          <input
+            value={s.ownerName ?? ""}
+            onChange={(e) => settings.update({ ownerName: e.target.value })}
+            placeholder="First name, as Teams writes it"
+          />
+        </label>
+        <p className="faint">
+          Today greets you by your first name. For notes from transcripts: which speaker is you, so your actions become tasks and a
+          two-person meeting is a 1-1.
+        </p>
+      </section>
+      <section className="sgroup">
+        <h2 className="h3">Appearance</h2>
+        <Seg<Theme>
+          label="Appearance"
+          value={s.theme}
+          options={[
+            ["system", "System"],
+            ["light", "Light"],
+            ["dark", "Dark"],
+          ]}
+          onChange={(t) => {
+            settings.update({ theme: t, docTheme: undefined });
+            applyTheme(t);
+          }}
+        />
+      </section>
+    </>
+  );
+}
+
+const SAMPLE = `# Quarterly review
+
+A short sample of how documents look, with a [[link]] and some \`code\`.
+
+## Decisions
+
+- [x] Ship the editor
+- [ ] Plan the next stage
+
+> Keep the vault the only source of truth.
+
+| Area | Owner | Status |
+|---|---|---|
+| Editor | Maya | Done |
+| Ask | Lena | Next |
+`;
+
+/** "en_ZA" as "English (South Africa)". */
+export function languageName(code: string): string {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "language" }).of(code.replace("_", "-")) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** Which English to check in: one macOS has, or as macOS is set. */
+function SpellLanguage() {
+  const s = useStore(settings);
+  const [langs, setLangs] = useState<[string[], string] | null>(null);
+  useEffect(() => {
+    void api
+      .spellLanguages()
+      .then(setLangs)
+      .catch(() => {});
+  }, []);
+  if (!langs || !langs[0].length) return null;
+  const [have, system] = langs;
+  return (
+    <div className="srow">
+      <Icon name="text" />
+      <div className="t">
+        <div className="pt">Spelling language</div>
+        <div className="faint">Which English words are checked against: colour or color, organise or organize.</div>
+      </div>
+      <select
+        className="sel"
+        aria-label="Spelling language"
+        value={s.spellLanguage && have.includes(s.spellLanguage) ? s.spellLanguage : ""}
+        onChange={(e) => settings.update({ spellLanguage: e.target.value || undefined })}
+      >
+        <option value="">{/^en(_|$)/.test(system) ? `As macOS (${languageName(system)})` : "English"}</option>
+        {have.map((l) => (
+          <option key={l} value={l}>
+            {languageName(l)}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/** Read aloud (src/speech/): the voice, the speed and the highlight, with where better voices come
+ *  from. Hidden where the system has no voices to offer. */
+function ReadAloudSettings() {
+  const s = useStore(settings);
+  const vs = useStore(voices);
+  if (!vs.length) return null;
+  return (
+    <section className="sgroup">
+      <h2 className="h3">Read aloud</h2>
+      <div className="card">
+        <div className="srow">
+          <Icon name="speaker" />
+          <div className="t">
+            <div className="pt">Voice</div>
+            <div className="faint">
+              More voices: System Settings › Accessibility › Spoken Content › System voice › Manage Voices. Premium voices sound the most
+              natural (Zoe or Ava for US English, Jamie for British); download one there and it's listed here. Siri's voices can't be used
+              by other apps.
+            </div>
+          </div>
+          <VoiceSelect onChange={speechSettingsChanged} />
+          <button
+            type="button"
+            className="btn sm"
+            title="Say a sentence in this voice and speed"
+            onClick={() => sayTest("This is how your notes will sound when Brainstead reads them aloud.")}
+          >
+            Test
+          </button>
+        </div>
+        <div className="srow">
+          <Icon name="stopwatch" />
+          <div className="t">
+            <div className="pt">Speed</div>
+          </div>
+          <SpeedSlider />
+        </div>
+        <div className="srow">
+          <Icon name="eye" />
+          <div className="t">
+            <div className="pt">Highlight each word</div>
+            <div className="faint">Off: the whole paragraph being read is tinted instead.</div>
+          </div>
+          <Switch label="Highlight each word" on={s.speechHighlight !== false} onChange={(v) => settings.update({ speechHighlight: v })} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Notes() {
+  const s = useStore(settings);
+  const d = useDocDefaults();
+  const look = useDocLook("");
+  const own = Object.keys(s.docLooks ?? {}).length;
+  return (
+    <>
+      <section className="sgroup">
+        <h2 className="h3">Spelling and grammar</h2>
+        <div className="card">
+          <div className="srow">
+            <Icon name="text" />
+            <div className="t">
+              <div className="pt">Check spelling</div>
+              <div className="faint">
+                A red wavy line under words macOS doesn't know, as you write. Click one for guesses, Learn or Ignore.
+              </div>
+            </div>
+            <Switch label="Check spelling" on={s.spellCheck !== false} onChange={(v) => settings.update({ spellCheck: v })} />
+          </div>
+          <div className="srow">
+            <Icon name="check" />
+            <div className="t">
+              <div className="pt">Check grammar</div>
+              <div className="faint">A blue wavy line where macOS sees a grammar problem; click for its explanation and fixes.</div>
+            </div>
+            <Switch label="Check grammar" on={s.grammarCheck !== false} onChange={(v) => settings.update({ grammarCheck: v })} />
+          </div>
+          <SpellLanguage />
+        </div>
+      </section>
+      <ReadAloudSettings />
+      <section className="sgroup">
+        <h2 className="h3">Document look</h2>
+        <p className="muted">How notes, wiki pages and their PDFs look unless a note has its own. Change one note's from its screen.</p>
+        <LookPicker
+          style={d.style}
+          accent={d.accent}
+          onStyle={(x) => settings.update({ docStyle: x })}
+          onAccent={(x) => settings.update({ docAccent: x })}
+        />
+        <div
+          className={`doc docsurf lookdemo ${d.style === "brainstead" ? "" : "styled"} ${look.ownTheme ? "owntheme" : ""}`}
+          data-doc-theme={look.theme}
+          data-doc-style={d.style}
+          data-doc-accent={d.accent}
+        >
+          <Markdown content={SAMPLE} path="" root="" />
+        </div>
+      </section>
+      <section className="sgroup">
+        <h2 className="h3">Light or dark</h2>
+        <Seg<"app" | "light" | "dark">
+          label="Documents"
+          value={s.docTheme ?? "app"}
+          options={[
+            ["app", "As the app"],
+            ["light", "Light"],
+            ["dark", "Dark"],
+          ]}
+          onChange={(t) => settings.update({ docTheme: t === "app" ? undefined : t })}
+        />
+        <p className="muted">PDFs always print light.</p>
+      </section>
+      <section className="sgroup">
+        <h2 className="h3">Templates</h2>
+        <p className="muted">
+          New note runs the templates in the vault’s Templates folder (Templater syntax). Their user scripts (
+          <span className="mono">tp.user</span>) are the .js files in this folder.
+        </p>
+        <div className="row">
+          <span className="inp grow mono">
+            <Icon name="folder" size={14} />
+            <input
+              defaultValue={s.templateScripts || DEFAULT_SCRIPTS}
+              aria-label="User scripts folder"
+              spellCheck={false}
+              onBlur={(e) => {
+                const v = e.target.value.trim().replace(/^\/+|\/+$/g, "");
+                settings.update({ templateScripts: v && v !== DEFAULT_SCRIPTS ? v : undefined });
+              }}
+            />
+          </span>
+          <TemplaterDocsLink className="btn" />
+        </div>
+      </section>
+      {own > 0 && (
+        <section className="sgroup">
+          <h2 className="h3">Notes with their own look</h2>
+          <div className="row">
+            <span className="muted">
+              {fmtCount(own)} {own === 1 ? "note has" : "notes have"} a theme or colour of their own.
+            </span>
+            <button
+              type="button"
+              className="btn sm"
+              title="Forget each note's own theme and colour, so every note uses the defaults"
+              onClick={() => settings.update({ docLooks: {} })}
+            >
+              Use the defaults for all
+            </button>
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+function Vault() {
+  const s = useStore(settings);
+  const st = useStore(vaultStatus);
+  const err = useStore(settingsError);
+  const [name, setName] = useState("");
+  const add = () => {
+    const n = name.trim();
+    if (!n) return;
+    settingsError.set(null);
+    settings.update({ excluded: [...s.excluded, n] });
+    setName("");
+  };
+  return (
+    <>
+      <section className="sgroup">
+        <h2 className="h3">Vault folder</h2>
+        <p className="muted">Every .md and .txt file in this folder is indexed, except system and excluded folders.</p>
+        <div className="row">
+          <div className="inp grow mono" title={s.vaultPath ?? undefined}>
+            <Icon name="folder" size={14} />
+            <span className="ell">{s.vaultPath ?? "None chosen"}</span>
+          </div>
+          <button type="button" className="btn" title="Choose the vault folder Brainstead reads" onClick={() => void chooseVault()}>
+            Choose…
+          </button>
+          <span title={s.vaultPath ? "Show the vault folder in Finder" : "Choose a vault folder first"}>
+            <button
+              type="button"
+              className="ibtn"
+              aria-label="Show in Finder"
+              disabled={!s.vaultPath}
+              onClick={() => void api.reveal("").catch(() => {})}
+            >
+              <Icon name="finder" />
+            </button>
+          </span>
+        </div>
+      </section>
+      <div className="card">
+        <div className="srow">
+          <Icon
+            name={st.state === "error" ? "x" : "check"}
+            style={{ color: st.state === "error" ? "var(--red)" : st.state === "ready" ? "var(--green)" : "var(--amber)" }}
+          />
+          <div className="t">
+            <div className="pt">
+              {st.state === "ready"
+                ? `${fmtCount(st.stats.files)} files indexed`
+                : st.state === "indexing"
+                  ? "Indexing…"
+                  : st.state === "error"
+                    ? "Index failed"
+                    : "No vault"}
+            </div>
+            <div className="faint">
+              {st.state === "error"
+                ? st.error
+                : st.state === "ready"
+                  ? // Each count keeps to one line, so "2 min ago" never breaks over two.
+                    [
+                      counted(st.stats.notes, "note"),
+                      `${fmtCount(st.stats.wiki)} wiki`,
+                      counted(st.stats.sources, "source"),
+                      counted(st.stats.templates, "template"),
+                      counted(st.stats.openTasks, "open task"),
+                      counted(st.stats.unresolvedLinks, "unresolved link"),
+                      `updated ${ago(st.stats.updatedAt)}`,
+                    ].map((x, i) => (
+                      <Fragment key={x}>
+                        {i > 0 && " · "}
+                        <span className="nowrap">{x}</span>
+                      </Fragment>
+                    ))
+                  : ""}
+            </div>
+          </div>
+          <span
+            title={
+              !s.vaultPath
+                ? "Choose a vault folder first"
+                : st.state === "indexing"
+                  ? "Indexing now…"
+                  : "Read every file in the vault again and rebuild the index from scratch; the files aren't changed"
+            }
+          >
+            <button
+              type="button"
+              className="btn sm"
+              disabled={!s.vaultPath || st.state === "indexing"}
+              onClick={() => void api.rebuildIndex()}
+            >
+              <Icon name="refresh" size={12} />
+              Rebuild index
+            </button>
+          </span>
+        </div>
+        <div className="srow">
+          <Icon name="lock" style={{ color: s.readOnly ? "var(--green)" : "var(--amber)" }} />
+          <div className="t">
+            <div className="pt">Read-only</div>
+            <div className="faint">
+              Never change anything in the vault. Turn it off to tick tasks, set their dates and capture from Brainstead.
+            </div>
+          </div>
+          <Switch label="Read-only" on={s.readOnly} onChange={(v) => settings.update({ readOnly: v })} />
+        </div>
+      </div>
+      <section className="sgroup">
+        <h2 className="h3">Excluded folders</h2>
+        <p className="muted">Any folder with one of these names, at any depth, is skipped.</p>
+        <div className="chips">
+          {s.excluded.map((x) => (
+            <span key={x} className="chip">
+              {x}
+              <button
+                type="button"
+                className="ibtn xs"
+                aria-label={`Stop excluding ${x}`}
+                title={`Stop excluding ${x}; its files are indexed again`}
+                onClick={() => settings.update({ excluded: s.excluded.filter((y) => y !== x) })}
+              >
+                <Icon name="x" size={11} />
+              </button>
+            </span>
+          ))}
+          <label className="inp sm">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && add()}
+              placeholder="folder-name"
+              aria-label="Folder name to exclude"
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
+            />
+          </label>
+          <span title={name.trim() ? "Skip folders with this name from now on (↩)" : "Type a folder name first"}>
+            <button type="button" className="btn sm" onClick={add} disabled={!name.trim()}>
+              <Icon name="plus" size={12} />
+              Add
+            </button>
+          </span>
+        </div>
+        {err && <p className="err">{err}</p>}
+      </section>
+      <ExampleNotes />
+      <div className="card sysf">
+        <span className="eyebrow">System folders</span>
+        <dl>
+          <dt className="mono">sources/</dt>
+          <dd className="muted">Imported files and captured emails and transcripts.</dd>
+          <dt className="mono">wiki/</dt>
+          <dd className="muted">Entities, concepts and source summaries.</dd>
+          <dt className="mono">Templates/</dt>
+          <dd className="muted">Note templates (Templater syntax).</dd>
+          <dt className="mono">images/</dt>
+          <dd className="muted">Pasted and dropped images. Not indexed.</dd>
+          <dt className="mono">.trash/ and hidden folders</dt>
+          <dd className="muted">Deleted items and other apps' settings. Not indexed.</dd>
+        </dl>
+      </div>
+    </>
+  );
+}
+
+/** Adds back the example notes a new vault is made with: only the ones that aren't there. */
+function ExampleNotes() {
+  const s = useStore(settings);
+  const [busy, setBusy] = useState(false);
+  const add = () => {
+    setBusy(true);
+    api
+      .vaultAddExamples()
+      .then((n) =>
+        toast(
+          n ? `Added ${counted(n, "example note")}; open Start here for the list` : "The example notes are all there already",
+          undefined,
+          "ok",
+        ),
+      )
+      .catch((e) => toast(errText(e), undefined, "bad"))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <section className="sgroup">
+      <h2 className="h3">Example notes</h2>
+      <p className="muted">
+        The notes a new vault is made with, which show what Brainstead can do. Only the ones that aren&apos;t in the vault are added;
+        nothing already there is changed.
+      </p>
+      <div className="row">
+        <span
+          title={
+            !s.vaultPath
+              ? "Choose a vault folder first"
+              : s.readOnly
+                ? "Turn Read-only off first"
+                : "Add the example notes that aren't in the vault, with Start here listing them"
+          }
+        >
+          <button type="button" className="btn" disabled={!s.vaultPath || s.readOnly || busy} onClick={add}>
+            <Icon name="plus" size={14} />
+            Add the example notes
+          </button>
+        </span>
+      </div>
+    </section>
+  );
+}
+
+/** "1 template", "3 templates". */
+const counted = (n: number, one: string) => `${fmtCount(n)} ${one}${n === 1 ? "" : "s"}`;
+
+const INSTALL: Record<string, string> = {
+  claude: "https://docs.claude.com/en/docs/claude-code/setup",
+  codex: "https://developers.openai.com/codex/cli",
+  antigravity: "https://antigravity.google",
+  copilot: "https://docs.github.com/copilot/how-tos/set-up/install-copilot-cli",
+};
+
+function Assistants() {
+  const s = useStore(settings);
+  const found = useStore(clis);
+  const [at, setAt] = useState<DOMRect | null>(null);
+  useEffect(() => void findClis(), []);
+  const model = s.askModel ?? DEFAULT_MODEL;
+  return (
+    <>
+      <section className="sgroup">
+        <h2 className="h3">New chats use</h2>
+        <div>
+          <button
+            type="button"
+            className="btn"
+            title="Choose the model new chats start with"
+            onClick={(e) => setAt(e.currentTarget.getBoundingClientRect())}
+          >
+            <Icon name="cpu" size={14} />
+            {modelLabel(model, found)}
+            <Icon name="chevdown" size={12} />
+          </button>
+        </div>
+        <p className="faint">Each chat keeps the model it started with, and jobs use this one unless they have their own below.</p>
+        {at && (
+          <Popover anchor={at} onClose={() => setAt(null)} width={300}>
+            <ModelMenu
+              found={found}
+              value={model}
+              onPick={(m) => {
+                settings.update({ askModel: m });
+                setAt(null);
+              }}
+            />
+          </Popover>
+        )}
+      </section>
+      <section className="sgroup">
+        <h2 className="h3">Changes</h2>
+        <div className="card">
+          <div className="srow">
+            <Icon name="history" style={{ color: "var(--accent)" }} />
+            <div className="t">
+              <div className="pt">Keep the history of agent changes</div>
+              <div className="faint">
+                Every change an assistant or a run makes can be reverted in Changes. The history is kept for this many days, or until it
+                takes this much space, whichever comes first.
+                {/onedrive/i.test(s.vaultPath ?? "") &&
+                  " Your vault is in a OneDrive folder, so older versions are also in OneDrive's version history."}
+              </div>
+            </div>
+            <select
+              className="sel"
+              aria-label="Days of history to keep"
+              title="How many days of changes Changes keeps"
+              value={String(s.changesKeepDays ?? 90)}
+              onChange={(e) => settings.update({ changesKeepDays: Number(e.target.value) })}
+            >
+              {[30, 90, 180, 365].map((d) => (
+                <option key={d} value={d}>
+                  {d} days
+                </option>
+              ))}
+            </select>
+            <select
+              className="sel"
+              aria-label="Most space the history takes"
+              title="The most space the history of changes takes"
+              value={String(s.changesKeepMb ?? 500)}
+              onChange={(e) => settings.update({ changesKeepMb: Number(e.target.value) })}
+            >
+              {[100, 250, 500, 1000, 2000].map((m) => (
+                <option key={m} value={m}>
+                  {m >= 1000 ? `${m / 1000} GB` : `${m} MB`}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </section>
+      <section className="sgroup">
+        <h2 className="h3">Ingest</h2>
+        <div className="card">
+          <div className="srow">
+            <Icon name="inbox" style={{ color: s.ingestOnArrival ? "var(--green)" : "var(--ink3)" }} />
+            <div className="t">
+              <div className="pt">Ingest new sources as they arrive</div>
+              <div className="faint">
+                An email or chat captured from the browser, or a file dropped or imported into Sources, is ingested straight away.
+              </div>
+            </div>
+            <Switch
+              label="Ingest new sources as they arrive"
+              on={!!s.ingestOnArrival}
+              onChange={(v) => settings.update({ ingestOnArrival: v })}
+            />
+          </div>
+          <div className="srow">
+            <Icon name="refresh" style={{ color: s.refreshStale ? "var(--green)" : "var(--ink3)" }} />
+            <div className="t">
+              <div className="pt">Also refresh pages whose sources changed</div>
+              <div className="faint">
+                The nightly check (Settings › Jobs &amp; schedule) ingests again each source that changed since the pages citing it were
+                written; the wiki is updated at once, and a change that fails a check is held for you in Changes.
+              </div>
+            </div>
+            <Switch
+              label="Also refresh pages whose sources changed"
+              on={!!s.refreshStale}
+              onChange={(v) => settings.update({ refreshStale: v })}
+            />
+          </div>
+        </div>
+      </section>
+      <div className="card">
+        <div className="srow">
+          <Icon name="ask" style={{ color: s.askSuggest === false ? "var(--ink3)" : "var(--green)" }} />
+          <div className="t">
+            <div className="pt">Suggest a next message</div>
+            <div className="faint">
+              After each answer, a model offers a follow-up in the message box (→ types it), at the cost of one more call per answer.
+            </div>
+          </div>
+          <Switch label="Suggest a next message" on={s.askSuggest !== false} onChange={(v) => settings.update({ askSuggest: v })} />
+        </div>
+      </div>
+      <JobModels found={found} fallback={model} />
+      <section className="sgroup">
+        <div className="row">
+          <h2 className="h3 grow">Found on this computer</h2>
+          <button
+            type="button"
+            className="btn sm"
+            title="Look for the AI assistants' command-line tools again"
+            onClick={() => {
+              toast("Looking for the assistants…");
+              void findClis(true).then(() => {
+                const n = clis.get()?.filter((c) => c.path).length ?? 0;
+                toast(n ? `Found ${n} assistant${n === 1 ? "" : "s"}` : "No assistants found", undefined, n ? "ok" : "bad");
+              });
+            }}
+          >
+            <Icon name="refresh" size={12} />
+            Look again
+          </button>
+        </div>
+        <div className="card">
+          {!found && <div className="srow faint">Looking…</div>}
+          {found?.map((c) => (
+            <div key={c.cli} className="srow">
+              <Icon name={c.path ? "check" : "x"} style={{ color: c.path ? "var(--green)" : "var(--ink3)" }} />
+              <div className="t">
+                <div className="pt">
+                  {CLI_LABEL[c.cli]} {c.version && <span className="faint">· {c.version}</span>}
+                </div>
+                <div className="faint">
+                  {c.path
+                    ? c.models.length
+                      ? `${c.models.length} model${c.models.length === 1 ? "" : "s"} · ${c.path}`
+                      : `No models listed: open Terminal, run ${c.cli === "antigravity" ? "agy" : c.cli} and sign in.`
+                    : "Not installed."}
+                </div>
+              </div>
+              {!c.path && (
+                <button
+                  type="button"
+                  className="btn sm"
+                  title="Open the install instructions in the browser"
+                  onClick={() => void openUrl(INSTALL[c.cli])}
+                >
+                  How to install
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <p className="faint">
+          Ask runs the assistant you choose on this computer with your own account, and it never writes a file itself.
+        </p>
+      </section>
+      <McpGroup />
+      <HandedOver />
+    </>
+  );
+}
+
+const SCREEN_NAME: Record<string, string> = {
+  sources: "Sources (Ingest)",
+  fixname: "Fix a name everywhere (⌘K)",
+  contradictions: "Contradictions (Knowledge health)",
+  health: "Knowledge health",
+  meeting: "Meeting note from a transcript",
+  triage: "Bookmarks triage",
+  reply: "Draft a reply",
+  doccheck: "Doc check",
+};
+
+/** The vault's skills that Brainstead now does on its own screens. */
+function HandedOver() {
+  const [skills, setSkills] = useState<Skill[]>([]);
+  useEffect(
+    () =>
+      void api
+        .skillsList()
+        .then((s) => setSkills(s.filter((x) => x.opens)))
+        .catch(() => {}),
+    [],
+  );
+  if (!skills.length) return null;
+  return (
+    <section className="sgroup">
+      <h2 className="h3">Skills Brainstead does now</h2>
+      <div className="card">
+        {skills.map((s) => (
+          <div key={s.name} className="srow">
+            <Icon name="check" style={{ color: "var(--green)" }} />
+            <div className="t">
+              <div className="pt">/{s.name}</div>
+              <div className="faint">{SCREEN_NAME[s.opens!] ?? s.opens}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="faint">
+        Picking one of these in Ask opens its screen; the vault's own copies in .claude/skills keep working, and Brainstead never deletes
+        them.
+      </p>
+    </section>
+  );
+}
+
+/** Brainstead's MCP server: what Ask gives each CLI, and how to add it to one in Terminal. */
+function McpGroup() {
+  const [info, setInfo] = useState<AppInfo | null>(null);
+  useEffect(
+    () =>
+      void api
+        .appInfo()
+        .then(setInfo)
+        .catch(() => {}),
+    [],
+  );
+  // Each CLI's own command to register Brainstead's server for all its sessions (its user config),
+  // for the assistants found on this computer.
+  const found = useStore(clis);
+  useEffect(() => void findClis(), []);
+  const add: Record<CliName, (exe: string) => string> = {
+    claude: (exe) => `claude mcp add -s user brainstead -- "${exe}" --mcp`,
+    codex: (exe) => `codex mcp add brainstead -- "${exe}" --mcp`,
+    copilot: (exe) => `copilot mcp add brainstead -- "${exe}" --mcp`,
+    antigravity: (exe) => `agy mcp add brainstead -- "${exe}" --mcp`,
+  };
+  const cmds: [string, string][] = info && found ? found.filter((c) => c.path).map((c) => [CLI_LABEL[c.cli], add[c.cli](info.exe)]) : [];
+  return (
+    <section className="sgroup">
+      <h2 className="h3">Brainstead's tools</h2>
+      <p className="faint">
+        In Ask, Claude Code, Codex and Copilot get Brainstead's tools: small changes happen at once and can be undone, while prose, renames
+        and deletes are made at once and listed in Changes, where you can revert them (Antigravity uses only its own read tools).
+      </p>
+      {found && info && !cmds.length && (
+        <p className="faint">
+          No assistant is installed on this computer yet (see Found on this computer); once one is, its command to use Brainstead's tools
+          from Terminal shows here.
+        </p>
+      )}
+      {cmds.length > 0 && (
+        <>
+          <p className="faint">
+            To use them from an assistant in Terminal, run its command once; it registers Brainstead for all its sessions:
+          </p>
+          <div className="card">
+            {cmds.map(([name, cmd]) => (
+              <div key={name} className="srow">
+                <div className="t">
+                  <div className="pt">{name}</div>
+                  <code className="mono small selectable">{cmd}</code>
+                </div>
+                <button
+                  type="button"
+                  className="btn sm"
+                  title={`Copy the command for ${name} to the clipboard`}
+                  onClick={() => void api.copyText(cmd).then(() => toast("Copied", undefined, "ok"))}
+                >
+                  <Icon name="copy" size={12} />
+                  Copy
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function PermissionsPane() {
+  useRecheckOnFocus();
+  return (
+    <>
+      <FullDiskAccessCard />
+      <p className="faint">Notifications and automation are asked for when a feature first needs them, not at startup.</p>
+    </>
+  );
+}
+
+const EXTENSIONS: { id: "outlook-capture" | "teams-capture"; ext: "outlook" | "teams"; name: string; what: string }[] = [
+  {
+    id: "outlook-capture",
+    ext: "outlook",
+    name: "Outlook capture",
+    what: "The open email thread in Outlook on the web, or the threads ticked in the list.",
+  },
+  { id: "teams-capture", ext: "teams", name: "Teams capture", what: "The open Teams chat or channel thread, or a meeting's transcript." },
+];
+
+/** The Outlook and Teams extensions: where to load them from, whether the browsers know Brainstead's helper, the last captures. */
+function CapturePane() {
+  const s = useStore(settings);
+  const [st, setSt] = useState<Awaited<ReturnType<typeof api.captureStatus>> | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const v = useVaultVersion();
+  useEffect(() => {
+    let live = true;
+    api
+      .captureStatus()
+      .then((x) => {
+        if (!live) return;
+        setSt(x);
+        setErr(x.folder ? null : "The extensions weren't found in this copy of Brainstead.");
+      })
+      .catch((e) => live && setErr(`Couldn't read the extensions' status: ${String(e)}`));
+    return () => {
+      live = false;
+    };
+  }, [v]);
+  const browsers = st?.browsers ?? [];
+  return (
+    <>
+      <section className="sgroup">
+        <h2 className="h3">Outlook and Teams in the browser</h2>
+        <p className="muted">
+          Two browser extensions send what's open in Outlook on the web or Teams into the vault's sources/ folder, ready to ingest and
+          listed in the Inbox. They reach Brainstead through a small helper the browser starts, so they work while Brainstead is closed.
+        </p>
+        {s.readOnly && (
+          <div className="doc-banner warn" role="status">
+            <Icon name="info" size={14} />
+            <span>Read-only is on (Settings › Vault), so captures are refused until it's switched off.</span>
+          </div>
+        )}
+      </section>
+      {err && (
+        <div className="doc-banner warn" role="alert">
+          <Icon name="info" size={14} />
+          <span>{err}</span>
+        </div>
+      )}
+      <div className="card">
+        {EXTENSIONS.map((e) => {
+          const last = st?.recent.find((c) => c.extension === e.ext);
+          return (
+            <div key={e.id} className="srow">
+              <Icon name={last?.path ? "check" : "source"} style={{ color: last?.path ? "var(--green)" : "var(--ink3)" }} />
+              <div className="t">
+                <div className="pt">{e.name}</div>
+                <div className="faint">
+                  {e.what}{" "}
+                  {last
+                    ? last.path
+                      ? `Last capture ${ago(new Date(last.at).getTime())}: ${last.what.toLowerCase()}.`
+                      : `Last capture refused ${ago(new Date(last.at).getTime())}: ${last.error}`
+                    : "No captures yet."}
+                </div>
+              </div>
+              <span
+                title={
+                  st?.folder ? `Show the ${e.name} extension's folder in Finder, to load it in Chrome` : "The extensions weren't found"
+                }
+              >
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={!st?.folder}
+                  onClick={() => void api.captureReveal(e.id).catch((x) => setErr(String(x)))}
+                >
+                  <Icon name="finder" size={13} />
+                  Show in Finder
+                </button>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <section className="sgroup">
+        <h2 className="h3">Install</h2>
+        <ol className="steps">
+          <li>
+            In Chrome (or Edge, Brave), open <span className="mono">chrome://extensions</span> and switch on Developer mode.
+          </li>
+          <li>Click Load unpacked and choose an extension's folder (Show in Finder above), then pin it to the toolbar.</li>
+          <li>Open an email thread or a Teams chat and click the extension's button.</li>
+        </ol>
+        <p className="faint">
+          {browsers.length
+            ? `Brainstead's helper is registered with ${browsers
+                .filter((b) => b.registered)
+                .map((b) => b.name)
+                .join(
+                  ", ",
+                )}${browsers.some((b) => !b.current) ? " (another copy of Brainstead registered it; this one takes over when it starts)" : ""}.`
+            : "No Chromium browser was found on this computer: install Chrome, Edge or Brave, then open this page again."}{" "}
+          The extensions' IDs are fixed, so there's nothing to copy or paste.
+        </p>
+      </section>
+      {!!st?.recent.length && (
+        <section className="sgroup">
+          <h2 className="h3">Recent captures</h2>
+          <div className="card">
+            {st.recent.map((c) => (
+              <div key={c.at} className="srow">
+                <Icon name={c.path ? "check" : "x"} style={{ color: c.path ? "var(--green)" : "var(--red)" }} />
+                <div className="t">
+                  <div className="pt ell">{c.path ? c.path.replace(/^sources\//, "").replace(/\.md$/, "") : `${c.what} not captured`}</div>
+                  <div className="faint">
+                    {c.what} · {ago(new Date(c.at).getTime())}
+                    {c.error ? ` · ${c.error}` : ""}
+                  </div>
+                </div>
+                {c.path && <CaptureOpen path={c.path} />}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+function CaptureOpen({ path }: { path: string }) {
+  const gone = useIsGone(path);
+  return (
+    <DocButton path={path} gone={gone} className="btn sm ghost" title={`Open ${path}`}>
+      Open
+    </DocButton>
+  );
+}
+
+function About() {
+  const s = useStore(settings);
+  const [info, setInfo] = useState<AppInfo | null>(null);
+  useEffect(() => {
+    let live = true;
+    api
+      .appInfo()
+      .then((i) => live && setInfo(i))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <section className="sgroup">
+      <div className="abouthead">
+        <img className="ondark" src={appIconDark} width={64} height={64} alt="" />
+        <img className="onlight" src={appIconLight} width={64} height={64} alt="" />
+        <div>
+          <h2 className="h3">Brainstead</h2>
+          <p className="muted">A home for everything on your mind.</p>
+        </div>
+      </div>
+      {info && (
+        <dl className="kv">
+          <dt>Version</dt>
+          <dd>
+            {info.version} ({info.build})
+          </dd>
+          <dt>App data</dt>
+          <dd className="mono">{info.dataDir}</dd>
+        </dl>
+      )}
+      <div className="card">
+        <div className="srow">
+          <Icon name="history" />
+          <div className="t">
+            <div className="pt">The app's logs</div>
+            <div className="faint">
+              What Brainstead noted while running, one file a day in the app data folder's logs. Older files are deleted.
+            </div>
+          </div>
+          <label className="faint" htmlFor="logdays">
+            Keep
+          </label>
+          <select
+            id="logdays"
+            className="sel"
+            value={String(s.logDays ?? 14)}
+            onChange={(e) => settings.update({ logDays: Number(e.target.value) })}
+          >
+            {[7, 14, 30, 90].map((d) => (
+              <option key={d} value={d}>
+                {d} days
+              </option>
+            ))}
+          </select>
+          <button type="button" className="btn sm" title="Show the folder of log files in Finder" onClick={() => void api.logsReveal()}>
+            <Icon name="finder" size={14} />
+            Show in Finder
+          </button>
+        </div>
+      </div>
+      <p className="faint">Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or later.</p>
+    </section>
+  );
+}

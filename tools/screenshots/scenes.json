@@ -1,0 +1,430 @@
+[
+  {
+    "name": "tasks",
+    "screen": "tasks"
+  },
+  {
+    "name": "system-lock",
+    "screen": "doc",
+    "path": "Me. To Do List.md",
+    "docMode": "live"
+  },
+  {
+    "name": "task-in-progress",
+    "screen": "tasks",
+    "view": {
+      "tasks:sel": "Spec. Task queries.md:12"
+    }
+  },
+  {
+    "name": "task-pane",
+    "screen": "tasks",
+    "view": {
+      "tasks:sel": "Project. Orbit App launch.md:9"
+    },
+    "docs": true
+  },
+  {
+    "name": "tasks-search",
+    "screen": "tasks",
+    "view": {
+      "tasks:view": "next",
+      "tasks:q": "orbit"
+    }
+  },
+  {
+    "name": "tasks-grouped",
+    "screen": "tasks",
+    "view": {
+      "tasks:group": "project",
+      "tasks:sel": "Project. Orbit App launch.md:9"
+    }
+  },
+  {
+    "name": "today",
+    "screen": "today",
+    "docs": true
+  },
+  {
+    "name": "today-summary",
+    "screen": "today",
+    "view": {
+      "today.dailySummary": true
+    }
+  },
+  {
+    "name": "palette",
+    "screen": "today",
+    "palette": true,
+    "docs": true
+  },
+  {
+    "name": "notes",
+    "screen": "notes"
+  },
+  {
+    "name": "notes-grouped",
+    "screen": "notes",
+    "view": {
+      "notes:group": true
+    }
+  },
+  {
+    "name": "wiki",
+    "screen": "wiki"
+  },
+  {
+    "name": "sources",
+    "screen": "sources",
+    "docs": true
+  },
+  {
+    "name": "note",
+    "screen": "doc",
+    "path": "Meeting. Orbit App Steerco - 2026-09-30.md",
+    "docs": true
+  },
+  {
+    "name": "images",
+    "screen": "doc",
+    "path": "Idea. Images.md"
+  },
+  {
+    "name": "wiki-page",
+    "screen": "doc",
+    "path": "wiki/entities/Orbit App.md",
+    "q": "launch",
+    "docs": true
+  },
+  {
+    "name": "source-pdf",
+    "screen": "doc",
+    "path": "sources/Programme Update Steerco 2026-09-28.pdf"
+  },
+  {
+    "name": "todo",
+    "screen": "doc",
+    "path": "Me. To Do List.md"
+  },
+  {
+    "name": "search",
+    "screen": "search",
+    "q": "launch date",
+    "docs": true
+  },
+  {
+    "name": "settings-vault",
+    "screen": "settings",
+    "pane": "vault"
+  },
+  {
+    "name": "settings-permissions",
+    "screen": "settings",
+    "pane": "permissions"
+  },
+  {
+    "name": "splash",
+    "screen": "today",
+    "splash": true
+  },
+  {
+    "name": "new-note",
+    "screen": "notes",
+    "dialog": "new-note",
+    "template": "Meeting"
+  },
+  {
+    "name": "rename",
+    "screen": "doc",
+    "path": "1-1. Maya - 2026-09-23.md",
+    "dialog": "rename",
+    "title": "Maya catch-up"
+  },
+  {
+    "name": "toast",
+    "screen": "today",
+    "toast": "Moved “Orbit App notes” to the Trash"
+  },
+  {
+    "name": "settings-capture",
+    "screen": "settings",
+    "pane": "capture"
+  },
+  {
+    "name": "trash",
+    "screen": "trash"
+  },
+  {
+    "name": "wiki-edit",
+    "screen": "doc",
+    "path": "wiki/entities/Orbit App.md",
+    "docMode": "live"
+  },
+  {
+    "name": "editor",
+    "screen": "doc",
+    "path": "Meeting. Orbit App Steerco - 2026-09-30.md",
+    "docMode": "live",
+    "docs": true
+  },
+  {
+    "name": "template-view",
+    "screen": "doc",
+    "path": "Templates/Meeting.md",
+    "docMode": "read"
+  },
+  {
+    "name": "template-hover",
+    "screen": "doc",
+    "path": "Templates/1-1.md",
+    "docMode": "live",
+    "caret": "tp.file.cur|sor(1)",
+    "hover": true
+  },
+  {
+    "name": "template-caret",
+    "screen": "doc",
+    "path": "Templates/1-1.md",
+    "docMode": "live",
+    "caret": "tp.file.|cursor(1)",
+    "docs": true
+  },
+  {
+    "name": "template-caret-query",
+    "screen": "doc",
+    "path": "Templates/1-1.md",
+    "docMode": "live",
+    "caret": "#followup/<% |name %>"
+  },
+  {
+    "name": "template-edit",
+    "screen": "doc",
+    "path": "Templates/Meeting.md",
+    "docMode": "live"
+  },
+  {
+    "name": "template-source",
+    "screen": "doc",
+    "path": "Templates/Meeting.md",
+    "docMode": "source"
+  },
+  {
+    "name": "editor-source",
+    "screen": "doc",
+    "path": "Meeting. Orbit App Steerco - 2026-09-30.md",
+    "docMode": "source"
+  },
+  {
+    "name": "ask",
+    "screen": "ask",
+    "chat": true,
+    "docs": true
+  },
+  {
+    "name": "settings-assistants",
+    "screen": "settings",
+    "pane": "assistants",
+    "docs": true
+  },
+  {
+    "name": "settings-jobs",
+    "screen": "settings",
+    "pane": "jobs",
+    "docs": true
+  },
+  {
+    "name": "inbox",
+    "screen": "inbox",
+    "docs": true
+  },
+  {
+    "name": "projects",
+    "screen": "projects",
+    "path": "Project. Orbit App launch.md",
+    "docs": true
+  },
+  {
+    "name": "weekly",
+    "screen": "weekly",
+    "view": { "weekly:begun": true },
+    "docs": true
+  },
+  {
+    "name": "weekly-start",
+    "screen": "weekly"
+  },
+  {
+    "name": "review",
+    "screen": "review",
+    "docs": true
+  },
+  {
+    "name": "review-applied",
+    "screen": "review",
+    "view": { "review:sel": "demo-4" }
+  },
+  {
+    "name": "doc-agent-changes",
+    "screen": "doc",
+    "path": "wiki/concepts/Hub Platform.md"
+  },
+  {
+    "name": "meeting",
+    "screen": "meeting"
+  },
+  {
+    "name": "contradictions",
+    "screen": "contradictions"
+  },
+  {
+    "name": "health",
+    "screen": "health",
+    "docs": true
+  },
+  {
+    "name": "settings-notes",
+    "screen": "settings",
+    "pane": "notes"
+  },
+  {
+    "name": "fix-name",
+    "screen": "notes",
+    "dialog": "fix-name",
+    "q": "Sam",
+    "title": "Sam Carter"
+  },
+  {
+    "name": "shortcuts",
+    "screen": "today",
+    "dialog": "shortcuts"
+  },
+  {
+    "name": "highlights",
+    "screen": "doc",
+    "path": "Spec. Highlights.md"
+  },
+  {
+    "name": "highlights-live",
+    "screen": "doc",
+    "path": "Spec. Highlights.md",
+    "docMode": "live"
+  },
+  {
+    "name": "graph",
+    "screen": "graph",
+    "path": "wiki/entities/Orbit App.md",
+    "docs": true
+  },
+  {
+    "name": "graph-wiki",
+    "screen": "graph"
+  },
+  {
+    "name": "activity",
+    "screen": "activity"
+  },
+  {
+    "name": "settings-about",
+    "screen": "settings",
+    "pane": "about"
+  },
+  {
+    "name": "settings-general",
+    "screen": "settings",
+    "pane": "general",
+    "docs": true
+  },
+  {
+    "name": "source-provenance",
+    "screen": "doc",
+    "path": "sources/Roadmap Update 2026-09-18.md",
+    "docs": true
+  },
+  {
+    "name": "triage",
+    "screen": "triage"
+  },
+  {
+    "name": "reply",
+    "screen": "reply",
+    "path": "sources/Email. Thread. Re Orbit App launch date - 2026-10-02.md"
+  },
+  {
+    "name": "doccheck",
+    "screen": "doccheck"
+  },
+  {
+    "name": "spelling",
+    "screen": "doc",
+    "path": "Idea. Spelling.md",
+    "docMode": "live"
+  },
+  {
+    "name": "find-view",
+    "screen": "doc",
+    "path": "Meeting. Orbit App Steerco - 2026-09-30.md",
+    "find": "orbit"
+  },
+  {
+    "name": "find-edit",
+    "screen": "doc",
+    "path": "Meeting. Orbit App Steerco - 2026-09-30.md",
+    "docMode": "source",
+    "find": "orbit"
+  },
+  {
+    "name": "callout-tasks",
+    "screen": "doc",
+    "path": "Idea. Before the frost.md"
+  },
+  {
+    "name": "callout-tasks-edit",
+    "screen": "doc",
+    "path": "Idea. Before the frost.md",
+    "docMode": "live"
+  },
+  {
+    "name": "callout-tasks-list",
+    "screen": "tasks",
+    "view": {
+      "tasks:sel": "Idea. Before the frost.md:3"
+    }
+  },
+  {
+    "name": "help",
+    "screen": "tasks",
+    "help": {},
+    "docs": true
+  },
+  {
+    "name": "help-search",
+    "screen": "today",
+    "help": {
+      "q": "capture shortcut"
+    }
+  },
+  {
+    "name": "help-guide",
+    "screen": "inbox",
+    "help": {
+      "guide": "guide-gtd",
+      "step": 1
+    }
+  },
+  {
+    "name": "tray",
+    "tray": true,
+    "width": 720,
+    "docs": true
+  },
+  {
+    "name": "read-aloud",
+    "screen": "doc",
+    "path": "wiki/entities/Orbit App.md",
+    "reading": {
+      "block": 2,
+      "char": 12
+    },
+    "docs": true
+  }
+]

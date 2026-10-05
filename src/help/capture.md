@@ -1,0 +1,35 @@
+---
+title: Quick capture
+kind: screen
+screens: []
+order: 6
+summary: A small window over any app for catching a task or a thought in a few keystrokes.
+---
+Quick capture opens a small box over whatever app you're in. Type, press `↩`, and you're back where you were.
+
+## Open Quick capture
+Press `⌃⌥Space` from any app. The shortcut keeps working when Brainstead's main window is closed, as long as the app is running. You can also click **Capture** in the top bar of [Today](app:today), or type the task in ⌘K and choose "Capture … as a task".
+
+To change the shortcut, go to [Settings › General](app:settings/general), click the shortcut under Quick capture and press the new keys. **Reset to ⌃⌥Space** puts it back. If another app already uses the keys, the pane says so. ⌥Space and ⌘⌥Space are often taken by Spotlight or other launchers.
+
+## Choose Task or Thought
+The box captures either a **Task** or a **Thought**; `Tab` switches between them, or click one below the box.
+
+- A task is one line. It goes on the To Do list as `- [ ] your text`, at the top of the `#### Other` section.
+- A thought can run to several lines (`⇧↩` for a new line). It goes to the Scratchpad as a block headed with the date and time, such as `## 2026-10-03 14:30`, newest first.
+
+Both then wait in the [Inbox](app:inbox) to be clarified. Press `↩` to save, or `Esc` to close without saving.
+
+## Add dates and details as you type
+In a task, a few words turn into the task format when you save:
+
+- `due:`, `defer:`, `start:` or `created:` followed by a word (today, tomorrow, mon, next week, +3d, 2026-10-05) become dates. `due:` on its own opens a date picker.
+- `@calls` becomes the context `#context/calls`, and `effort:15m` becomes `[effort:: 15m]`.
+- `#followup`, `#waiting-for` and `#someday-maybe` put it straight on those lists.
+
+`[[` suggests notes to link and `#` suggests tags from the vault; `↑` and `↓` choose and `↩` or Tab inserts. While the task box is empty, a hint lists these.
+
+## If a capture is refused
+While **Read-only** is on in [Settings › Vault](app:settings/vault), captures are refused with a message and a button to that setting.
+
+A capture is also refused when a sync conflict copy (such as `Me. To Do List 1.md`) sits beside the file; sort out the copy first.

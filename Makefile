@@ -1,0 +1,117 @@
+# Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or later.
+# See LICENSE for the full text.
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Brainstead — build, sign and install the app.
+
+APP      := src-tauri/target/release/bundle/macos/Brainstead.app
+
+# The signing certificate is named in signing.local, which is untracked: the name of a keychain
+# identity is local to the machine that holds it. Copy signing.local.example and put your own
+# self-signed certificate's name in it. Without one the build is signed ad hoc, and macOS forgets
+# Brainstead's permissions (Full Disk Access, Keychain items) after every rebuild. Brainstead has
+# its own certificate, "Brainstead Dev": never a sibling app's (the archived build plan, §2).
+-include signing.local
+SIGN_ID  := $(APPLE_SIGNING_IDENTITY)
+# "-" is an ad-hoc signature: an empty identity makes the bundler fail instead.
+export APPLE_SIGNING_IDENTITY := $(if $(SIGN_ID),$(SIGN_ID),-)
+
+.PHONY: check test lint fmt app install-app dmg dev icons sign-check screenshots evals help
+
+## cargo test (the core, the MCP server and the app), TypeScript type-check, Vitest, then make lint.
+check:
+	cd src-tauri && cargo test -p brainstead-core && cargo test -p brainstead-mcp && cargo test --lib -p brainstead
+	npx tsc --noEmit -p tsconfig.json
+	npx vitest run
+	@$(MAKE) --no-print-directory lint
+
+## Formatting (rustfmt, Prettier, ruff), Clippy, ESLint, stylelint, ruff, the licence headers and every button's tooltip, all checked, nothing changed.
+lint:
+	cd src-tauri && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
+	npx prettier --check .
+	npx eslint .
+	npx stylelint "src/**/*.css"
+	ruff check && ruff format --check
+	python3 tools/license_headers.py --check
+	python3 tools/tooltips.py
+
+## Reformat everything, and add the licence header to any source file without one.
+fmt:
+	cd src-tauri && cargo fmt --all
+	npx prettier --write .
+	npx stylelint "src/**/*.css" --fix
+	ruff check --fix && ruff format
+	python3 tools/license_headers.py
+
+## The workflow evals (ingest, meeting notes, contradictions, wiki questions, fix name) with real models, on a copy of the fixture vault: target/evals/report.md. Not part of check.
+evals:
+	cd src-tauri && cargo run -q -p brainstead-evals -- $(EVALS)
+
+## Same as check.
+test: check
+
+# Release builds strip the builder's home directory out of the binary (Rust bakes absolute
+# paths into panic metadata). Debug builds skip this so `make dev` keeps its incremental cache.
+RELEASE_RUSTFLAGS := --remap-path-prefix=$(HOME)=/build --remap-path-scope=object
+# macOS 27's linker (ld-27037) sometimes writes a library whose string table dyld refuses
+# ("mis-aligned LINKEDIT string pool"), so rustc can't load a proc macro it has just built and
+# stops with "can't find crate" (E0463). Release builds link with Rust's own lld instead; lld
+# can't read the macOS 27 SDK's .tbd files, so it links against the 26.x SDK when that's there.
+LLD_DIR := $(shell rustc --print sysroot)/lib/rustlib/aarch64-apple-darwin/bin/gcc-ld
+OLD_SDK := $(wildcard /Library/Developer/CommandLineTools/SDKs/MacOSX26*.sdk)
+ifneq ($(OLD_SDK),)
+RELEASE_RUSTFLAGS += -Clink-arg=-fuse-ld=lld -Clink-arg=-B$(LLD_DIR)
+RELEASE_ENV := SDKROOT=$(lastword $(OLD_SDK))
+endif
+
+# Each release build bumps the version (tools/bump_version.py: 0.1.0 → 0.1.1) and gets its own
+# build number, the same on the app (CFBundleVersion) and the binary (Settings › About shows both).
+BUILD := $(shell date +%Y%m%d.%H%M%S)
+
+## Bump the version (or set it: make app VERSION=1.1.0) and build the .app, signed with the identity in signing.local when there is one.
+app:
+	@echo "version $$(python3 tools/bump_version.py $(VERSION)), build $(BUILD)"
+	BRAINSTEAD_BUILD=$(BUILD) $(RELEASE_ENV) RUSTFLAGS="$(RELEASE_RUSTFLAGS)" npm run tauri build -- --config '{"bundle":{"macOS":{"bundleVersion":"$(BUILD)"}}}'
+	@if [ -n "$(SIGN_ID)" ]; then \
+	  codesign -dv --verbose=2 "$(APP)" 2>&1 | grep -E "^Authority=$(SIGN_ID)" >/dev/null \
+	    && echo "signed with $(SIGN_ID)" \
+	    || { echo "WARNING: app is not signed with $(SIGN_ID)"; exit 1; }; \
+	else echo "note: no signing.local, so the app is signed ad hoc"; fi
+
+## Build and replace /Applications/Brainstead.app.
+install-app: app
+	@pkill -x Brainstead 2>/dev/null || true
+	@rm -rf "/Applications/Brainstead.app"
+	@ditto "$(APP)" "/Applications/Brainstead.app"
+	@echo "installed /Applications/Brainstead.app"
+
+## Pack the built app into the release DMG (src-tauri/target/release/bundle/dmg/), laid out like other Mac installers.
+dmg:
+	@python3 tools/dmg/make_dmg.py
+
+## Redraw design/icon.png, then regenerate the Tauri icon set.
+icons:
+	@python3 tools/make_icons.py
+	@npx tauri icon design/icon.png >/dev/null
+	@rm -rf src-tauri/icons/android src-tauri/icons/ios
+	@echo "regenerated src-tauri/icons"
+
+## Retake docs/images/*-light.png and *-dark.png from tools/screenshots/scenes.json.
+screenshots:
+	@python3 tools/screenshots.py
+
+## Show who signed /Applications/Brainstead.app, and fail unless it's the identity in signing.local.
+sign-check:
+	@codesign -dv --verbose=2 "/Applications/Brainstead.app" 2>&1 | grep -E "^(Identifier|Authority|Signature|TeamIdentifier)"
+	@if [ -n "$(SIGN_ID)" ]; then \
+	  codesign -dv --verbose=2 "/Applications/Brainstead.app" 2>&1 | grep -qE "^Authority=$(SIGN_ID)$$" \
+	    && echo "signed with $(SIGN_ID)" || { echo "not signed with $(SIGN_ID)"; exit 1; }; \
+	else echo "no signing.local: copy signing.local.example and create the Brainstead Dev certificate"; exit 1; fi
+
+## Run the app in development, with hot reload (Vite on localhost:1440).
+dev:
+	npm run tauri dev
+
+## List these targets.
+help:
+	@awk '/^## /{d=substr($$0,4);next} /^[a-z-]+:/{if(d){sub(/:.*/,"",$$1);printf "  make %-12s %s\n",$$1,d};d=""}' $(MAKEFILE_LIST)

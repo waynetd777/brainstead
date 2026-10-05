@@ -1,0 +1,46 @@
+<!doctype html><meta charset="utf-8"><title>fake OWA list</title>
+<!-- Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or later. -->
+<!-- See LICENSE for the full text. -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+
+<style>
+  body { margin: 0; font: 13px sans-serif; }
+  #outer { height: 400px; overflow-y: auto; position: relative; }
+  #spacer { position: relative; }
+  .row { position: absolute; left: 0; right: 0; height: 80px; box-sizing: border-box;
+         border-bottom: 1px solid #ccc; padding: 4px; }
+</style>
+<div id="outer"><div id="spacer"></div></div>
+<script>
+  // Mimics OWA: a virtualised listbox that only keeps the visible rows (plus a
+  // small buffer) in the DOM and destroys the rest on scroll.
+  const TOTAL = 60, ROW_H = 80, BUFFER = 2;
+  const CHECKED = new Set([0, 1, 14, 33, 59]);   // spread far below the fold
+  const outer = document.getElementById('outer');
+  const spacer = document.getElementById('spacer');
+  spacer.style.height = TOTAL * ROW_H + 'px';
+  window.__renders = 0;
+  function render() {
+    window.__renders++;
+    const first = Math.max(0, Math.floor(outer.scrollTop / ROW_H) - BUFFER);
+    const last = Math.min(TOTAL - 1, Math.ceil((outer.scrollTop + outer.clientHeight) / ROW_H) + BUFFER);
+    for (const el of [...spacer.children]) el.remove();
+    for (let i = first; i <= last; i++) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.style.top = i * ROW_H + 'px';
+      row.setAttribute('role', 'option');
+      row.setAttribute('data-convid', 'conv-' + i);
+      row.setAttribute('data-focusable-row', 'true');
+      row.setAttribute('aria-setsize', String(TOTAL));
+      if (CHECKED.has(i)) row.setAttribute('aria-selected', 'true');
+      let label = 'Collapsed Sender ' + i + ' Subject ' + i + ' 08:1' + (i % 10) + ' preview text';
+      if (window.__withAriaCount && i === 0) label += ' ' + CHECKED.size + ' conversations selected';
+      row.setAttribute('aria-label', label);
+      row.innerHTML = '<div>Sender ' + i + '</div><div>Subject ' + i + '</div><div>preview…</div>';
+      spacer.append(row);
+    }
+  }
+  outer.addEventListener('scroll', render);
+  render();
+</script>

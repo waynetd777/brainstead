@@ -1,0 +1,24 @@
+{
+  "id": "demo-4",
+  "created": "2026-10-01T09:10:00",
+  "origin": {
+    "kind": "chat",
+    "chat": "Chat. Launch date.md"
+  },
+  "model": "claude:sonnet",
+  "page": "wiki/concepts/Hub Platform.md",
+  "kind": "edit",
+  "title": "Note the pilot dates from the roadmap update",
+  "reason": "The roadmap update gives the pilot dates.",
+  "base": "addfe5cd153f3e8887d10e4c0fb6626568a19e6e088a531a187cf78d6e09e675",
+  "before": "---\ntitle: Hub Platform\ntype: concept\ntags: platform\n---\nIntegration layer used by [[Orbit App]] and others. See [[Missing Concept]].\n",
+  "after": "---\ntitle: Hub Platform\ntype: concept\ntags: platform\n---\nIntegration layer used by [[Orbit App]] and others. See [[Missing Concept]].\n",
+  "quotes": [],
+  "warnings": [],
+  "status": "applied",
+  "decided": "2026-10-02T09:30:00",
+  "undo": {
+    "before": "---\ntitle: Hub Platform\ntype: concept\ntags: platform\n---\nIntegration layer used by [[Orbit App]] and others. See [[Missing Concept]].\n",
+    "version": "addfe5cd153f3e8887d10e4c0fb6626568a19e6e088a531a187cf78d6e09e675"
+  }
+}

@@ -1,0 +1,20 @@
+[package]
+name = "brainstead-mcp"
+version = "0.1.0"
+description = "Brainstead's MCP server: the vault's search, pages and links, and the changes it sends the app to make"
+authors = ["Wayne Davies"]
+license = "GPL-3.0-or-later"
+edition = "2021"
+
+[dependencies]
+brainstead-core = { path = "../core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+regex = "1"
+strsim = "0.11"
+unicode-normalization = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+walkdir = "2"

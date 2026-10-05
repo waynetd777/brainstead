@@ -1,0 +1,25 @@
+node_modules
+dist
+*.local
+signing.local
+src-tauri/target
+src-tauri/gen/schemas
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+
+# sift: derived state and private notes
+_sift/.cache/
+_sift/local/
+
+__pycache__/
+
+# tools/screenshots.py's demo files, and the scenes the docs don't show
+.demo/
+tools/screenshots/out/
+
+# tools/helpbook.py builds the Help Book here from docs/
+src-tauri/gen/help
+
+# The archived build plan and other local-only papers
+archive/

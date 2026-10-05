@@ -1,0 +1,165 @@
+{
+  "day:2026-09-30": {
+    "kind": "day",
+    "date": "2026-09-30",
+    "start": "2026-09-30",
+    "end": "2026-09-30",
+    "days": ["2026-09-30"],
+    "heading": "## Daily review 2026-09-30",
+    "file": "Me. Daily Reviews - 2026-09.md",
+    "prev": "2026-09-29",
+    "prev_heading": "## Daily review 2026-09-29",
+    "prev_file": "Me. Daily Reviews - 2026-09.md"
+  },
+  "day:2026-10-01": {
+    "kind": "day",
+    "date": "2026-10-01",
+    "start": "2026-10-01",
+    "end": "2026-10-01",
+    "days": ["2026-10-01"],
+    "heading": "## Daily review 2026-10-01",
+    "file": "Me. Daily Reviews - 2026-10.md",
+    "prev": "2026-09-30",
+    "prev_heading": "## Daily review 2026-09-30",
+    "prev_file": "Me. Daily Reviews - 2026-09.md"
+  },
+  "day:2026-01-01": {
+    "kind": "day",
+    "date": "2026-01-01",
+    "start": "2026-01-01",
+    "end": "2026-01-01",
+    "days": ["2026-01-01"],
+    "heading": "## Daily review 2026-01-01",
+    "file": "Me. Daily Reviews - 2026-01.md",
+    "prev": "2025-12-31",
+    "prev_heading": "## Daily review 2025-12-31",
+    "prev_file": "Me. Daily Reviews - 2025-12.md"
+  },
+  "day:2024-03-01": {
+    "kind": "day",
+    "date": "2024-03-01",
+    "start": "2024-03-01",
+    "end": "2024-03-01",
+    "days": ["2024-03-01"],
+    "heading": "## Daily review 2024-03-01",
+    "file": "Me. Daily Reviews - 2024-03.md",
+    "prev": "2024-02-29",
+    "prev_heading": "## Daily review 2024-02-29",
+    "prev_file": "Me. Daily Reviews - 2024-02.md"
+  },
+  "day:2024-02-29": {
+    "kind": "day",
+    "date": "2024-02-29",
+    "start": "2024-02-29",
+    "end": "2024-02-29",
+    "days": ["2024-02-29"],
+    "heading": "## Daily review 2024-02-29",
+    "file": "Me. Daily Reviews - 2024-02.md",
+    "prev": "2024-02-28",
+    "prev_heading": "## Daily review 2024-02-28",
+    "prev_file": "Me. Daily Reviews - 2024-02.md"
+  },
+  "week:2026-W40": {
+    "kind": "week",
+    "week": "2026-W40",
+    "start": "2026-09-28",
+    "end": "2026-10-04",
+    "days": ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"],
+    "heading": "## Weekly review 2026-W40",
+    "file": "Me. Weekly Reviews - 2026-10.md",
+    "prev": "2026-W39",
+    "prev_heading": "## Weekly review 2026-W39",
+    "prev_file": "Me. Weekly Reviews - 2026-09.md",
+    "daily_files": ["Me. Daily Reviews - 2026-09.md", "Me. Daily Reviews - 2026-10.md"]
+  },
+  "week:2026-w01": {
+    "kind": "week",
+    "week": "2026-W01",
+    "start": "2025-12-29",
+    "end": "2026-01-04",
+    "days": ["2025-12-29", "2025-12-30", "2025-12-31", "2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"],
+    "heading": "## Weekly review 2026-W01",
+    "file": "Me. Weekly Reviews - 2026-01.md",
+    "prev": "2025-W52",
+    "prev_heading": "## Weekly review 2025-W52",
+    "prev_file": "Me. Weekly Reviews - 2025-12.md",
+    "daily_files": ["Me. Daily Reviews - 2025-12.md", "Me. Daily Reviews - 2026-01.md"]
+  },
+  "week:2026-W53": {
+    "kind": "week",
+    "week": "2026-W53",
+    "start": "2026-12-28",
+    "end": "2027-01-03",
+    "days": ["2026-12-28", "2026-12-29", "2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02", "2027-01-03"],
+    "heading": "## Weekly review 2026-W53",
+    "file": "Me. Weekly Reviews - 2027-01.md",
+    "prev": "2026-W52",
+    "prev_heading": "## Weekly review 2026-W52",
+    "prev_file": "Me. Weekly Reviews - 2026-12.md",
+    "daily_files": ["Me. Daily Reviews - 2026-12.md", "Me. Daily Reviews - 2027-01.md"]
+  },
+  "week:2020-W53": {
+    "kind": "week",
+    "week": "2020-W53",
+    "start": "2020-12-28",
+    "end": "2021-01-03",
+    "days": ["2020-12-28", "2020-12-29", "2020-12-30", "2020-12-31", "2021-01-01", "2021-01-02", "2021-01-03"],
+    "heading": "## Weekly review 2020-W53",
+    "file": "Me. Weekly Reviews - 2021-01.md",
+    "prev": "2020-W52",
+    "prev_heading": "## Weekly review 2020-W52",
+    "prev_file": "Me. Weekly Reviews - 2020-12.md",
+    "daily_files": ["Me. Daily Reviews - 2020-12.md", "Me. Daily Reviews - 2021-01.md"]
+  },
+  "week:2025-W01": {
+    "kind": "week",
+    "week": "2025-W01",
+    "start": "2024-12-30",
+    "end": "2025-01-05",
+    "days": ["2024-12-30", "2024-12-31", "2025-01-01", "2025-01-02", "2025-01-03", "2025-01-04", "2025-01-05"],
+    "heading": "## Weekly review 2025-W01",
+    "file": "Me. Weekly Reviews - 2025-01.md",
+    "prev": "2024-W52",
+    "prev_heading": "## Weekly review 2024-W52",
+    "prev_file": "Me. Weekly Reviews - 2024-12.md",
+    "daily_files": ["Me. Daily Reviews - 2024-12.md", "Me. Daily Reviews - 2025-01.md"]
+  },
+  "week:2026-W36": {
+    "kind": "week",
+    "week": "2026-W36",
+    "start": "2026-08-31",
+    "end": "2026-09-06",
+    "days": ["2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06"],
+    "heading": "## Weekly review 2026-W36",
+    "file": "Me. Weekly Reviews - 2026-09.md",
+    "prev": "2026-W35",
+    "prev_heading": "## Weekly review 2026-W35",
+    "prev_file": "Me. Weekly Reviews - 2026-08.md",
+    "daily_files": ["Me. Daily Reviews - 2026-08.md", "Me. Daily Reviews - 2026-09.md"]
+  },
+  "week:2026-W27": {
+    "kind": "week",
+    "week": "2026-W27",
+    "start": "2026-06-29",
+    "end": "2026-07-05",
+    "days": ["2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-03", "2026-07-04", "2026-07-05"],
+    "heading": "## Weekly review 2026-W27",
+    "file": "Me. Weekly Reviews - 2026-07.md",
+    "prev": "2026-W26",
+    "prev_heading": "## Weekly review 2026-W26",
+    "prev_file": "Me. Weekly Reviews - 2026-06.md",
+    "daily_files": ["Me. Daily Reviews - 2026-06.md", "Me. Daily Reviews - 2026-07.md"]
+  },
+  "week:2025-W53": {
+    "error": "Invalid week: 53"
+  },
+  "week:2026-W54": {
+    "error": "ISO week out of range: '2026-W54'"
+  },
+  "week:2026-W00": {
+    "error": "ISO week out of range: '2026-W00'"
+  },
+  "week:bad": {
+    "error": "expected an ISO week like 2026-W21, got 'bad'"
+  }
+}

@@ -1,0 +1,48 @@
+// Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or later.
+// See LICENSE for the full text.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import { describe, expect, it } from "vitest";
+import { plainSegments, plainText } from "./plainText";
+
+describe("plainText", () => {
+  it("drops emphasis and keeps the words", () => {
+    expect(plainText("**Source:** the *launch* plan, ~~old~~ and ==new== `code`")).toBe("Source: the launch plan, old and new code");
+  });
+  it("turns links into their text", () => {
+    expect(plainText("See [[Orbit App]] and [[Orbit App#Launch|the launch]] and [the brief](Briefs/Brief.md)")).toBe(
+      "See Orbit App and the launch and the brief",
+    );
+  });
+  it("drops task boxes, bullets and inline fields", () => {
+    expect(plainText("- [ ] Call Maya about the launch [effort:: 2] (due:: 2026-10-01)")).toBe("Call Maya about the launch");
+    expect(plainText("- [x] Done thing")).toBe("Done thing");
+  });
+  it("cuts a URL to its domain", () => {
+    expect(plainText("Read https://www.example.com/a/b?c=1 today")).toBe("Read example.com today");
+  });
+  it("drops Templater code", () => {
+    expect(plainText('Date: <% tp.date.now("YYYY-MM-DD") %> done')).toBe("Date: done");
+  });
+  it("leaves snake_case and maths alone", () => {
+    expect(plainText("set max_retry_count to 2 * 3 * 4")).toBe("set max_retry_count to 2 * 3 * 4");
+  });
+  it("drops headings and block ids", () => {
+    expect(plainText("## Plan ^abc123")).toBe("Plan");
+  });
+});
+
+describe("plainSegments", () => {
+  it("keeps the matched words marked", () => {
+    expect(
+      plainSegments([
+        { text: "**", hit: false },
+        { text: "Source", hit: true },
+        { text: ":** [[Orbit App|Orbit]]", hit: false },
+      ]),
+    ).toEqual([
+      { text: "Source", hit: true },
+      { text: ": Orbit", hit: false },
+    ]);
+  });
+});

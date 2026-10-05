@@ -1,0 +1,185 @@
+<!doctype html>
+<!-- Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or later. -->
+<!-- See LICENSE for the full text. -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Ingest thread</title>
+    <style>
+      /* One palette, defined light-first on :root and re-pointed under
+         prefers-color-scheme: dark. Every colour below MUST come from a token —
+         the first version of this popup hardcoded light values (#455A64 status
+         text, #2E7D32 green) which turned into near-invisible dark-on-dark once
+         the browser was in dark mode. */
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #21313c;
+        --muted: #4b5c66;
+        --ok: #1b7031;
+        --err: #b3261e;
+        --accent: #1976d2;
+        --accent-hover: #1565c0;
+        --on-accent: #ffffff;
+        --disabled-bg: #eceff1;
+        --disabled-fg: #5c6b73;
+        --rule: rgba(120, 144, 156, 0.35);
+        --field-bg: #ffffff;
+        --field-border: #78868e;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1f2124;
+          --fg: #eceff1;
+          --muted: #b3c0c8;
+          --ok: #81c784;
+          --err: #f28b82;
+          --accent: #1976d2;
+          --accent-hover: #1565c0;
+          --on-accent: #ffffff;
+          --disabled-bg: #3a464e;
+          --disabled-fg: #b3c0c8;
+          --rule: rgba(176, 190, 197, 0.24);
+          --field-bg: #2a2d31;
+          --field-border: #6d7982;
+        }
+      }
+      body {
+        font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 0;
+        padding: 14px 16px;
+        width: 340px;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      h1 { font-size: 13px; font-weight: 600; margin: 0 0 10px; }
+      h2 {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+        margin: 0 0 8px;
+      }
+      button {
+        appearance: none;
+        background: var(--accent);
+        color: var(--on-accent);
+        border: 0;
+        border-radius: 4px;
+        padding: 8px 12px;
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
+        width: 100%;
+      }
+      button:hover:not(:disabled) { background: var(--accent-hover); }
+      button:disabled {
+        background: var(--disabled-bg);
+        color: var(--disabled-fg);
+        cursor: not-allowed;
+      }
+      #status {
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--fg);
+      }
+      #status:empty { display: none; }
+      #status.error { color: var(--err); }
+      #status.ok { color: var(--ok); }
+      .hint {
+        margin-top: 10px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid var(--rule);
+        margin: 14px 0 12px;
+      }
+      #selection {
+        font-size: 12px;
+        color: var(--fg);
+        margin-bottom: 10px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        font-size: 12px;
+        color: var(--fg);
+      }
+      .row label { display: flex; align-items: center; gap: 5px; }
+      input[type="radio"] { accent-color: var(--accent); margin: 0; }
+      input[type="text"],
+      input[type="number"] {
+        background: var(--field-bg);
+        color: var(--fg);
+        border: 1px solid var(--field-border);
+        border-radius: 3px;
+        padding: 3px 6px;
+        font: inherit;
+      }
+      input::placeholder { color: var(--muted); opacity: 1; }
+      input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .row input[type="number"] { width: 52px; }
+      .row input[type="text"] { flex: 1; min-width: 0; }
+      #log {
+        margin-top: 10px;
+        max-height: 132px;
+        overflow-y: auto;
+        font-size: 11px;
+        line-height: 1.5;
+        color: var(--muted);
+        overflow-wrap: anywhere;
+      }
+      #log:empty { display: none; }
+      #log .ok { color: var(--ok); }
+      #log .error { color: var(--err); }
+    </style>
+  </head>
+  <body>
+    <h1>Brainstead — Outlook capture</h1>
+    <button id="go">Ingest current thread</button>
+    <div class="hint">
+      Captures the visible Outlook thread and writes
+      "sources/Email. Thread. &lt;subject&gt; - &lt;date&gt;.md".
+    </div>
+
+    <hr />
+
+    <h2>Selected threads</h2>
+    <div id="selection">Checking the message list…</div>
+    <div class="row">
+      <label><input type="radio" name="mode" value="separate" checked /> One file each</label>
+      <label><input type="radio" name="mode" value="combined" /> One combined file</label>
+    </div>
+    <div class="row" id="label-row" hidden>
+      <label for="label">Name</label>
+      <input type="text" id="label" placeholder="e.g. Northwind renewal" />
+    </div>
+    <div class="row">
+      <label for="limit">Capture at most</label>
+      <input type="number" id="limit" min="1" max="25" value="10" />
+      <span>threads</span>
+    </div>
+    <button id="go-batch" disabled>Ingest selected threads</button>
+    <div class="hint">
+      Counting scrolls the list to find checked threads below the fold, then puts
+      it back. Each thread is then opened in turn to read its full bodies, a few
+      seconds each. The run continues if you close this popup or switch tabs —
+      the toolbar badge shows progress, and reopening shows the log. It marks the
+      threads read and clears your checkbox selection.
+    </div>
+
+    <div id="status"></div>
+    <div id="log"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>

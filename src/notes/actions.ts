@@ -1,0 +1,145 @@
+// Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or later.
+// See LICENSE for the full text.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// What the note editor's toolbar and the file menu can do to a file: copy it as rich text, export
+// it as a PDF, rename it, move it to the Trash. The clipboard and the PDF are done in Rust (§5.3).
+
+import { withDraftHandedOver } from "../drafts";
+import { useEffect, useState } from "react";
+import { save } from "@tauri-apps/plugin-dialog";
+import { splitTablesForPrint } from "./printTables";
+import { api, EditError } from "../api";
+import { nav, place } from "../nav";
+import { useVaultVersion } from "../state";
+import { reportEditError, undoLast } from "../taskModel";
+import { toast } from "../Toast";
+import { noteDialog } from "./dialogs";
+
+/** An error from Rust as one line for a person. */
+export const errText = (e: unknown) => (typeof e === "object" && e && "message" in e ? String((e as EditError).message) : String(e));
+
+/** The rendered document as HTML and plain text, without the app's own controls. */
+export function richOf(el: HTMLElement): { html: string; text: string } {
+  const c = el.cloneNode(true) as HTMLElement;
+  c.querySelectorAll("button, .tqhead, [data-no-copy]").forEach((n) => n.remove());
+  c.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach((n) => n.replaceWith(n.checked ? "☑ " : "☐ "));
+  return { html: c.innerHTML, text: (c.innerText ?? c.textContent ?? "").trim() };
+}
+
+/** Copies a rendered document (the read view's element). Rust inlines its vault images. */
+export async function copyRich(el: HTMLElement): Promise<void> {
+  const { html, text } = richOf(el);
+  try {
+    await api.copyRich(html, text);
+    toast("Copied as rich text");
+  } catch (e) {
+    toast(errText(e), undefined, "bad");
+  }
+}
+
+/** Asks where to save, then prints the window's document (its print styles) to a PDF there. */
+export async function exportPdf(title: string): Promise<void> {
+  const dest = await save({ defaultPath: `${title}.pdf`, filters: [{ name: "PDF", extensions: ["pdf"] }] });
+  if (!dest) return;
+  // Long tables repeat their header on each page (WebKit's print doesn't): split for the print,
+  // put back after.
+  const { restore, forced } = splitTablesForPrint();
+  toast("Exporting as PDF…");
+  try {
+    await api.exportPdf(dest, title, forced);
+    toast("Exported as PDF", { label: "Show", run: () => void api.reveal(dest).catch(() => {}) });
+  } catch (e) {
+    toast(errText(e), undefined, "bad");
+  } finally {
+    restore();
+  }
+}
+
+export function openRename(path: string): void {
+  noteDialog.set({ kind: "rename", path });
+}
+
+/** Moves a file to the vault's `.trash/`, with Undo. Leaves the document if it was open. */
+export async function trashFile(path: string): Promise<void> {
+  try {
+    const entry = await withDraftHandedOver(path, () => api.trashMove(path));
+    const here = place.get().place;
+    if (here.screen === "doc" && here.path === path) {
+      if (place.get().canBack) nav.back();
+      else nav.go("notes");
+    }
+    toast(`Moved “${entry.basename}” to the Trash`, {
+      label: "Undo",
+      run: () =>
+        void api
+          .trashRestore(entry.id, null)
+          .then(() => toast("Put back"))
+          .catch(reportEditError),
+    });
+  } catch (e) {
+    reportEditError(e);
+  }
+}
+
+/** The actions the Note menu, the toolbar and the file menu share. */
+export type FileAction = "copy-markdown" | "copy-rich" | "copy-path" | "copy-title" | "export-pdf" | "rename" | "reveal" | "trash";
+
+/** Runs one on a file; `el` is the open document's rendered element, for rich copy and PDF. */
+export async function fileAction(a: FileAction, f: { path: string; title: string }, el?: HTMLElement | null): Promise<void> {
+  try {
+    switch (a) {
+      case "copy-markdown":
+        await api.copyFile(f.path);
+        return toast("Markdown copied");
+      case "copy-rich":
+        if (el) await copyRich(el);
+        return;
+      case "copy-path":
+        await api.copyText(f.path);
+        return toast("Path copied");
+      case "copy-title":
+        await api.copyText(f.title);
+        return toast("Title copied");
+      case "export-pdf":
+        return await exportPdf(f.title);
+      case "rename":
+        return openRename(f.path);
+      case "reveal":
+        await api.reveal(f.path);
+        return toast("Shown in Finder");
+      case "trash":
+        return await trashFile(f.path);
+    }
+  } catch (e) {
+    toast(errText(e), undefined, "bad");
+  }
+}
+
+/** Bookmarks or un-bookmarks a note (Me. Bookmarks.md), with Undo. */
+export async function toggleBookmark(path: string): Promise<void> {
+  try {
+    const on = await api.bookmarkToggle(path);
+    toast(on ? "Bookmarked" : "Bookmark removed", { label: "Undo", kbd: "⌘Z", run: () => void undoLast() }, "ok");
+  } catch (e) {
+    reportEditError(e);
+  }
+}
+
+/** Whether a note is in the bookmarks, kept current as the vault changes. */
+export function useBookmarked(path: string | undefined): boolean {
+  const [on, setOn] = useState(false);
+  const v = useVaultVersion();
+  useEffect(() => {
+    if (!path) return;
+    let live = true;
+    api
+      .bookmarks()
+      .then((b) => live && setOn(b.some((x) => x.path === path)))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [path, v]);
+  return on;
+}

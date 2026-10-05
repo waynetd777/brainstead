@@ -1,0 +1,89 @@
+[
+  {
+    "name": "ingest a document",
+    "kind": "ingest",
+    "model": "claude:sonnet",
+    "source": "sources/emails/Email. Steerco minutes - 2026-09-28.md",
+    "expect": [
+      "Proposes a summary page in wiki/summaries/ because the source is a document",
+      "Updates the Orbit App page with the new staff launch date (28 November), dated, keeping what is still true",
+      "Cites the source inline as [[Email. Steerco minutes - 2026-09-28]]"
+    ]
+  },
+  {
+    "name": "ingest a journal note",
+    "kind": "ingest",
+    "model": "claude:sonnet",
+    "source": "Meeting. Orbit App Steerco - 2026-09-30.md",
+    "expect": ["Proposes no summary page, since a meeting note is already the summary", "Any page change it proposes cites the meeting note"]
+  },
+  {
+    "name": "meeting note from a 1-1 transcript",
+    "kind": "meeting",
+    "owner": "Maya",
+    "transcript": {
+      "name": "Teams. Transcript. Lena, Maya - 2026-09-03.md",
+      "text": "00:01 Maya: Thanks for making time. Let's start with the Orbit App launch.\n00:02 Lena: The pen test closes on the 30th, so staff launch moves to 28 November.\n00:04 Maya: OK. I'll tell the steerco and update the launch plan.\n00:06 Lena: I'll send Sam the revised comms timeline by Friday.\n00:08 Maya: And can you and Theo agree the support rota?\n00:09 Lena: Yes, we'll do that next week.\n"
+    },
+    "expect": [
+      "Is a 1-1 with Lena dated 2026-09-03",
+      "Opens Notes with a short summary, then a few topic sub-sections, not a replay of the transcript",
+      "Maya's own actions are tasks (- [ ]); Lena's and Theo's are plain bullets",
+      "Does not cite or link the transcript"
+    ]
+  },
+  {
+    "name": "contradiction between two pages",
+    "kind": "contradictions",
+    "plant": {
+      "path": "wiki/concepts/Launch plan.md",
+      "text": "---\ntype: concept\nname: Launch plan\nupdated: 2026-09-29\n---\n\n## Current state\n\nThe [[Orbit App]] soft launch to staff is planned for 28 November, after the pen test closes. Maya owns the launch plan.\n"
+    },
+    "expect": ["Finds that the Orbit App page and the Launch plan page give different launch dates", "Proposes fixing the Orbit App page, not the meeting notes"]
+  },
+  {
+    "name": "wiki question",
+    "kind": "wiki",
+    "question": "When is the Orbit App staff launch?",
+    "expect": ["Answers from the vault with [[Page]] citations", "Says the date moved from 14 November to 28 November (or gives 28 November as the latest)"]
+  },
+  {
+    "name": "question the vault can't answer",
+    "kind": "wiki",
+    "question": "What is the capital of France?",
+    "expect": ["Says the vault has nothing on it (or answers briefly from general knowledge, saying so) rather than inventing citations"]
+  },
+  {
+    "name": "fix a name",
+    "kind": "fixname",
+    "wrong": "Sam",
+    "right": "Sam Carter",
+    "expect": []
+  },
+  {
+    "name": "help question",
+    "kind": "help",
+    "question": "How do I change the quick capture shortcut?",
+    "right": "General",
+    "expect": [
+      "Answers from Brainstead's own help, not from the vault's notes",
+      "Says the shortcut is changed in Settings › General (with the default ⌃⌥Space or how to record a new one)"
+    ]
+  },
+  {
+    "name": "prepare the weekly review",
+    "kind": "weekprep",
+    "plant": {
+      "path": "1-1. Lena - 2026-10-01.md",
+      "text": "---\ntags: [1-1]\n---\n## Notes\n- Lena says the pen test report is back and the contract with Acme is signed.\n- The rota for the launch weekend is still open. I'll send Lena the revised rota by Friday.\n- Lena will send me the budget figures for the launch party next week.\n- Staff launch is now 28 November, and the comms plan is due at the steerco on 9 October.\n- The support handbook is out of date: Lena thinks it needs a page of its own.\n\n## Actions\n- [ ] Sign the Acme contract ➕ 2026-08-20\n- [ ] Book the launch venue\n"
+    },
+    "expect": [
+      "Suggestions come from the week's notes and lists as given; nothing is invented",
+      "Doesn't suggest adding a task that is already open, such as confirming the launch date with Sam or Zara signing off the operating model",
+      "Tasks to add are written as next actions that start with a verb",
+      "Prompts (loose ends, new ideas) are specific to the week rather than generic GTD advice",
+      "From the 1-1 with Lena: sending Lena the rota is the user's own action, and Lena's budget figures are waiting for",
+      "Suggests ticking the Acme contract task, since the note says it's signed"
+    ]
+  }
+]

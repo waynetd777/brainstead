@@ -1,0 +1,9 @@
+# Copy to signing.local (untracked) and set the name of the self-signed certificate in your
+# login keychain that `make app` should sign the bundle with. Creating one: Keychain Access →
+# Certificate Assistant → Create a Certificate, name "Brainstead Dev", identity type
+# "Self-Signed Root", certificate type "Code Signing".
+#
+# A stable signature keeps macOS's permissions (Full Disk Access, Keychain items) across
+# rebuilds. Brainstead has its own certificate: never reuse a sibling app's certificate,
+# because macOS ties those grants to the signing identity.
+APPLE_SIGNING_IDENTITY = Brainstead Dev

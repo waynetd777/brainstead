@@ -1,0 +1,49 @@
+<!doctype html><meta charset="utf-8"><title>fake OWA list + reading pane</title>
+<!-- Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or later. -->
+<!-- See LICENSE for the full text. -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+
+<style>
+  body { margin: 0; font: 13px sans-serif; display: flex; }
+  #outer { height: 400px; width: 300px; overflow-y: auto; position: relative; }
+  #spacer { position: relative; }
+  .row { position: absolute; left: 0; right: 0; height: 80px; box-sizing: border-box;
+         border-bottom: 1px solid #ccc; padding: 4px; }
+  #pane { flex: 1; padding: 8px; }
+</style>
+<div id="outer"><div id="spacer"></div></div>
+<div id="pane" aria-label="Message body">Nothing selected</div>
+<script>
+  const TOTAL = 60, ROW_H = 80, BUFFER = 2;
+  const outer = document.getElementById('outer');
+  const spacer = document.getElementById('spacer');
+  const pane = document.getElementById('pane');
+  spacer.style.height = TOTAL * ROW_H + 'px';
+  window.__clicks = [];
+  // How OWA behaves: clicking a row collapses the selection to that row and
+  // loads its body into the reading pane after a short delay.
+  window.__selected = new Set([0, 1, 14, 33, 59]);
+  function render() {
+    const first = Math.max(0, Math.floor(outer.scrollTop / ROW_H) - BUFFER);
+    const last = Math.min(TOTAL - 1, Math.ceil((outer.scrollTop + outer.clientHeight) / ROW_H) + BUFFER);
+    for (const el of [...spacer.children]) el.remove();
+    for (let i = first; i <= last; i++) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.style.top = i * ROW_H + 'px';
+      row.setAttribute('role', 'option');
+      row.setAttribute('data-convid', 'conv-' + i);
+      if (window.__selected.has(i)) row.setAttribute('aria-selected', 'true');
+      row.innerHTML = '<div>Sender ' + i + '</div><div>Subject ' + i + '</div>';
+      row.addEventListener('click', () => {
+        window.__clicks.push(i);
+        window.__selected = new Set([i]);
+        render();
+        setTimeout(() => { pane.textContent = 'Body of message ' + i + ' lorem ipsum'; }, 250);
+      });
+      spacer.append(row);
+    }
+  }
+  outer.addEventListener('scroll', render);
+  render();
+</script>

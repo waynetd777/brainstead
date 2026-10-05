@@ -1,0 +1,38 @@
+{
+  "create": {
+    "text": "> **This is a system note** - Append-only log of `/daily-review` runs for 2026-09. Newest at top. Read by `/weekly-review` when synthesising the week.\n\n## Daily review 2026-09-30\n\n- **Work done** — new.\n",
+    "action": "created"
+  },
+  "create-blank-no-header": {
+    "text": "## Daily review 2026-09-30\n\n- **Work done** — no heading given.\n",
+    "action": "created"
+  },
+  "prepend": {
+    "text": "> **This is a system note** - Append-only log of `/daily-review` runs for 2026-09. Newest at top. Read by `/weekly-review` when synthesising the week.\n\n## Daily review 2026-09-30\n\n- **Inbox** — 2 entries.\n\n---\n\n## Daily review 2026-09-29\n\n- **Work done** — one.\n\n---\n\n## Daily review 2026-09-28\n\n- **Work done** — two.\n",
+    "action": "prepended"
+  },
+  "replace-first": {
+    "text": "> **This is a system note** - Append-only log of `/daily-review` runs for 2026-09. Newest at top. Read by `/weekly-review` when synthesising the week.\n\n## Daily review 2026-09-29\n\n- **Work done** — replaced.\n- **Personal** — added.\n\n---\n\n## Daily review 2026-09-28\n\n- **Work done** — two.\n",
+    "action": "replaced"
+  },
+  "replace-last": {
+    "text": "> **This is a system note** - Append-only log of `/daily-review` runs for 2026-09. Newest at top. Read by `/weekly-review` when synthesising the week.\n\n## Daily review 2026-09-29\n\n- **Work done** — one.\n\n---\n\n## Daily review 2026-09-28\n\n- **Work done** — replaced last.\n",
+    "action": "replaced"
+  },
+  "replace-tight": {
+    "text": "> **This is a system note** - Append-only log of `/daily-review` runs for 2026-09. Newest at top. Read by `/weekly-review` when synthesising the week.\n\n## Daily review 2026-09-29\n\n- new\n\n---\n## Daily review 2026-09-28\n- two",
+    "action": "replaced"
+  },
+  "replace-subheadings": {
+    "text": "## Weekly review 2026-W40\n\n### Get Clear\n\nnew\n\n---\n\n## Weekly review 2026-W39\n\nolder\n",
+    "action": "replaced"
+  },
+  "prepend-no-note": {
+    "text": "## Daily review 2026-09-29\n\n- one\n\n---\n\n## Daily review 2026-09-28\n\n- two\n",
+    "action": "prepended"
+  },
+  "prepend-note-only": {
+    "text": "> **This is a system note** - Append-only log of `/daily-review` runs for 2026-09. Newest at top. Read by `/weekly-review` when synthesising the week.\n\n## Daily review 2026-09-29\n\n- one\n",
+    "action": "prepended"
+  }
+}

@@ -1,0 +1,2 @@
+{"type": "user", "timestamp": "2026-09-30T05:00:00.000Z", "message": {"role": "user", "content": "You are writing a one-line summary of pending items"}, "cwd": "/home/me/.batchbot/workdir"}
+{"type": "assistant", "timestamp": "2026-09-30T05:00:05.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "ok"}]}}

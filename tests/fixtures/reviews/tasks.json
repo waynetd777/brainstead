@@ -1,0 +1,267 @@
+{
+  "open": [
+    {
+      "id": "1-1. Maya - 2026-09-23.md:1",
+      "text": "Role-level layering for the tables #followup 📅 2026-10-02",
+      "path": "1-1. Maya - 2026-09-23.md",
+      "heading": "Follow-ups",
+      "tags": ["followup"],
+      "due": "2026-10-02",
+      "doneOn": null
+    },
+    {
+      "id": "1-1. Maya - 2026-09-23.md:2",
+      "text": "Learning budget #someday-maybe",
+      "path": "1-1. Maya - 2026-09-23.md",
+      "heading": "Follow-ups",
+      "tags": ["someday-maybe"],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Idea. Launch prep.md:2",
+      "text": "Book the launch room [[OA launch]] #context/office [effort:: 15m]",
+      "path": "Idea. Launch prep.md",
+      "heading": "Launch prep",
+      "tags": ["context/office"],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Idea. Launch prep.md:3",
+      "text": "Ask about posters for [[Project. Orbit App launch|the launch]] and [[Project. Hub migration]]",
+      "path": "Idea. Launch prep.md",
+      "heading": "Launch prep",
+      "tags": [],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Me. To Do List.md:35",
+      "text": "Walk through the Dashboard — every card has a help drawer (?) in the top-right",
+      "path": "Me. To Do List.md",
+      "heading": "Other",
+      "tags": [],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Me. To Do List.md:36",
+      "text": "Read `CLAUDE.md` at the vault root and adapt it to how your vault is organised",
+      "path": "Me. To Do List.md",
+      "heading": "Other",
+      "tags": [],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Me. To Do List.md:37",
+      "text": "Try `⌘⌥C` to open Chat — type `/` to see the bundled skills",
+      "path": "Me. To Do List.md",
+      "heading": "Other",
+      "tags": [],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Me. To Do List.md:38",
+      "text": "Try `⌘⌥N` to scaffold a new note from a Template",
+      "path": "Me. To Do List.md",
+      "heading": "Other",
+      "tags": [],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Me. To Do List.md:39",
+      "text": "Try typing `due:` here in edit mode — it pops a date picker that writes 📅 YYYY-MM-DD",
+      "path": "Me. To Do List.md",
+      "heading": "Other",
+      "tags": [],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Me. To Do List.md:40",
+      "text": "Example follow-up — this row also appears in **Follow-ups** above #followup",
+      "path": "Me. To Do List.md",
+      "heading": "Other",
+      "tags": ["followup"],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Me. To Do List.md:41",
+      "text": "Example waiting item — this row also appears in **Waiting for** above #waiting-for",
+      "path": "Me. To Do List.md",
+      "heading": "Other",
+      "tags": ["waiting-for"],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Me. To Do List.md:42",
+      "text": "Example someday item — this row also appears in **Someday/Maybe** above #someday-maybe",
+      "path": "Me. To Do List.md",
+      "heading": "Other",
+      "tags": ["someday-maybe"],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Meeting. Orbit App Steerco - 2026-09-30.md:33",
+      "text": "Zara to sign off the operating model #waiting-for ➕ 2026-09-30",
+      "path": "Meeting. Orbit App Steerco - 2026-09-30.md",
+      "heading": "Actions",
+      "tags": ["waiting-for"],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Meeting. Orbit App Steerco - 2026-09-30.md:35",
+      "text": "Reopened in another editor",
+      "path": "Meeting. Orbit App Steerco - 2026-09-30.md",
+      "heading": "Actions",
+      "tags": [],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Meeting. Orbit App Steerco - 2026-09-30.md:36",
+      "text": "Nested subtask ⏳ 2026-10-05 🛫 2026-10-01 #project/orbit-app",
+      "path": "Meeting. Orbit App Steerco - 2026-09-30.md",
+      "heading": "Actions",
+      "tags": ["project/orbit-app"],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Project. Garden.md:7",
+      "text": "Buy compost #context/errands (effort:: 30 min)",
+      "path": "Project. Garden.md",
+      "heading": "Next actions",
+      "tags": ["context/errands"],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Project. Hub migration.md:9",
+      "text": "Vendor quote for the licence #waiting-for",
+      "path": "Project. Hub migration.md",
+      "heading": "Waiting for",
+      "tags": ["waiting-for"],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Project. Orbit App launch.md:9",
+      "text": "Call Sam about the launch date #context/calls [effort:: 15m] 📅 2026-10-06",
+      "path": "Project. Orbit App launch.md",
+      "heading": "Next actions",
+      "tags": ["context/calls"],
+      "due": "2026-10-06",
+      "doneOn": null
+    },
+    {
+      "id": "Project. Orbit App launch.md:10",
+      "text": "Draft the launch comms [effort:: 1h30m]",
+      "path": "Project. Orbit App launch.md",
+      "heading": "Next actions",
+      "tags": [],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Project. Orbit App launch.md:14",
+      "text": "Security sign-off from Lena #waiting-for",
+      "path": "Project. Orbit App launch.md",
+      "heading": "Waiting for",
+      "tags": ["waiting-for"],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Spec. Task queries.md:10",
+      "text": "Take out the trash 🔁 every Sunday 📅 2026-10-04",
+      "path": "Spec. Task queries.md",
+      "heading": "Chores",
+      "tags": [],
+      "due": "2026-10-04",
+      "doneOn": null
+    },
+    {
+      "id": "Spec. Task queries.md:11",
+      "text": "Water the plants 🔁 every 3 days when done ⏳ 2026-10-02",
+      "path": "Spec. Task queries.md",
+      "heading": "Chores",
+      "tags": [],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Spec. Task queries.md:12",
+      "text": "Paint the fence ⏫ 🛫 2026-09-28 📅 2026-10-10",
+      "path": "Spec. Task queries.md",
+      "heading": "Chores",
+      "tags": [],
+      "due": "2026-10-10",
+      "doneOn": null
+    },
+    {
+      "id": "Spec. Task queries.md:14",
+      "text": "Order the parts 🆔 parts1 🔼",
+      "path": "Spec. Task queries.md",
+      "heading": "Chores",
+      "tags": [],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Spec. Task queries.md:15",
+      "text": "Fit the parts ⛔ parts1 🔽",
+      "path": "Spec. Task queries.md",
+      "heading": "Chores",
+      "tags": [],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Spec. Task queries.md:16",
+      "text": "One-off reminder 🏁 delete 📅 2026-10-05",
+      "path": "Spec. Task queries.md",
+      "heading": "Chores",
+      "tags": [],
+      "due": "2026-10-05",
+      "doneOn": null
+    },
+    {
+      "id": "Meeting. Orbit App Steerco - 2026-09-30.md:32",
+      "text": "Confirm the launch date with Sam 📅 2026-10-03 #followup",
+      "path": "Meeting. Orbit App Steerco - 2026-09-30.md",
+      "heading": "Actions",
+      "tags": ["followup"],
+      "due": "2026-10-03",
+      "doneOn": null
+    }
+  ],
+  "someday": [
+    {
+      "id": "1-1. Maya - 2026-09-23.md:2",
+      "text": "Learning budget #someday-maybe",
+      "path": "1-1. Maya - 2026-09-23.md",
+      "heading": "Follow-ups",
+      "tags": ["someday-maybe"],
+      "due": null,
+      "doneOn": null
+    },
+    {
+      "id": "Me. To Do List.md:42",
+      "text": "Example someday item — this row also appears in **Someday/Maybe** above #someday-maybe",
+      "path": "Me. To Do List.md",
+      "heading": "Other",
+      "tags": ["someday-maybe"],
+      "due": null,
+      "doneOn": null
+    }
+  ]
+}

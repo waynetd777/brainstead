@@ -1,0 +1,46 @@
+# Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or later.
+# See LICENSE for the full text.
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# macOS runs everything (make check). Windows and Linux only compile, so macOS-only code can't
+# creep in outside src-tauri/src/platform (the archived build plan, §2, Cross-platform).
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: "rustfmt, clippy" }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - run: npm ci
+      - run: pipx install ruff
+      - run: make check
+
+  compile:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - name: WebKitGTK and friends
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+      # tauri::generate_context! wants the frontend's output folder to exist.
+      - run: mkdir dist
+      - run: cargo test -p brainstead-core
+        working-directory: src-tauri
+      - run: cargo check --workspace --all-targets
+        working-directory: src-tauri

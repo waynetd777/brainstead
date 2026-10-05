@@ -1,0 +1,26 @@
+{
+  "id": "demo-1",
+  "created": "2026-10-02T08:40:00",
+  "origin": {
+    "kind": "chat",
+    "chat": "Chat. Launch date.md"
+  },
+  "model": "claude:sonnet",
+  "page": "wiki/entities/Orbit App.md",
+  "kind": "edit",
+  "title": "Update the launch date from the steerco minutes",
+  "reason": "The 28 September steerco moved the staff launch.",
+  "base": "3b6317dbd377e4426e9f66b0cc208e4939edf20212fc8018cfd19beb5bfc4991",
+  "before": "---\ntitle: Orbit App\ntype: entity\naliases: [OA, The Orbit App]\ntags: [project, hub]\nsources:\n  - \"[[Roadmap Update 2026-09-18]]\"\n---\n# Orbit App\n\nThe staff app built on the [[Hub Platform]].\n\n## Current state\n\nSoft launch to staff is planned for 14 November. ^q3\n\n## History\n\n- Pilot ran in August.\n",
+  "after": "---\ntitle: Orbit App\ntype: entity\naliases: [OA, The Orbit App]\ntags: [project, hub]\nsources:\n  - \"[[Roadmap Update 2026-09-18]]\"\n---\n# Orbit App\n\nThe staff app built on the [[Hub Platform]].\n\n## Current state\n\nSoft launch to staff is now planned for 28 November, pending pen-test closure ([[Email. Steerco minutes - 2026-09-28]]). ^q3\n\n## History\n\n- Pilot ran in August.\n- Steerco on 28 September moved the staff launch to 28 November.\n",
+  "quotes": [
+    {
+      "source": "Email. Steerco minutes - 2026-09-28",
+      "text": "Staff launch now targeted for 28 November, pending pen-test closure.",
+      "checked": true,
+      "path": "sources/emails/Email. Steerco minutes - 2026-09-28.md"
+    }
+  ],
+  "warnings": [],
+  "status": "pending"
+}

@@ -1,0 +1,92 @@
+{
+  "attributes": ["Role", "job title", "Go-Live", "launch date", "other: Tools Built!", "team size", "colour"],
+  "values": ["The Head of Platform.", "  [[Orbit App]]  team ", "A new owner;", "\"28 November\"", "an apple"],
+  "quotes": [
+    ["Staff launch now targeted for 28 November", "Notes. Staff launch now targeted for 28 November, pending pen-test closure."],
+    ["staff launch targeted 28 November pending closure", "Staff launch now targeted for 28 November, pending pen-test closure."],
+    ["The pilot was cancelled in May", "Staff launch now targeted for 28 November, pending pen-test closure."],
+    ["owned by [[Maya Patel|Maya]]", "It is owned by Maya, who joined in June."],
+    ["", "anything"]
+  ],
+  "pages": [
+    { "path": "wiki/entities/Orbit App.md", "aliases": ["OA", "The Orbit App"] },
+    { "path": "wiki/entities/Maya Patel.md", "aliases": ["Maya"] },
+    { "path": "wiki/entities/Maya Singh.md", "aliases": ["Maya"] },
+    { "path": "wiki/concepts/Hub Platform.md", "aliases": [] }
+  ],
+  "claims": [
+    {
+      "page": "wiki/entities/Orbit App.md",
+      "subject": "Orbit App",
+      "attribute": "go_live_date",
+      "value": "14 November",
+      "as_of": "2026-09-18",
+      "quote": "Soft launch to staff is planned for 14 November"
+    },
+    {
+      "page": "wiki/concepts/Hub Platform.md",
+      "subject": "OA",
+      "attribute": "launch date",
+      "value": "28 November",
+      "as_of": "2026-09-28",
+      "quote": "Staff launch now targeted for 28 November"
+    },
+    {
+      "page": "wiki/concepts/Hub Platform.md",
+      "subject": "[[Orbit App]]",
+      "attribute": "go_live_date",
+      "value": "the 14 November.",
+      "as_of": "",
+      "quote": "launch on 14 November",
+      "updated": "2026-09-20"
+    },
+    {
+      "page": "wiki/entities/Maya Patel.md",
+      "subject": "Maya",
+      "attribute": "role",
+      "value": "Product owner",
+      "as_of": "2026-03",
+      "quote": "Maya is the product owner"
+    },
+    {
+      "page": "wiki/entities/Orbit App.md",
+      "subject": "Maya",
+      "attribute": "role",
+      "value": "Delivery lead",
+      "as_of": "2026-09",
+      "quote": "Maya leads delivery"
+    },
+    {
+      "page": "wiki/entities/Orbit App.md",
+      "subject": "Hub Platform",
+      "attribute": "owner",
+      "value": "Lena",
+      "as_of": "",
+      "quote": "Lena owns the hub"
+    },
+    {
+      "page": "wiki/concepts/Hub Platform.md",
+      "subject": "Hub Platform",
+      "attribute": "owner",
+      "value": "Theo",
+      "as_of": "",
+      "quote": "Theo owns it"
+    },
+    {
+      "page": "wiki/concepts/Hub Platform.md",
+      "subject": "Hub Platform",
+      "attribute": "status",
+      "value": "live",
+      "as_of": "2026-01",
+      "quote": "It went live"
+    },
+    {
+      "page": "wiki/entities/Orbit App.md",
+      "subject": "Hub Platform",
+      "attribute": "status",
+      "value": "Live",
+      "as_of": "2026-09",
+      "quote": "The hub is live"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+[
+  { "label": "batchbot pending summary", "cwd_contains": ".batchbot/workdir", "opening": "You are writing a one-line summary" },
+  { "label": "batchbot record categorisation", "cwd_contains": ".batchbot/workdir" },
+  { "label": "Lexicon word lookup", "cwd_contains": "Lexicon/", "opening": "Define: " },
+  { "label": "Lexicon assistant", "cwd_contains": "Lexicon/" },
+  { "label": "drift report", "opening": "Read docs/drift-reports/" }
+]
