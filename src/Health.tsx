@@ -590,8 +590,8 @@ function SideCards({ r }: { r: LintReport }) {
         ))}
       </div>
       <p className="faint small">
-        Safe fixes (cross-links, dates, log lines) apply straight away and can be undone with ⌘Z. Anything that changes meaning is an agent
-        change, listed in Changes with Revert.
+        Safe fixes (cross-links, dates, log lines, system-note headers) apply straight away and can be undone with ⌘Z. Anything that changes
+        meaning is an agent change, listed in Changes with Revert.
       </p>
     </>
   );

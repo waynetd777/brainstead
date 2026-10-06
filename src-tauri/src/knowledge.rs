@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Knowledge health (stage 7a): runs the lint in the background whenever the index changes, keeps
-//! a day-by-day count for the trend, and applies its safe fixes (cross-links, dates, log lines)
+//! a day-by-day count for the trend, and applies its safe fixes (cross-links, dates, log lines, system-note headers)
 //! straight away, keeping the pages' modification times. Its other fixes are agent changes
 //! (src/changes.rs).
 

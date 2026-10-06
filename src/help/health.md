@@ -20,7 +20,7 @@ Stale pages and claims with no citation are worth a look but aren't counted.
 Hover a check's name for what it looks for. Click a check to see its issues, and click an issue to open its page. **Check now** runs every check again.
 
 ## Fix the safe issues
-Some issues have one right answer, and Brainstead can fix them without asking: adding a missing `[[ ]]` link at the first mention, setting `updated:` to the file's date, and adding a missing line to `log.md`. Click **Fix** on one issue, or **Fix safe issues** in the top bar for all of them. Each fix can be undone with `⌘Z`.
+Some issues have one right answer, and Brainstead can fix them without asking: adding a missing `[[ ]]` link at the first mention, setting `updated:` to the file's date, adding a missing line to `log.md`, and putting back a system note's header as it was. Click **Fix** on one issue, or **Fix safe issues** in the top bar for all of them. Each fix can be undone with `⌘Z`.
 
 ## Deal with the rest
 - **Missing pages**: **Create** makes the page in `wiki/entities/` (from `Templates/Wiki page.md` if you have one) and opens it; **Link to…** points the missing link at an existing page, on each page that links it (listed in Changes, with Revert).
