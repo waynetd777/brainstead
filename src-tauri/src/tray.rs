@@ -67,12 +67,24 @@ fn build(app: &AppHandle) -> tauri::Result<()> {
         .icon_as_template(true)
         .tooltip("Brainstead")
         .on_tray_icon_event(|tray, ev| {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, rect, .. } = ev {
-                toggle(tray.app_handle(), rect);
+            if let TrayIconEvent::Click { button_state, rect, button, .. } = ev {
+                *CLICKED_AT.lock().unwrap() = Some(std::time::Instant::now());
+                if button == MouseButton::Left && button_state == MouseButtonState::Up {
+                    toggle(tray.app_handle(), rect);
+                }
             }
         })
         .build(app)?;
     Ok(())
+}
+
+/// When the icon was last clicked.
+static CLICKED_AT: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+/// Whether macOS's "reopen" (which shows the main window) comes from a click on the icon: with no
+/// window showing, a click that closes the menu can send one too, and should only close the menu.
+pub fn reopen_from_icon() -> bool {
+    CLICKED_AT.lock().unwrap().is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1))
 }
 
 /// When the menu window last closed itself on losing focus.

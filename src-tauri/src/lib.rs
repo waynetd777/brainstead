@@ -1054,7 +1054,9 @@ pub fn run() {
             }
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = ev {
-                tray::show_main(app);
+                if !tray::reopen_from_icon() {
+                    tray::show_main(app);
+                }
             }
         });
 }
