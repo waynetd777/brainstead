@@ -896,6 +896,8 @@ export interface LintCheck {
   id: string;
   title: string;
   classic: boolean;
+  /** Issues the user ignored, left out of items until their page changes. */
+  ignored?: number;
   items: LintItem[];
 }
 
@@ -998,6 +1000,10 @@ export const api = {
   healthReshape: (pages: string[] | null) =>
     invoke<{ run: string; applied: number; failed: string[]; left: number }>("health_reshape", { pages }),
   healthDismiss: (a: string, b: string) => invoke<void>("health_dismiss", { a, b }),
+  /** Ignores an issue (its check and its line) until its page changes. */
+  healthIgnore: (check: string, text: string) => invoke<void>("health_ignore", { check, text }),
+  /** Shows a check's ignored issues again (every check's with null); returns how many. */
+  healthUnignore: (check: string | null) => invoke<number>("health_unignore", { check }),
   healthTrashImage: (path: string) => invoke<string>("health_trash_image", { path }),
   healthCreatePage: (name: string, folder: "entities" | "concepts") => invoke<string>("health_create_page", { name, folder }),
   healthLinkGhost: (target: string, to: string, pages: string[]) => invoke<number>("health_link_ghost", { target, to, pages }),

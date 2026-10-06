@@ -803,6 +803,8 @@ pub fn run() {
             changes::change_project_note,
             knowledge::health_report,
             knowledge::health_fix,
+            knowledge::health_ignore,
+            knowledge::health_unignore,
             knowledge::health_reshape,
             currentstate::current_state_start,
             currentstate::current_state_status,

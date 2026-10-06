@@ -15,7 +15,7 @@ The checks come in two groups.
 
 A system note's header is the "This is a system note" callout at the top of the To Do list, the summaries' notes and the rest, which other parts of Brainstead look for. **Fix** puts it back as Brainstead last saw it.
 
-Stale pages and claims with no citation are worth a look but aren't counted.
+Stale pages, claims with no citation and pages with no Current state are worth a look but aren't counted; their icon is grey rather than amber.
 
 Hover a check's name for what it looks for. Click a check to see its issues, and click an issue to open its page. **Check now** runs every check again.
 
@@ -25,6 +25,7 @@ Some issues have one right answer, and Brainstead can fix them without asking: a
 ## Deal with the rest
 - **Missing pages**: **Create** makes the page in `wiki/entities/` (from `Templates/Wiki page.md` if you have one) and opens it; **Link to…** points the missing link at an existing page, on each page that links it (listed in Changes, with Revert).
 - **Possible duplicates**: **Open the other** compares them; **Not duplicates** stops the pair being flagged.
+- **Anything else** (an orphan page, a stale page, a broken source…): **Ignore** stops listing it, and counting it, until its page changes. The check then says how many it's ignoring; **Show again** lists them again.
 - **Images nothing uses**: **Move to the Trash**, after asking. You can restore them from the Trash.
 - **Sources not yet ingested**: ingest them from [Sources](app:sources). **Ingest** here starts the same ingest; its page changes are listed in [Changes](app:review). A source ingest can't read, such as an SVG or a zip file, shows **Can't ingest** instead.
 

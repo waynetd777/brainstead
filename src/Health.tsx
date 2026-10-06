@@ -15,7 +15,18 @@ import { ingest } from "./Ingest";
 import { Icon } from "./icons";
 import { ingestable } from "./Lists";
 import { useGlance, WikiGlance } from "./Glance";
-import { decisions, fixOf, fixWithAskPrompt, health, pageName, reloadHealth, safeFixes, startKnowledge, trendPoints } from "./knowledge";
+import {
+  ADVISORY,
+  decisions,
+  fixOf,
+  fixWithAskPrompt,
+  health,
+  pageName,
+  reloadHealth,
+  safeFixes,
+  startKnowledge,
+  trendPoints,
+} from "./knowledge";
 import { nav, openDoc, useViewState } from "./nav";
 import { reportEditError, undoLast } from "./taskModel";
 import { toast } from "./Toast";
@@ -296,22 +307,27 @@ function Group({
       <div className="hgroup eyebrow">{title}</div>
       {checks.map((c) => {
         const n = c.items.length;
-        const isOpen = open === c.id && n > 0;
+        const ignored = c.ignored ?? 0;
+        const isOpen = open === c.id && n + ignored > 0;
         return (
           <div key={c.id}>
             <button
               type="button"
-              className={`ck ${n ? "" : "zero"} ${isOpen ? "open" : ""}`}
+              className={`ck ${n + ignored ? "" : "zero"} ${isOpen ? "open" : ""}`}
               aria-expanded={isOpen}
-              title={n ? (isOpen ? "Hide the issues" : "Show the issues") : "Nothing to fix here"}
+              title={n + ignored ? (isOpen ? "Hide the issues" : "Show the issues") : "Nothing to fix here"}
               onClick={() => setOpen(isOpen ? null : c.id)}
             >
-              <Icon name={n ? "info" : "check"} size={14} className={n ? (c.items.some((i) => !i.safe) ? "amber" : "") : "green"} />
+              <Icon
+                name={n ? "info" : "check"}
+                size={14}
+                className={n ? (ADVISORY.has(c.id) ? "advisory" : c.items.some((i) => !i.safe) ? "amber" : "") : "green"}
+              />
               <span className="grow" title={CHECK_TIPS[c.id]}>
                 {c.title}
               </span>
               <span className="c">{n}</span>
-              {n > 0 && <Icon name="chevdown" size={12} style={{ transform: isOpen ? undefined : "rotate(-90deg)" }} />}
+              {n + ignored > 0 && <Icon name="chevdown" size={12} style={{ transform: isOpen ? undefined : "rotate(-90deg)" }} />}
             </button>
             {isOpen && (
               <div className="ckitems">
@@ -321,6 +337,7 @@ function Group({
                   <Row key={i.text} check={c.id} i={i} on={on} />
                 ))}
                 {n > 200 && <p className="faint small">and {n - 200} more</p>}
+                {ignored > 0 && <Ignored check={c.id} n={ignored} />}
               </div>
             )}
           </div>
@@ -423,6 +440,50 @@ function Row({ check, i, on }: { check: string; i: LintItem; on: Handlers }) {
         </BusyButton>
       )}
       {check === "uningested-sources" && page && <IngestButton path={page} />}
+      {!i.safe && !OWN_ACTIONS.has(check) && (
+        <BusyButton
+          id={`ignore:${check}:${i.text}`}
+          className="btn sm ghost"
+          title="Stop listing this issue until its page changes"
+          onClick={() =>
+            act(
+              `ignore:${check}:${i.text}`,
+              () => api.healthIgnore(check, i.text),
+              () => {},
+            )
+          }
+        >
+          Ignore
+        </BusyButton>
+      )}
+    </div>
+  );
+}
+
+/** Checks whose issues have their own buttons, so they get no Ignore. */
+const OWN_ACTIONS = new Set(["missing-pages", "duplicates", "unreferenced-images", "uningested-sources", "page-shape"]);
+
+/** A check's ignored issues: how many, and Show again. */
+function Ignored({ check, n }: { check: string; n: number }) {
+  return (
+    <div className="ckitem">
+      <span className="grow faint small">
+        {n === 1 ? "1 issue ignored until its page changes" : `${n} issues ignored until their pages change`}
+      </span>
+      <BusyButton
+        id={`unignore:${check}`}
+        className="btn sm ghost"
+        title="List this check's ignored issues again"
+        onClick={() =>
+          act(
+            `unignore:${check}`,
+            () => api.healthUnignore(check),
+            () => {},
+          )
+        }
+      >
+        Show again
+      </BusyButton>
     </div>
   );
 }

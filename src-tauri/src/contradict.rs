@@ -407,7 +407,7 @@ pub fn uncited_check(root: &std::path::Path) -> brainstead_core::lint::Check {
             ..Default::default()
         })
         .collect();
-    brainstead_core::lint::Check { id: "uncited-claims", title: "Claims with no citation", classic: false, items }
+    brainstead_core::lint::Check { id: "uncited-claims", title: "Claims with no citation", classic: false, ignored: 0, items }
 }
 
 #[tauri::command]

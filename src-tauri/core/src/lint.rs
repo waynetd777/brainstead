@@ -25,7 +25,7 @@ const LOG: &str = "log.md";
 /// A wiki page unchanged this long, that other notes link to, is worth a look.
 pub const STALE_DAYS: i64 = 90;
 /// Checks that are worth a look but aren't problems: not counted as needing a decision.
-pub const ADVISORY: [&str; 2] = ["stale-pages", "uncited-claims"];
+pub const ADVISORY: [&str; 3] = ["stale-pages", "uncited-claims", "no-current-state"];
 const STALE_MIN_BACKLINKS: usize = 3;
 
 pub(crate) static FRONTMATTER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)\A---\n(.*?)\n---\n").unwrap());
@@ -131,7 +131,14 @@ pub struct Check {
     pub title: &'static str,
     /// The script's checks; false for Brainstead's own.
     pub classic: bool,
+    /// Issues the user ignored, left out of `items` until their page changes.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub ignored: usize,
     pub items: Vec<Item>,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 /// One issue. `text` is the script's line for it; the rest is for the screen.
@@ -238,7 +245,7 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
         })
         .collect();
     sort(&mut items);
-    checks.push(Check { id: "missing-pages", title: "Missing pages — linked but never written", classic: true, items });
+    checks.push(Check { id: "missing-pages", title: "Missing pages — linked but never written", classic: true, ignored: 0, items });
 
     // 2. Broken sources.
     let mut items = Vec::new();
@@ -256,7 +263,7 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
         }
     }
     sort(&mut items);
-    checks.push(Check { id: "broken-sources", title: "Broken sources", classic: true, items });
+    checks.push(Check { id: "broken-sources", title: "Broken sources", classic: true, ignored: 0, items });
 
     // 3. Orphans.
     let mut items: Vec<Item> = wiki
@@ -265,7 +272,7 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
         .map(|(f, _)| Item { text: f.rel.clone(), page: Some(f.rel.clone()), ..Default::default() })
         .collect();
     sort(&mut items);
-    checks.push(Check { id: "orphans", title: "Orphan pages — nothing links here", classic: true, items });
+    checks.push(Check { id: "orphans", title: "Orphan pages — nothing links here", classic: true, ignored: 0, items });
 
     // 4. Missing cross-references.
     let names: Vec<(&str, String)> = entity_names.iter().filter(|n| n.chars().count() >= 4).map(|n| (n.as_str(), lint_key(n))).collect();
@@ -296,7 +303,13 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
         }
     }
     sort(&mut items);
-    checks.push(Check { id: "missing-crossrefs", title: "Missing cross-links — mentioned without [[ ]]", classic: true, items });
+    checks.push(Check {
+        id: "missing-crossrefs",
+        title: "Missing cross-links — mentioned without [[ ]]",
+        classic: true,
+        ignored: 0,
+        items,
+    });
 
     // 5. Stale `updated:` dates.
     let mut items = Vec::new();
@@ -318,7 +331,7 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
         }
     }
     sort(&mut items);
-    checks.push(Check { id: "stale-dates", title: "Stale “updated” dates", classic: true, items });
+    checks.push(Check { id: "stale-dates", title: "Stale “updated” dates", classic: true, ignored: 0, items });
 
     // 6. Unlogged writes.
     let mut items = Vec::new();
@@ -336,7 +349,7 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
         }
     }
     sort(&mut items);
-    checks.push(Check { id: "unlogged-writes", title: "Unlogged writes", classic: true, items });
+    checks.push(Check { id: "unlogged-writes", title: "Unlogged writes", classic: true, ignored: 0, items });
 
     // 7. Uningested sources: files directly in sources/ that no page's sources: names.
     let cited: HashSet<String> = wiki
@@ -353,7 +366,7 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
         .map(|f| Item { text: f.rel.clone(), page: Some(f.rel.clone()), ..Default::default() })
         .collect();
     sort(&mut items);
-    checks.push(Check { id: "uningested-sources", title: "Sources not yet ingested", classic: true, items });
+    checks.push(Check { id: "uningested-sources", title: "Sources not yet ingested", classic: true, ignored: 0, items });
 
     // 8. Unreferenced images: files directly in images/ that no .md or .txt file embeds or links.
     let referrers: Vec<String> = files
@@ -377,7 +390,7 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
         }
     }
     sort(&mut items);
-    checks.push(Check { id: "unreferenced-images", title: "Images nothing uses", classic: true, items });
+    checks.push(Check { id: "unreferenced-images", title: "Images nothing uses", classic: true, ignored: 0, items });
 
     // Brainstead's own. Possible duplicates.
     let mut entries: Vec<(String, Vec<String>)> = Vec::new();
@@ -401,7 +414,7 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
         })
         .collect::<Vec<_>>();
     sort(&mut items);
-    checks.push(Check { id: "duplicates", title: "Possible duplicates", classic: false, items });
+    checks.push(Check { id: "duplicates", title: "Possible duplicates", classic: false, ignored: 0, items });
 
     // Stale pages others rely on.
     let mut items = Vec::new();
@@ -425,7 +438,7 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
         }
     }
     items.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.text.cmp(&b.text)));
-    checks.push(Check { id: "stale-pages", title: "Stale pages others rely on", classic: false, items });
+    checks.push(Check { id: "stale-pages", title: "Stale pages others rely on", classic: false, ignored: 0, items });
 
     // Sources changed since the pages citing them.
     let mut citing: HashMap<String, Vec<&File>> = HashMap::new();
@@ -452,7 +465,7 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
         });
     }
     sort(&mut items);
-    checks.push(Check { id: "changed-sources", title: "Sources changed since they were cited", classic: false, items });
+    checks.push(Check { id: "changed-sources", title: "Sources changed since they were cited", classic: false, ignored: 0, items });
 
     // Wiki pages not in the page shape (D-20261006-06): those Reshape pages can do by itself are safe.
     let shape = crate::pageshape::Sources::from_paths(files.iter().map(|f| f.rel.as_str()));
@@ -461,14 +474,14 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
         .filter(|(f, _)| crate::pageshape::shaped(&f.rel))
         .filter_map(|(f, t)| crate::pageshape::item(&f.rel, t, &shape))
         .collect();
-    checks.push(Check { id: "page-shape", title: "Pages not in the page shape", classic: false, items });
+    checks.push(Check { id: "page-shape", title: "Pages not in the page shape", classic: false, ignored: 0, items });
     // Pages with a Timeline but no Current state: Write Current state (a model run) can write it.
     let items = md
         .iter()
         .filter(|(f, t)| crate::pageshape::shaped(&f.rel) && crate::pageshape::wants_current_state(t))
         .map(|(f, _)| Item { text: format!("{}: no Current state", f.rel), page: Some(f.rel.clone()), ..Default::default() })
         .collect();
-    checks.push(Check { id: "no-current-state", title: "Pages with no Current state", classic: false, items });
+    checks.push(Check { id: "no-current-state", title: "Pages with no Current state", classic: false, ignored: 0, items });
 
     Report {
         checks,
@@ -592,6 +605,36 @@ fn first_word_of(short: &str, long: &str) -> bool {
     let s: Vec<String> = short.split_whitespace().map(fold).collect();
     let l: Vec<String> = long.split_whitespace().map(fold).collect();
     s.len() == 1 && l.len() == 2 && s[0].chars().count() >= 4 && l[0] == s[0]
+}
+
+// ── Ignored issues ────────────────────────────────────────────────────────────
+
+/// The key an issue is ignored under: its check and its line.
+pub fn ignore_key(check: &str, text: &str) -> String {
+    format!("{check}|{text}")
+}
+
+/// Takes the ignored issues out of the report, counting them on their check. `ignored` maps an
+/// issue's key to its page's version when it was ignored; `version` gives a page's version now
+/// (None when it's gone). An issue whose page has changed since comes back, and its key is
+/// dropped from `ignored`; so does the key of an issue no check gives any more.
+pub fn without_ignored(r: &mut Report, ignored: &mut BTreeMap<String, String>, version: &dyn Fn(&str) -> Option<String>) {
+    let mut seen = HashSet::new();
+    for c in &mut r.checks {
+        let (id, n) = (c.id, &mut c.ignored);
+        c.items.retain(|i| {
+            let key = ignore_key(id, &i.text);
+            let Some(was) = ignored.get(&key) else { return true };
+            let now = i.page.as_deref().map(|p| version(p).unwrap_or_default()).unwrap_or_default();
+            if *was != now {
+                return true;
+            }
+            seen.insert(key);
+            *n += 1;
+            false
+        });
+    }
+    ignored.retain(|k, _| seen.contains(k));
 }
 
 // ── Safe fixes ────────────────────────────────────────────────────────────────
@@ -747,6 +790,36 @@ mod tests {
         assert_eq!(link_first_mention(fenced, "Orbit App").unwrap(), "```\nOrbit App\n```\n[[Orbit App]]\n");
         // Only in a link's anchor: nothing to link, so the check doesn't list it either.
         assert_eq!(link_first_mention("At the demo ([[Meeting. Demo - 2026-10-02#Questions (Lena Park)]]).\n", "Lena Park"), None);
+    }
+
+    #[test]
+    fn an_ignored_issue_comes_back_when_its_page_changes() {
+        let item = |t: &str, p: &str| Item { text: t.into(), page: Some(p.into()), ..Default::default() };
+        let report = || Report {
+            checks: vec![Check {
+                id: "orphans",
+                title: "Orphans",
+                classic: true,
+                ignored: 0,
+                items: vec![item("wiki/entities/Lena.md", "wiki/entities/Lena.md"), item("wiki/entities/Maya.md", "wiki/entities/Maya.md")],
+            }],
+            wiki_pages: 2,
+            sources: 0,
+            ms: 0,
+        };
+        let mut ignored = BTreeMap::from([
+            (ignore_key("orphans", "wiki/entities/Lena.md"), "v1".to_string()),
+            (ignore_key("orphans", "wiki/entities/Gone.md"), "v1".to_string()),
+        ]);
+        let mut r = report();
+        without_ignored(&mut r, &mut ignored, &|_| Some("v1".into()));
+        assert_eq!((r.checks[0].items.len(), r.checks[0].ignored, r.needs_decision()), (1, 1, 1));
+        // An issue no check gives any more is forgotten.
+        assert_eq!(ignored.len(), 1);
+        let mut r = report();
+        without_ignored(&mut r, &mut ignored, &|_| Some("v2".into()));
+        assert_eq!((r.checks[0].items.len(), r.checks[0].ignored), (2, 0));
+        assert!(ignored.is_empty());
     }
 
     #[test]

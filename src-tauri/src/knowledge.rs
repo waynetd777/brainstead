@@ -44,7 +44,8 @@ fn read_opt(p: &Path) -> Option<String> {
 
 // ── Knowledge health ──────────────────────────────────────────────────────────
 
-/// What's kept in `health.json`: duplicate pairs marked as not duplicates, and each day's counts.
+/// What's kept in `health.json`: duplicate pairs marked as not duplicates, issues ignored, and
+/// each day's counts.
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 struct Kept {
@@ -52,6 +53,8 @@ struct Kept {
     history: BTreeMap<String, Day>,
     /// Each system note's callout as last seen intact, to put back if it goes.
     callouts: BTreeMap<String, String>,
+    /// Issues ignored (`lint::ignore_key`), with their page's version then: back when it changes.
+    ignored: BTreeMap<String, String>,
 }
 
 #[derive(Default, Clone, Serialize, Deserialize)]
@@ -104,6 +107,7 @@ pub(crate) fn run_lint(app: &AppHandle) -> Option<Report> {
     r.checks.push(crate::contradict::uncited_check(&root));
     let mut k = kept();
     r.checks.push(callout_check(&root, &mut k.callouts));
+    lint::without_ignored(&mut r, &mut k.ignored, &|p| page_version(&root, p));
     k.history.insert(today().to_string(), Day { total: r.total(), decisions: r.needs_decision() });
     let cutoff = (today() - chrono::Duration::days(56)).to_string();
     k.history.retain(|d, _| *d >= cutoff);
@@ -137,7 +141,7 @@ fn callout_check(root: &Path, known: &mut BTreeMap<String, String>) -> lint::Che
             None => {}
         }
     }
-    lint::Check { id: "system-callouts", title: "System notes missing their header", classic: false, items }
+    lint::Check { id: "system-callouts", title: "System notes missing their header", classic: false, ignored: 0, items }
 }
 
 #[derive(Serialize, Clone)]
@@ -339,6 +343,43 @@ fn health_reshape_now(app: AppHandle, pages: Option<Vec<String>>) -> Res<Reshape
     Ok(done)
 }
 
+/// A page's version, as an ignored issue remembers it.
+fn page_version(root: &Path, page: &str) -> Option<String> {
+    std::fs::read(root.join(page)).ok().map(|b| write::version(&b))
+}
+
+/// Ignores an issue (its check and its line, as the report gives them) until its page changes.
+fn health_ignore_now(app: AppHandle, check: String, text: String) -> Res<()> {
+    let root = root(&app)?;
+    let report = app.state::<Health>().report.lock().unwrap().clone();
+    let item = report
+        .as_ref()
+        .and_then(|r| r.check(&check))
+        .and_then(|c| c.items.iter().find(|i| i.text == text))
+        .cloned()
+        .ok_or_else(|| invalid("That issue isn't in Knowledge health any more."))?;
+    let version = item.page.as_deref().and_then(|p| page_version(&root, p)).unwrap_or_default();
+    let mut k = kept();
+    k.ignored.insert(lint::ignore_key(&check, &text), version);
+    save_kept(&k);
+    relint(&app);
+    Ok(())
+}
+
+/// Shows a check's ignored issues again (every check's when None).
+fn health_unignore_now(app: AppHandle, check: Option<String>) -> Res<usize> {
+    let mut k = kept();
+    let before = k.ignored.len();
+    match &check {
+        Some(c) => k.ignored.retain(|key, _| !key.starts_with(&format!("{c}|"))),
+        None => k.ignored.clear(),
+    }
+    let n = before - k.ignored.len();
+    save_kept(&k);
+    relint(&app);
+    Ok(n)
+}
+
 /// Marks two pages as not duplicates.
 fn health_dismiss_now(app: AppHandle, a: String, b: String) -> Res<()> {
     let mut k = kept();
@@ -469,6 +510,16 @@ pub async fn health_reshape(app: AppHandle, pages: Option<Vec<String>>) -> Res<R
 #[tauri::command]
 pub async fn health_dismiss(app: AppHandle, a: String, b: String) -> Res<()> {
     blocking(move || health_dismiss_now(app, a, b)).await
+}
+
+#[tauri::command]
+pub async fn health_ignore(app: AppHandle, check: String, text: String) -> Res<()> {
+    blocking(move || health_ignore_now(app, check, text)).await
+}
+
+#[tauri::command]
+pub async fn health_unignore(app: AppHandle, check: Option<String>) -> Res<usize> {
+    blocking(move || health_unignore_now(app, check)).await
 }
 
 #[tauri::command]

@@ -81,7 +81,7 @@ function reviewLabel(detail: string): string {
 export const pageName = (path: string) => (path.split("/").pop() ?? path).replace(/\.md$/, "");
 
 /** Checks that are worth a look but aren't problems: not counted in the sidebar. */
-const ADVISORY = new Set(["stale-pages", "uncited-claims", "no-current-state"]);
+export const ADVISORY = new Set(["stale-pages", "uncited-claims", "no-current-state"]);
 
 /** Issues that need you: everything Brainstead can't fix on its own. */
 export function decisions(r: LintReport | null | undefined): number {

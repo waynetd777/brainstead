@@ -971,6 +971,27 @@ async function healthFix(a: Args): Promise<string> {
   return `${said} ⌘Z in the app undoes it.`;
 }
 
+/** ignore_issue: Knowledge health's Ignore, or Show again with show_again. */
+async function healthIgnore(a: Args): Promise<string> {
+  const v = await api.healthReport(true);
+  const r = v.report;
+  if (!r) throw new Error("Knowledge health has no report yet; try again in a moment.");
+  if (a.show_again) {
+    const check = typeof a.check === "string" && a.check ? a.check : null;
+    const n = await api.healthUnignore(check);
+    told(`showed ${n} ignored Knowledge health issue${n === 1 ? "" : "s"} again`);
+    return n ? `${n} ignored issue${n === 1 ? " is" : "s are"} listed again.` : "Nothing was ignored.";
+  }
+  const text = String(a.item ?? "");
+  const c = r.checks.find((c) => c.items.some((i) => i.text === text));
+  const i = c?.items.find((i) => i.text === text);
+  if (!c || !i) return "That issue isn't in Knowledge health: give its text as lint gives it.";
+  if (i.safe) return "That issue has a safe fix: use fix_health instead.";
+  await api.healthIgnore(c.id, text);
+  told("ignored a Knowledge health issue");
+  return "Ignored: it's left out of Knowledge health until its page changes. show_again lists it again.";
+}
+
 /** reshape_pages: Reshape pages, as Knowledge health's Page shape check does it. */
 async function reshapePages(a: Args): Promise<string> {
   const pages = Array.isArray(a.pages) ? (a.pages as unknown[]).map(String).filter((p) => p.trim()) : null;
@@ -1212,6 +1233,7 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   "run.status": runStatus,
   "run.stop": stopRun,
   "health.fix": healthFix,
+  "health.ignore": healthIgnore,
   "health.reshape": reshapePages,
   "health.current_state": writeCurrentState,
   fix_name: fixName,

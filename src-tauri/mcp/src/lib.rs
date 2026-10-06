@@ -439,6 +439,13 @@ pub fn tools() -> Vec<Value> {
         tool("fix_health", "Fix Knowledge health issues", Change,
             "Applies Knowledge health's safe fixes (needs the app): all of them, or the items named (their text as lint gives it). Undoable. Issues that need judgement aren't safe fixes: make those with edit_page.",
             schema(json!({"items": {"type": "array", "items": {"type": "string"}}}), &[])),
+        tool("ignore_issue", "Ignore a Knowledge health issue", Change,
+            "Knowledge health's Ignore (needs the app): stops listing an issue that has no fix (its text as lint gives it) until its page changes; only when the user asked. With show_again, Show again: the ignored issues listed again, of one check (its id) or all. Ignored issues are left out of the app's count but lint still lists them.",
+            schema(json!({
+                "item": {"type": "string", "description": "The issue's text, as lint gives it."},
+                "show_again": {"type": "boolean", "description": "List ignored issues again instead."},
+                "check": {"type": "string", "description": "With show_again: the check's id (orphans, stale-pages…); every check when left out."}
+            }), &[])),
         tool("page_shape", "Page shape", Read,
             "Knowledge health's Page shape check: which wiki entity and concept pages aren't in the page shape (opening text, Current state, topical sections, a Timeline of `### YYYY-MM-DD — title` entries newest first, each with a Source: [[…]] line, then See also), which of them Reshape pages can do by itself and why the rest need the user. With page, that page's report: the headings it would rewrite and the lines it would add.",
             schema(json!({"page": page}), &[])),
@@ -609,6 +616,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<String, CallError> {
         "weekly_suggestion" => act("weekly.suggestion", obj),
         "save_chat" => act("chat.save", obj),
         "fix_health" => act("health.fix", obj),
+        "ignore_issue" => act("health.ignore", obj),
         "page_shape" => Ok(page_shape_tool(ctx, obj.get("page").and_then(Value::as_str))?),
         "reshape_pages" => act("health.reshape", obj),
         "write_current_state" => act("health.current_state", obj),

@@ -6557,6 +6557,9 @@ select.sel {
 .ck .green {
   color: var(--green);
 }
+.ck .advisory {
+  color: var(--ink3);
+}
 .ckitems {
   padding: 4px 14px 12px 38px;
   background: var(--sunk);
