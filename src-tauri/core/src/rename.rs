@@ -316,7 +316,9 @@ pub fn commit(root: &Path, shown: &RenamePlan, linkers: &[String], resolves: &dy
     };
     // The note itself may have been rewritten (links to its own headings); a failed move leaves
     // it at `src`, where `undo` puts it back.
-    moved.map_err(|e| undo(&written, io(e)))
+    moved.map_err(|e| undo(&written, io(e)))?;
+    // A wiki page's claims go with it (D-20261006-08).
+    crate::claims::carry(root, &now.from, &now.to).map_err(io)
 }
 
 #[cfg(test)]

@@ -303,6 +303,9 @@ pub struct Change {
     /// For a move to the Trash: its entry, to restore it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trash: Option<String>,
+    /// An ingest's checked claims, written to the page's claims file with it (D-20261006-16).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claims: Option<crate::claims::Update>,
 }
 
 impl Change {
@@ -341,7 +344,17 @@ impl Change {
             after: None,
             to,
             trash: None,
+            claims: None,
         }
+    }
+
+    /// The texts in the store it refers to: the page's before and after, and its claims file's.
+    pub fn texts(&self) -> Vec<&String> {
+        let c = self.claims.as_ref();
+        [self.before.as_ref(), self.after.as_ref(), c.and_then(|c| c.before.as_ref()), c.and_then(|c| c.after.as_ref())]
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     /// The run it belongs to, for the feed's groups: the run, else the chat, else itself.
@@ -703,7 +716,7 @@ impl Store {
         let mut cost: Vec<u64> = Vec::with_capacity(all.len());
         for c in &all {
             let mut n = self.path(&c.id).map(|p| size(&p)).unwrap_or(0);
-            for h in [&c.before, &c.after].into_iter().flatten() {
+            for h in c.texts() {
                 if seen.insert(h.clone()) {
                     n += size(&self.dir.join(TEXTS).join(format!("{h}.gz")));
                 }
@@ -722,7 +735,7 @@ impl Store {
             gone += 1;
             all.remove(keep);
         }
-        let used: std::collections::HashSet<String> = all.iter().flat_map(|c| [c.before.clone(), c.after.clone()]).flatten().collect();
+        let used: std::collections::HashSet<String> = all.iter().flat_map(|c| c.texts().into_iter().cloned()).collect();
         if let Ok(rd) = std::fs::read_dir(self.dir.join(TEXTS)) {
             for e in rd.flatten() {
                 let name = e.file_name().to_string_lossy().trim_end_matches(".gz").to_string();

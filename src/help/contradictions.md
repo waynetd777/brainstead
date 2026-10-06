@@ -8,7 +8,7 @@ summary: Find places where wiki pages disagree about the same thing, and settle 
 Contradictions finds wiki pages that say different things about the same fact, such as two launch dates for Orbit App. Open it from **Contradictions** in [Knowledge health](app:health)'s top bar.
 
 ## Run a check
-Click **Check · changed pages only**. Brainstead reads the claims on each wiki page that changed since the last check, and the AI judges the claims that disagree. **Stop** ends a check part way and keeps what it has read for next time.
+Click **Check · changed pages only**. Brainstead reads the claims on each wiki page that changed since the last check, adds the facts ingest kept for those pages (the **Facts** card on a wiki page), and the AI judges the claims that disagree. **Stop** ends a check part way and keeps what it has read for next time.
 
 The nightly check in [Settings › Jobs & schedule](app:settings/jobs) can run this for you each night.
 

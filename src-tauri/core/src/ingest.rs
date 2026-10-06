@@ -286,7 +286,11 @@ pub struct Planned {
     pub before: Option<String>,
     pub after: String,
     pub quotes: Vec<Quote>,
+    /// The claims kept for the page's claims file: those whose quotes are in the source (all of
+    /// them for an image, whose text is only what OCR read).
     pub claims: Vec<Claim>,
+    /// The Timeline entry's heading it made ("2026-10-02 — Steerco"), for its claims.
+    pub entry: Option<String>,
     /// Claims whose quotes weren't found in the source: the change waits for review.
     pub warnings: Vec<String>,
 }
@@ -410,6 +414,7 @@ pub fn plan(
                 after,
                 quotes: vec![],
                 claims: vec![],
+                entry: None,
                 warnings: if src.is_image() { vec![IMAGE_WARNING.into()] } else { vec![] },
             });
         }
@@ -446,7 +451,7 @@ pub fn plan(
                 format!("This quote isn't in the source, so its claim is unchecked: {}", short(&c.quote))
             }
         }));
-        let claims = p.claims.clone();
+        let claims: Vec<Claim> = if src.is_image() { p.claims.clone() } else { found.iter().map(|c| (*c).clone()).collect() };
         let quotes: Vec<Quote> = found
             .iter()
             .map(|c| Quote {
@@ -468,6 +473,14 @@ pub fn plan(
             continue;
         }
         let entry_date = entry_date.flatten();
+        let entry = p.entry.as_ref().zip(entry_date).map(|(e, d)| {
+            let t = e.title.trim();
+            if t.is_empty() {
+                d.iso()
+            } else {
+                format!("{} — {t}", d.iso())
+            }
+        });
         let current_state = p.current_state.as_deref().map(str::trim).filter(|t| !t.is_empty());
         match read(&rel) {
             Some(before) => {
@@ -538,7 +551,7 @@ pub fn plan(
                     dropped.push(Dropped { page: rel, reason: "It changed nothing.".into() });
                     continue;
                 }
-                out.push(Planned { page: rel, kind: Kind::Edit, title, before: Some(before), after, quotes, claims, warnings });
+                out.push(Planned { page: rel, kind: Kind::Edit, title, before: Some(before), after, quotes, claims, entry, warnings });
             }
             None => {
                 let kind = if rel.starts_with("wiki/concepts/") { "concept" } else { "entity" };
@@ -548,7 +561,7 @@ pub fn plan(
                 if let (Some(e), Some(d)) = (&p.entry, entry_date) {
                     after = crate::pageshape::with_entry(&after, d, &e.title, &link, &e.body).0;
                 }
-                out.push(Planned { page: rel, kind: Kind::New, title, before: None, after, quotes, claims, warnings });
+                out.push(Planned { page: rel, kind: Kind::New, title, before: None, after, quotes, claims, entry, warnings });
             }
         }
     }
@@ -830,9 +843,10 @@ mod tests {
         // Every quote found, nothing taken away.
         let p = plan_one(keep, &["Staff launch now targeted for 28 November"]);
         assert!(p.warnings.is_empty() && !takes(&p), "{}", p.after);
-        // One of two quotes missing: the claim stays, as a warning (a flag in Changes).
+        // One of two quotes missing: the claim stays, as a warning (a flag in Changes), and only
+        // the checked one is kept for the page's claims file.
         let p = plan_one(keep, &["Staff launch now targeted for 28 November", "Northwind supplies the hardware"]);
-        assert_eq!(p.claims.len(), 2);
+        assert_eq!(p.claims.len(), 1);
         assert_eq!(p.quotes.len(), 1);
         assert!(p.warnings[0].contains("Northwind supplies the hardware"));
         // The section's text replaced, or a line changed: the user's line would go.

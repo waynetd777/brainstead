@@ -134,6 +134,32 @@ fn reading_tools() {
 }
 
 /// Runs a change tool against a stand-in app; its reply, and the change the app was sent.
+#[test]
+fn facts_from_kept_claims() {
+    let f = fixture();
+    let page = "wiki/entities/Orbit App.md";
+    assert!(ok(&f.ctx, "facts", json!({"page": "Orbit App"})).starts_with("No kept facts match on wiki/entities/Orbit App.md"));
+    let kept = |value: &str, as_of: &str, source: &str| brainstead_core::claims::Kept {
+        subject: "Orbit App".into(),
+        attribute: "go_live_date".into(),
+        value: value.into(),
+        as_of: Some(as_of.into()),
+        quote: format!("launch {value}"),
+        source: source.into(),
+        recorded: "2026-10-02".into(),
+        ..Default::default()
+    };
+    let one = brainstead_core::claims::with_source(None, page, "a.md", &[kept("14 October", "2026-09-01", "a.md")]);
+    let two = brainstead_core::claims::with_source(one.as_deref(), page, "b.md", &[kept("28 November", "2026-09-28", "b.md")]).unwrap();
+    let file = f.ctx.vault.join(brainstead_core::claims::path(page).unwrap());
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, two).unwrap();
+    let t = ok(&f.ctx, "facts", json!({"subject": "orbit app", "attribute": "launch date"}));
+    let latest = t.lines().find(|l| l.starts_with("- Orbit App — go_live_date")).unwrap();
+    assert!(latest.contains("28 November (as of 2026-09-28)"), "{t}");
+    assert!(t.contains("superseded: 14 October"), "{t}");
+}
+
 fn submitted(f: &Fixture, name: &str, args: Value) -> (String, Value) {
     let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Changed it. Revert it in Changes."), error: None });
     let t = ok(&f.ctx, name, args);

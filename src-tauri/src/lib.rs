@@ -785,6 +785,7 @@ pub fn run() {
             contradict::contradictions_run,
             contradict::contradictions_mark,
             contradict::page_contradictions,
+            contradict::page_facts,
             ingest::ingest_runs,
             ingest::ingest_stop,
             changes::changes_list,

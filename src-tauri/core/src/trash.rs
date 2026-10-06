@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 use crate::write::{check_conflict_copies, io, lock, Result, WriteError};
 
 pub const TRASH_DIR: &str = ".trash";
+/// A wiki page's claims file, in its entry's folder.
+const CLAIMS: &str = ".claims.json";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -130,6 +132,10 @@ fn trash_file(root: &Path, rel: &str, layer: &str) -> Result<TrashEntry> {
         let _ = fs::remove_dir_all(&dir);
         return Err(e);
     }
+    // A wiki page's claims go into the trash with it, and come back if it's restored.
+    if let Some(c) = crate::claims::path(rel).map(|c| root.join(c)).filter(|c| c.exists()) {
+        let _ = move_file(&c, &dir.join(CLAIMS));
+    }
     Ok(TrashEntry { id, original_rel: meta.original_rel, layer: meta.layer, basename, deleted_at: meta.deleted_at, size_bytes: md.len() })
 }
 
@@ -175,6 +181,10 @@ pub fn restore(root: &Path, id: &str, as_rel: Option<&str>) -> Result<String> {
     }
     let dir = entry_dir(root, id);
     move_file(&dir.join(&m.basename), &target)?;
+    if let Some(c) = crate::claims::path(&to).map(|c| root.join(c)).filter(|c| dir.join(CLAIMS).exists() && !c.exists()) {
+        let _ = c.parent().map(fs::create_dir_all);
+        let _ = move_file(&dir.join(CLAIMS), &c);
+    }
     let _ = fs::remove_dir_all(&dir);
     Ok(to)
 }

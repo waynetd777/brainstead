@@ -13,6 +13,7 @@ pub mod canonical;
 pub mod catalogue;
 pub mod changes;
 pub mod chats;
+pub mod claims;
 pub mod contradictions;
 pub mod dataview;
 pub mod drafts;

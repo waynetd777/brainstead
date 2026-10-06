@@ -8,7 +8,13 @@
       "Proposes a summary page in wiki/summaries/ because the source is a document",
       "Gives the Orbit App page a timeline entry for the steerco (dated, titled, citing the source) and updates its Current state with the new staff launch date (28 November), keeping what is still true",
       "Cites the source inline as [[Email. Steerco minutes - 2026-09-28]]"
-    ]
+    ],
+    "fact": {
+      "page": "wiki/entities/Orbit App.md",
+      "subject": "Orbit App",
+      "attribute": "go_live_date",
+      "value": "28 November"
+    }
   },
   {
     "name": "ingest into a long page",
@@ -41,7 +47,13 @@
     "expect": [
       "The second ingest's change to the Orbit App page keeps one timeline entry from the steerco minutes (replacing the first ingest's), not two",
       "The Orbit App page still says the staff launch is 28 November"
-    ]
+    ],
+    "fact": {
+      "page": "wiki/entities/Orbit App.md",
+      "subject": "Orbit App",
+      "attribute": "go_live_date",
+      "value": "28 November"
+    }
   },
   {
     "name": "a new current state",
@@ -82,6 +94,22 @@
     },
     "expect": [
       "Finds that the Orbit App page and the Launch plan page give different launch dates",
+      "Proposes fixing the Orbit App page, not the meeting notes"
+    ]
+  },
+  {
+    "name": "contradiction from kept facts",
+    "kind": "contradictions",
+    "plant": {
+      "path": "wiki/concepts/Launch plan.md",
+      "text": "---\ntype: concept\nname: Launch plan\nupdated: 2026-09-29\n---\n\n## Current state\n\nThe [[Orbit App]] soft launch to staff waits for the pen test to close. Maya owns the launch plan.\n"
+    },
+    "claims": {
+      "path": "wiki/.claims/concepts/Launch plan.json",
+      "text": "{\n  \"page\": \"wiki/concepts/Launch plan.md\",\n  \"claims\": [\n    {\n      \"subject\": \"Orbit App\",\n      \"attribute\": \"go_live_date\",\n      \"value\": \"28 November\",\n      \"asOf\": \"2026-09-28\",\n      \"quote\": \"Staff launch now targeted for 28 November\",\n      \"source\": \"sources/emails/Email. Steerco minutes - 2026-09-28.md\",\n      \"entry\": \"2026-09-28 — Steerco: staff launch moves\",\n      \"recorded\": \"2026-10-02\"\n    }\n  ]\n}\n"
+    },
+    "expect": [
+      "Finds that the Orbit App page and the facts kept for the Launch plan page give different launch dates",
       "Proposes fixing the Orbit App page, not the meeting notes"
     ]
   },

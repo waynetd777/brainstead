@@ -8,7 +8,7 @@
 // Wiki page view (sources and their citation numbers) is in SourcesCard.
 
 import { useEffect, useState } from "react";
-import { api, Layer } from "../api";
+import { api, Layer, PageFact } from "../api";
 import { Icon } from "../icons";
 import { openDoc } from "../nav";
 import { useSearch } from "../Search";
@@ -202,6 +202,52 @@ export function SourcesCard({ cites }: { cites: string[] }) {
           </span>
         </button>
       ))}
+    </section>
+  );
+}
+
+const sourceName = (p: string) => (p.split("/").pop() ?? p).replace(/\.md$/, "");
+
+/** A wiki page's facts, as ingest checked and kept them: the latest value of each, what it
+ * superseded, and the source it's quoted from. `stamp` reloads them when the page changes. */
+export function FactsCard({ path, stamp }: { path: string; stamp: string }) {
+  const [facts, setFacts] = useState<PageFact[]>([]);
+  useEffect(() => {
+    let live = true;
+    api
+      .pageFacts(path)
+      .then((f) => live && setFacts(f))
+      .catch(() => live && setFacts([]));
+    return () => {
+      live = false;
+    };
+  }, [path, stamp]);
+  if (!facts.length) return null;
+  return (
+    <section className="card side-card">
+      <div className="eyebrow">Facts · {facts.length}</div>
+      {facts.map((f) => {
+        const l = f.latest;
+        const what = `${f.subject} · ${f.attribute.replace(/^other:/, "").replace(/_/g, " ")}`;
+        return (
+          <button
+            key={`${f.subject}|${f.attribute}`}
+            type="button"
+            className="blink"
+            title={`“${l.quote}”, from ${sourceName(l.source)}${l.entry ? ` (${l.entry})` : ""}. Click to open the source.`}
+            onClick={() => openDoc(l.source)}
+          >
+            <span className="faint">{what}</span>
+            <span>
+              <b>{l.value}</b>
+              {l.asOf ? ` · as of ${l.asOf}` : ""}
+            </span>
+            {f.earlier.length > 0 && (
+              <span className="faint">Was {f.earlier.map((e) => e.value + (e.asOf ? ` (${e.asOf})` : "")).join(", ")}</span>
+            )}
+          </button>
+        );
+      })}
     </section>
   );
 }

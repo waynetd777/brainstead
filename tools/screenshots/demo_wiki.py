@@ -7,6 +7,7 @@ The fixture vault (tests/fixtures/vault) stays small because tests count what's 
 are written into the screenshot demo's copy only. Everything here is invented.
 """
 
+import json
 import pathlib
 
 SOURCE = "[[Roadmap Update 2026-09-18]]"
@@ -154,3 +155,31 @@ def write(vault: pathlib.Path) -> None:
     for rel, links in more.items():
         p = vault / rel
         p.write_text(p.read_text().rstrip("\n") + "\n\n## See also\n\n" + "\n".join(f"- [[{name}]]" for name in links) + "\n")
+    # Facts ingest kept for Orbit App, for its Facts card (wiki/.claims/, D-20261006-08).
+    roadmap = ("sources/Roadmap Update 2026-09-18.md", "2026-09-18", "2026-09-18 — Roadmap update")
+    steerco = ("sources/emails/Email. Steerco minutes - 2026-09-28.md", "2026-09-28", "2026-09-28 — Steerco: launch moves")
+
+    def fact(attribute, value, quote, kept):
+        source, as_of, entry = kept
+        return {
+            "subject": "Orbit App",
+            "attribute": attribute,
+            "value": value,
+            "asOf": as_of,
+            "quote": quote,
+            "source": source,
+            "entry": entry,
+            "recorded": as_of,
+        }
+
+    claims = {
+        "page": "wiki/entities/Orbit App.md",
+        "claims": [
+            fact("go_live_date", "14 November", "Staff soft launch remains on track for 14 November", roadmap),
+            fact("go_live_date", "28 November", "Staff launch now targeted for 28 November", steerco),
+            fact("status", "pending pen-test closure", "pending pen-test closure", steerco),
+        ],
+    }
+    f = vault / "wiki" / ".claims" / "entities" / "Orbit App.json"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(claims, indent=2, ensure_ascii=False) + "\n")

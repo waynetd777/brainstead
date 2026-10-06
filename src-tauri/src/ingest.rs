@@ -89,6 +89,7 @@ pub async fn fixname_apply(app: AppHandle, req: Request, rows: Vec<Row>) -> Res<
 
 // ── The staged ingest ─────────────────────────────────────────────────────────
 
+use brainstead_core::claims::Kept;
 use brainstead_core::ingest::{self as core_ingest, Dropped, Source, SourceText};
 use brainstead_core::proposals::{self, Origin};
 use serde::Deserialize;
@@ -639,6 +640,10 @@ fn steps(app: &AppHandle, r: &mut Run, stopped: &dyn Fn(&Run) -> bool) -> Result
             s.flags = flags(&p.warnings, on_disk.as_deref(), &p.quotes);
             s.quotes = p.quotes;
             s.model = Some(model.clone());
+            if !p.claims.is_empty() {
+                let kept = p.claims.iter().map(|c| Kept::from_claim(c, &r.source, p.entry.as_deref(), &today)).collect();
+                s.claims = Some(brainstead_core::claims::Update { source: r.source.clone(), claims: kept, ..Default::default() });
+            }
             match crate::changes::submit(app, s) {
                 Ok(o) => {
                     r.proposals.push(o.id);

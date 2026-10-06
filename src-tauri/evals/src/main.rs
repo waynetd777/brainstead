@@ -32,6 +32,12 @@ struct Scenario {
     transcript: Option<Named>,
     #[serde(default)]
     plant: Option<Planted>,
+    /// For contradictions: a page's kept claims file planted as well (`wiki/.claims/…`).
+    #[serde(default)]
+    claims: Option<Planted>,
+    /// For ingest: a fact the kept claims must give as latest.
+    #[serde(default)]
+    fact: Option<Fact>,
     /// For ingest: this wiki page made long first (`pad_page`), as real hub pages are.
     #[serde(default)]
     pad: Option<String>,
@@ -56,6 +62,15 @@ struct Scenario {
 struct Named {
     name: String,
     text: String,
+}
+
+#[derive(Deserialize, Clone)]
+struct Fact {
+    page: String,
+    subject: String,
+    attribute: String,
+    /// What the latest value must contain.
+    value: String,
 }
 
 #[derive(Deserialize, Clone)]
@@ -196,6 +211,21 @@ fn ingest_once(s: &Scenario, root: &Path, model: &str) -> Result<(ingest::Source
     Ok((src, planned, dropped))
 }
 
+/// The planned changes' claims kept, as the app keeps them with each change (D-20261006-16).
+fn keep_claims(root: &Path, src: &ingest::Source, planned: &[ingest::Planned]) {
+    for p in planned.iter().filter(|p| !p.claims.is_empty()) {
+        let Some(rel) = brainstead_core::claims::path(&p.page) else { continue };
+        let kept: Vec<_> =
+            p.claims.iter().map(|c| brainstead_core::claims::Kept::from_claim(c, &src.rel, p.entry.as_deref(), "2026-10-02")).collect();
+        let file = root.join(rel);
+        let now = std::fs::read_to_string(&file).ok();
+        if let Some(t) = brainstead_core::claims::with_source(now.as_deref(), &p.page, &src.rel, &kept) {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, t).unwrap();
+        }
+    }
+}
+
 fn run_ingest(s: &Scenario, root: &Path, model: &str) -> Outcome {
     let mut failures = Vec::new();
     if let Some(p) = &s.pad {
@@ -220,6 +250,7 @@ fn run_ingest(s: &Scenario, root: &Path, model: &str) -> Outcome {
             std::fs::create_dir_all(to.parent().unwrap()).unwrap();
             std::fs::write(to, &p.after).unwrap();
         }
+        keep_claims(root, &src, &planned);
         match ingest_once(s, root, model) {
             Ok((_, p2, d2)) => (planned, dropped) = (p2, d2),
             Err(e) => return Outcome { output: e.clone(), failures: vec![e] },
@@ -244,6 +275,27 @@ fn run_ingest(s: &Scenario, root: &Path, model: &str) -> Outcome {
                 let lines: Vec<&str> = p.after.lines().filter(|l| l.starts_with("### ") || l.contains(&cite)).collect();
                 failures.push(format!("{} has more than one timeline entry from the source: {}", p.page, lines.join(" / ")));
             }
+        }
+    }
+    // The claims kept: on disk with each page, one set per source (a second ingest replaces it).
+    keep_claims(root, &src, &planned);
+    for p in planned.iter().filter(|p| !p.claims.is_empty()) {
+        let Some(rel) = brainstead_core::claims::path(&p.page) else { continue };
+        let text = std::fs::read_to_string(root.join(&rel)).ok();
+        let n = brainstead_core::claims::of_source(text.as_deref(), &src.rel).len();
+        if n != p.claims.len() {
+            failures.push(format!("{rel} has {n} claims from the source, not the {} the change kept.", p.claims.len()));
+        }
+    }
+    if let Some(f) = &s.fact {
+        let text = brainstead_core::claims::path(&f.page).and_then(|r| std::fs::read_to_string(root.join(r)).ok()).unwrap_or_default();
+        let found = brainstead_core::claims::facts(&brainstead_core::claims::parse(&text), Some(&f.subject), Some(&f.attribute));
+        match found.first() {
+            Some(x) if x.latest.value.contains(&f.value) => {
+                output.push_str(&format!("Fact: {} {} is {} (as of {:?})\n\n", x.subject, x.attribute, x.latest.value, x.latest.as_of));
+            }
+            Some(x) => failures.push(format!("The latest {} for {} is {:?}, not {:?}.", f.attribute, f.subject, x.latest.value, f.value)),
+            None => failures.push(format!("No kept {} for {} on {}.", f.attribute, f.subject, f.page)),
         }
     }
     let summary = planned.iter().any(|p| p.page.starts_with("wiki/summaries/"));
@@ -306,8 +358,10 @@ fn run_meeting(s: &Scenario, root: &Path, model: &str) -> Outcome {
 
 fn run_contradictions(s: &Scenario, root: &Path, model: &str, judge_model: &str) -> Outcome {
     let mut failures = Vec::new();
-    if let Some(p) = &s.plant {
-        std::fs::write(root.join(&p.path), &p.text).unwrap();
+    for p in [&s.plant, &s.claims].into_iter().flatten() {
+        let to = root.join(&p.path);
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        std::fs::write(to, &p.text).unwrap();
     }
     let data = tempfile::tempdir().unwrap();
     let st = c::State::new(data.path());
@@ -331,6 +385,7 @@ fn run_contradictions(s: &Scenario, root: &Path, model: &str, judge_model: &str)
         st.cache(&p, &texts[&p], cl).unwrap();
     }
     let (claims, _) = c::current(&st, &pages);
+    let claims = c::with_kept(claims, &brainstead_core::claims::all(root), &pages);
     let clashes = c::find_clashes(&claims, &c::name_index(&wiki_pages(root)), c::WINDOW_DAYS);
     let launch: Vec<&c::Clash> = clashes.iter().filter(|x| x.subject == "Orbit App" && x.attribute == "go_live_date").collect();
     if launch.is_empty() {
@@ -450,8 +505,10 @@ fn run_fixname(s: &Scenario, root: &Path) -> Outcome {
 /// already a task).
 fn run_weekprep(s: &Scenario, root: &Path, model: &str) -> Outcome {
     use brainstead_core::reviews::prep::{self, Action};
-    if let Some(p) = &s.plant {
-        std::fs::write(root.join(&p.path), &p.text).unwrap();
+    for p in [&s.plant, &s.claims].into_iter().flatten() {
+        let to = root.join(&p.path);
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        std::fs::write(to, &p.text).unwrap();
     }
     let data = tempfile::tempdir().unwrap();
     let mut ix = brainstead_core::Index::open(&data.path().join("index.db")).unwrap();

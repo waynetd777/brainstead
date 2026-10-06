@@ -27,7 +27,7 @@ Beside a source, its provenance says when it was ingested and by which model, an
 
 Ingests wait in one queue, whoever started them (you, an assistant or the nightly check), and run one at a time, the oldest source first (by the date in its name, else the file's), so a newer source has the last word on a page.
 
-The AI doesn't choose where text goes: for each page it gives a Timeline entry for the source (date, title, text), a new Current state when the source changes what's true now, and a topical section when it changes one. Brainstead files the entry in the page's Timeline by date, newest first, with a `Source:` line naming the source; ingesting the same source again replaces its entry rather than adding another. The Current state goes under the page's opening text, a new topical section above the Timeline. The AI sees a long page as its outline, with its opening, Current state and newest Timeline entries in full, and never its `sources:` list; a change that would rewrite a section it saw only part of is dropped, so nothing it couldn't see is lost.
+The AI doesn't choose where text goes: for each page it gives a Timeline entry for the source (date, title, text), a new Current state when the source changes what's true now, and a topical section when it changes one. Brainstead files the entry in the page's Timeline by date, newest first, with a `Source:` line naming the source; ingesting the same source again replaces its entry rather than adding another. The Current state goes under the page's opening text, a new topical section above the Timeline. The facts behind a change (subject, attribute, value, as of, and the quote they rest on), once their quotes are checked, are kept with the page in `wiki/.claims/<folder>/<page>.json`, naming the source and the Timeline entry they came with; ingesting a source again replaces its facts on the page. They're part of the page's change, so Revert takes them back too, and they move with the page when it's renamed or put in the Trash. The AI sees a long page as its outline, with its opening, Current state and newest Timeline entries in full, and never its `sources:` list; a change that would rewrite a section it saw only part of is dropped, so nothing it couldn't see is lost.
 
 An image is ingested from the text read from it; Claude Code and Codex also see the picture, Copilot and Antigravity don't (so an image with no text needs one of the first two). Its changes are kept even when a quote isn't in that text, each flagged in Changes to check against the picture.
 
@@ -52,7 +52,7 @@ Assistants and runs change the vault themselves, and Changes (⌥⌘5) lists eve
 
 Every entity and concept page has one layout: the opening text, **Current state**, topical sections, a **Timeline** of `### YYYY-MM-DD — title` entries (or `YYYY-MM`, `YYYY-Q3`, `YYYY-H1`) newest first, each with a `Source: [[…]]` line naming the note or source it came from, and **See also**. Summaries are left as they are.
 
-The Wiki (⌥⌘9) lists the pages by type and tag with their health: **Held**, **Stale**, **Check** or **Healthy**. On a page, a link to a source shows as a small number that opens the source at the passage cited, listed in the **Sources** card. A banner says when another page disagrees. **New wiki page** makes an entity or concept page you write yourself.
+The Wiki (⌥⌘9) lists the pages by type and tag with their health: **Held**, **Stale**, **Check** or **Healthy**. On a page, a link to a source shows as a small number that opens the source at the passage cited, listed in the **Sources** card. The **Facts** card lists the page's kept facts: the latest value of each, what it superseded, and the source it's quoted from; facts are kept from the first ingest that checks them, so older pages may have none. Assistants read them with `facts` ("the latest go_live_date for Orbit App"). A banner says when another page disagrees. **New wiki page** makes an entity or concept page you write yourself.
 
 ## Knowledge health
 
@@ -69,7 +69,7 @@ Knowledge health checks the wiki whenever the vault changes: missing pages and l
 
 ## Contradictions
 
-The contradictions check reads the claims on the pages that changed, groups claims about the same thing, and has the AI judge the ones whose values differ: **Real** (with its severity), **Newer supersedes older**, **Not a conflict** or **Unclear**. When the judge has a fix for a real one, it's made and listed in Changes. **Mark resolved**, **Ignore**, or **Save report as note**. The [nightly check](day-to-day.md#summaries-and-jobs) runs it on the pages that changed each day.
+The contradictions check reads the claims on the pages that changed, adds the facts ingest kept for them, groups claims about the same thing, and has the AI judge the ones whose values differ: **Real** (with its severity), **Newer supersedes older**, **Not a conflict** or **Unclear**. When the judge has a fix for a real one, it's made and listed in Changes. **Mark resolved**, **Ignore**, or **Save report as note**. The [nightly check](day-to-day.md#summaries-and-jobs) runs it on the pages that changed each day.
 
 ## Graph
 

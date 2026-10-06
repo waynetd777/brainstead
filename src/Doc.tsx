@@ -55,7 +55,7 @@ import { LastTimeCard, NoteTasksCard, OutlineCard } from "./notes/SideCards";
 import { ago, Dialog, Popover, Seg, useDebounced } from "./ui";
 import { scriptsAllowed } from "./md/scripts";
 import { getList, getScalar } from "./wiki/props";
-import { SourcesCard, WikiFields } from "./wiki/WikiFields";
+import { FactsCard, SourcesCard, WikiFields } from "./wiki/WikiFields";
 
 export const LAYER_LABEL: Record<string, string> = { note: "Note", wiki: "Wiki", source: "Source", template: "Template" };
 const isMarkdown = (p: string) => /\.(md|txt)$/i.test(p);
@@ -742,6 +742,7 @@ export function DocScreen() {
                 {s.layer === "source" && <ProvenanceCard file={s} />}
                 {s.layer === "note" && <LastTimeCard path={s.path} />}
                 <Backlinks doc={doc} onFold={() => settings.update({ docSideFolded: true })} />
+                {isWiki && <FactsCard path={s.path} stamp={doc.content} />}
                 <AgentChangesCard path={s.path} />
                 {isMarkdown(s.path) && s.layer !== "source" && <NoteTasksCard path={s.path} />}
                 {isMarkdown(s.path) && <OutlineCard path={s.path} md={liveText ?? doc.content} />}

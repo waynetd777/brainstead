@@ -506,6 +506,38 @@ pub fn current(state: &State, pages: &[(String, String, Vec<String>)]) -> (Vec<D
     (claims, missing)
 }
 
+/// The claims read from the pages, with those ingest kept alongside them (D-20261006-16): each
+/// checked page's kept claims with a known attribute, dated by their as of (else when recorded),
+/// less any the page's own claims already give.
+pub fn with_kept(mut claims: Vec<Dated>, kept: &[crate::claims::File], pages: &[(String, String, Vec<String>)]) -> Vec<Dated> {
+    let key = |page: &str, c: &str, a: &str, v: &str| (page.to_string(), lint_key(c), a.to_string(), normalise_value(v));
+    let mut have: HashSet<_> = claims.iter().map(|d| key(&d.claim.page, &d.claim.subject, &d.claim.attribute, &d.claim.value)).collect();
+    let checked: HashSet<&str> = pages.iter().map(|(r, _, _)| r.as_str()).collect();
+    for f in kept.iter().filter(|f| checked.contains(f.page.as_str())) {
+        for k in &f.claims {
+            let attribute = normalise_attribute(&k.attribute);
+            if k.subject.trim().is_empty() || k.value.trim().is_empty() || !valid_attribute(&attribute) {
+                continue;
+            }
+            if !have.insert(key(&f.page, &k.subject, &attribute, &k.value)) {
+                continue;
+            }
+            let as_of = k.as_of.clone().filter(|a| parse_as_of(a).is_some()).unwrap_or_default();
+            let date = parse_as_of(&as_of).or_else(|| parse_as_of(&k.recorded));
+            let claim = Claim {
+                page: f.page.clone(),
+                subject: k.subject.trim().into(),
+                attribute,
+                value: k.value.trim().chars().take(200).collect(),
+                as_of,
+                quote: k.quote.trim().chars().take(QUOTE_MAX).collect(),
+            };
+            claims.push(Dated { claim, date });
+        }
+    }
+    claims
+}
+
 /// Batches of pages to extract, about `words` words each, at most `max` pages.
 pub fn batches(missing: &[String], texts: &HashMap<String, String>, words: usize, max: usize) -> Vec<Vec<String>> {
     let mut out: Vec<Vec<String>> = Vec::new();
@@ -692,6 +724,48 @@ mod tests {
             .map(|c| serde_json::json!({"subject": c.subject, "attribute": c.attribute, "claims": c.claims.iter().map(|x| serde_json::json!({"page": x.page, "value": x.value, "as_of": x.as_of, "quote": x.quote})).collect::<Vec<_>>()}))
             .collect();
         assert_eq!(serde_json::Value::Array(got), want["clashes"]);
+    }
+
+    #[test]
+    fn kept_claims_join_the_pages_own() {
+        let pages: Vec<(String, String, Vec<String>)> =
+            ["wiki/entities/Orbit App.md", "wiki/entities/Launch.md"].iter().map(|p| (p.to_string(), String::new(), vec![])).collect();
+        let own = Claim {
+            page: pages[0].0.clone(),
+            subject: "Orbit App".into(),
+            attribute: "go_live_date".into(),
+            value: "14 October".into(),
+            as_of: "2026-09-20".into(),
+            quote: "launch on 14 October".into(),
+        };
+        let date = parse_as_of(&own.as_of);
+        let kept = |page: &str, attribute: &str, value: &str| crate::claims::File {
+            page: page.into(),
+            claims: vec![crate::claims::Kept {
+                subject: "Orbit App".into(),
+                attribute: attribute.into(),
+                value: value.into(),
+                as_of: Some("2026-09-28".into()),
+                quote: format!("now {value}"),
+                source: "sources/steerco.md".into(),
+                recorded: "2026-10-02".into(),
+                ..Default::default()
+            }],
+        };
+        let files = [
+            // Already on the page: not added twice.
+            kept(&pages[0].0, "launch date", "14 October"),
+            kept(&pages[1].0, "go_live_date", "28 November"),
+            kept(&pages[1].0, "favourite colour", "blue"),
+            // Not a page being checked.
+            kept("wiki/entities/Gone.md", "go_live_date", "1 December"),
+        ];
+        let all = with_kept(vec![Dated { claim: own, date }], &files, &pages);
+        assert_eq!(all.iter().map(|d| d.claim.value.as_str()).collect::<Vec<_>>(), ["14 October", "28 November"]);
+        let index = name_index(&pages.iter().map(|(p, _, _)| (p.clone(), vec![])).collect::<Vec<_>>());
+        let clashes = find_clashes(&all, &index, WINDOW_DAYS);
+        assert_eq!(clashes.len(), 1);
+        assert_eq!(clashes[0].claims[1].quote, "now 28 November");
     }
 
     #[test]

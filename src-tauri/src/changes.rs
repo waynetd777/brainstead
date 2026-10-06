@@ -66,6 +66,9 @@ pub struct Submit {
     /// Held whatever the checks say, and why: a job the user set to hold its changes.
     #[serde(default)]
     pub hold: Option<String>,
+    /// An ingest's checked claims, for the page's claims file (D-20261006-16).
+    #[serde(skip)]
+    pub claims: Option<brainstead_core::claims::Update>,
 }
 
 impl Submit {
@@ -82,6 +85,7 @@ impl Submit {
             origin,
             model: None,
             hold: None,
+            claims: None,
         }
     }
 }
@@ -137,6 +141,7 @@ pub fn submit_many(app: &AppHandle, list: Vec<Submit>) -> Res<Vec<Outcome>> {
         c.quotes = s.quotes;
         c.warnings = s.warnings;
         c.flags = s.flags;
+        c.claims = s.claims;
         let current = match pages.get(&c.page) {
             Some(t) => t.clone(),
             None => read_opt(&root.join(&c.page)),
@@ -276,6 +281,15 @@ fn apply(app: &AppHandle, root: &Path, mut c: Change, base: Option<String>) -> R
             c.before = current.as_deref().map(|t| st.put_text(t)).transpose()?;
             c.after = Some(st.put_text(&written_text)?);
             let mut files = vec![FileUndo { path: c.page.clone(), before: current, version }];
+            let mut paths = vec![abs, root.join("log.md")];
+            match write_claims(root, &mut c) {
+                Ok(Some(f)) => {
+                    paths.push(root.join(&f.path));
+                    files.push(f);
+                }
+                Ok(None) => {}
+                Err(e) => crate::applog!("claims for {}: {}", c.page, e.message()),
+            }
             if let Some(line) = log_line(&c) {
                 match crate::edits::add_log(root, &line) {
                     Ok(f) => files.push(f),
@@ -284,7 +298,7 @@ fn apply(app: &AppHandle, root: &Path, mut c: Change, base: Option<String>) -> R
             }
             let label = format!("{} {name}: {}", if c.kind == Kind::New { "Made" } else { "Changed" }, c.title);
             app.state::<UndoStack>().push(UndoEntry::files(label.clone(), files));
-            written(app, &[abs, root.join("log.md")]);
+            written(app, &paths);
             label
         }
     };
@@ -297,6 +311,55 @@ fn apply(app: &AppHandle, root: &Path, mut c: Change, base: Option<String>) -> R
         message.push_str(&format!(" Flagged: {}", c.flags.join(" ")));
     }
     Ok(Outcome { id: c.id.clone(), applied: true, page: c.to.clone().unwrap_or(c.page.clone()), flags: c.flags.clone(), message })
+}
+
+/// Writes the change's claims into its page's claims file, recording the file before and after.
+/// Returns the file's ⌘Z entry when it changed and is still there.
+fn write_claims(root: &Path, c: &mut Change) -> Res<Option<FileUndo>> {
+    let page = c.page.clone();
+    let (Some(u), Some(rel)) = (c.claims.as_mut(), brainstead_core::claims::path(&page)) else { return Ok(None) };
+    let abs = root.join(&rel);
+    let current = read_opt(&abs);
+    let next = brainstead_core::claims::with_source(current.as_deref(), &page, &u.source, &u.claims);
+    if next == current {
+        return Ok(None);
+    }
+    let st = store();
+    u.before = current.as_deref().map(|t| st.put_text(t)).transpose()?;
+    u.after = next.as_deref().map(|t| st.put_text(t)).transpose()?;
+    set_claims(&abs, next.as_deref())?;
+    Ok(next.map(|t| FileUndo { path: rel, before: current, version: write::version(t.as_bytes()) }))
+}
+
+/// A claims file written, or taken away when there's nothing left in it.
+fn set_claims(abs: &Path, text: Option<&str>) -> Res<()> {
+    match text {
+        Some(t) => {
+            if let Some(d) = abs.parent() {
+                std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+            }
+            Ok(write::write_atomic(abs, t.as_bytes(), false)?)
+        }
+        None if abs.exists() => std::fs::remove_file(abs).map_err(|e| e.to_string().into()),
+        None => Ok(()),
+    }
+}
+
+/// A reverted change's claims: its source's claims on the page put back as they were before it,
+/// whatever other sources have added since.
+fn revert_claims(root: &Path, c: &Change) {
+    let (Some(u), Some(rel)) = (c.claims.as_ref(), brainstead_core::claims::path(&c.page)) else { return };
+    let st = store();
+    let before = u.before.as_deref().and_then(|h| st.text(h));
+    let was = brainstead_core::claims::of_source(before.as_deref(), &u.source);
+    let abs = root.join(&rel);
+    let current = read_opt(&abs);
+    let next = brainstead_core::claims::with_source(current.as_deref(), &c.page, &u.source, &was);
+    if next != current {
+        if let Err(e) = set_claims(&abs, next.as_deref()) {
+            crate::applog!("claims for {} not reverted: {}", c.page, e.message());
+        }
+    }
 }
 
 /// The start of a Reshape pages run's group.
@@ -564,6 +627,7 @@ fn revert_one(app: &AppHandle, id: &str) -> Res<Reverted> {
                     brainstead_core::trash::undo_created(&root, &c.page, "note").map_err(EditError::from)?;
                 }
             }
+            revert_claims(&root, &c);
             written(app, &[abs]);
             format!("Reverted {name}: {}", c.title)
         }

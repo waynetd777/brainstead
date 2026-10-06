@@ -535,6 +535,26 @@ export interface ContradictionItem {
   verdict: ContradictionVerdict | null;
 }
 
+/** A fact ingest checked and kept with a wiki page (wiki/.claims/). */
+export interface KeptClaim {
+  subject: string;
+  attribute: string;
+  value: string;
+  asOf?: string;
+  quote: string;
+  anchor?: string;
+  source: string;
+  entry?: string;
+  recorded: string;
+}
+
+export interface PageFact {
+  subject: string;
+  attribute: string;
+  latest: KeptClaim;
+  earlier: KeptClaim[];
+}
+
 export interface ContradictionsReport {
   last: {
     started: string;
@@ -913,6 +933,7 @@ export const api = {
   contradictionsRun: (unattended = false) => invoke<boolean>("contradictions_run", { unattended }),
   contradictionsMark: (id: string, verdict: string) => invoke<void>("contradictions_mark", { id, verdict }),
   pageContradictions: (path: string) => invoke<ContradictionItem[]>("page_contradictions", { path }),
+  pageFacts: (path: string) => invoke<PageFact[]>("page_facts", { path }),
   onContradictionsChanged: (f: () => void): Promise<UnlistenFn> => listen("contradictions-changed", () => f()),
   /** `unattended`: an assistant nobody is watching asked, so its changes are held when a check fails. */
   ingestStart: (paths: string[], unattended = false) => invoke<string[]>("ingest_start", { paths, unattended }),

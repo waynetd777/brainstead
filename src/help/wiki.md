@@ -33,6 +33,8 @@ Entity and concept pages share one layout: the opening text, **Current state**, 
 
 Under the title a line gives the page's aliases, its `updated:` date and how many sources it has. A link in the text to one of its sources, or to any file in `sources/`, is drawn as a small number: click it to open the source at the passage cited. The **Sources** card beside **Linked from** lists the sources in the same numbered order.
 
+The **Facts** card lists what ingest checked against the sources and kept with the page: the latest value of each fact, with its "as of" date and what it replaced. Point at one to see the quote it rests on; click it to open the source. Facts are kept from the first ingest that checks them, so an older page may have none yet. Reverting the ingest's change in [Changes](app:review) takes its facts back too.
+
 If another wiki page says something different about the same thing, a banner at the top says what disagrees. **See it** opens [Contradictions](app:contradictions).
 
 The top bar has **Ask**, which starts a chat about the page, **Refresh from sources**, which ingests the page's sources again, and the graph button, which opens the [Graph](app:graph) centred on the page.

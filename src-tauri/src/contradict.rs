@@ -209,6 +209,7 @@ fn run(app: &AppHandle, l: &mut Last, trigger: Option<&str>, group: &str) -> Res
     l.doing = "Finding clashes".into();
     save_last(app, l);
     let (claims, _) = c::current(&st, &pages);
+    let claims = c::with_kept(claims, &brainstead_core::claims::all(&root), &pages);
     l.claims = claims.len();
     let idx_pages: Vec<(String, Vec<String>)> = pages.iter().map(|(r, _, a)| (r.clone(), a.clone())).collect();
     let clashes = c::find_clashes(&claims, &c::name_index(&idx_pages), c::WINDOW_DAYS);
@@ -369,6 +370,19 @@ pub async fn page_contradictions(path: String) -> Res<Vec<Item>> {
         let v = state().verdicts();
         let all = clashes();
         Ok(c::open_on(&path, &all, &v, &fixed()).into_iter().map(|x| Item { verdict: v.get(&x.id).cloned(), clash: x.clone() }).collect())
+    })
+    .await
+}
+
+/// A wiki page's kept facts (D-20261006-08), for its side pane: the latest per subject and
+/// attribute, with what each superseded.
+#[tauri::command]
+pub async fn page_facts(app: AppHandle, path: String) -> Res<Vec<brainstead_core::claims::Fact>> {
+    blocking(move || {
+        let root = app.state::<VaultService>().root().ok_or_else(|| EditError::from("No vault is open.".to_string()))?;
+        let Some(rel) = brainstead_core::claims::path(&path) else { return Ok(vec![]) };
+        let text = std::fs::read_to_string(root.join(rel)).unwrap_or_default();
+        Ok(brainstead_core::claims::facts(&brainstead_core::claims::parse(&text), None, None))
     })
     .await
 }

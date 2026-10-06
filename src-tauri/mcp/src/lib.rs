@@ -258,6 +258,9 @@ pub fn tools() -> Vec<Value> {
         tool("resolve_entity", "Which page a name means", Read,
             "Which page a name means: by file name, then alias, then a close spelling. Use it before creating a page, so you don't make a second page for something that has one.",
             schema(json!({"name": {"type": "string"}}), &["name"])),
+        tool("facts", "Facts from the wiki", Read,
+            "The facts ingest checked against their sources and kept with each wiki page: per subject and attribute, the latest value with its as of date, quote, source and Timeline entry, then the values it superseded. Answers \"what's the latest go_live_date for Orbit App\" without reading pages. Give a page, a subject, an attribute (go_live_date, owner, status, role…; synonyms count), or any mix. Facts are kept from the first ingest that checks them, so a page may have none yet.",
+            schema(json!({"page": page, "subject": {"type": "string"}, "attribute": {"type": "string"}}), &[])),
         tool("pending_sources", "Sources not yet in the wiki", Read, "Files in sources/ that no wiki page cites yet in its sources: property: notes, PDFs, Office files and images (whose text is read from the picture), each ready for start_run's ingest.", schema(json!({}), &[])),
         tool("lint", "Knowledge health report", Read,
             "Knowledge health's checks on the wiki. Wiki checks: missing pages, broken sources, orphan pages, missing cross-links, stale updated: dates, unlogged writes, sources not yet ingested and images nothing uses. More checks: possible duplicates, stale pages others rely on, and sources changed since they were cited (claims with no citation show only in the app, after a contradictions check). For one page when given. Items with a safe fix can be fixed with fix_health.",
@@ -551,6 +554,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<String, CallError> {
         "read_section" => Ok(read_section(ctx, parse(obj)?)?),
         "backlinks" => Ok(backlinks(ctx, parse(obj)?)?),
         "resolve_entity" => Ok(resolve_entity(ctx, parse(obj)?)?),
+        "facts" => Ok(facts(ctx, parse(obj)?)?),
         "pending_sources" => Ok(pending_sources(ctx)),
         "lint" => Ok(lint_tool(ctx, parse(obj)?)?),
         "help" => Ok(help(parse(obj)?)?),
@@ -1123,6 +1127,51 @@ fn resolve_entity(ctx: &Ctx, a: NameArgs) -> Result<String, String> {
     let mut out = format!("No page is called exactly {name}. Close:\n");
     for (p, s) in &r.close {
         out.push_str(&format!("- {p} ({:.0}% alike)\n", s * 100.0));
+    }
+    Ok(out)
+}
+
+#[derive(Deserialize)]
+struct FactsArgs {
+    page: Option<String>,
+    subject: Option<String>,
+    attribute: Option<String>,
+}
+
+/// One kept claim as a line: value, when, quote, source, entry.
+fn fact_line(c: &brainstead_core::claims::Kept) -> String {
+    let when = c.as_of.as_deref().map(|d| format!(" (as of {d})")).unwrap_or_default();
+    let entry = c.entry.as_deref().map(|e| format!(", entry “{e}”")).unwrap_or_default();
+    let name = brainstead_core::lint::stem(brainstead_core::lint::name_of(&c.source));
+    format!("{}{when}: “{}” from [[{name}]]{entry}, recorded {}", c.value, c.quote, c.recorded)
+}
+
+fn facts(ctx: &Ctx, a: FactsArgs) -> Result<String, String> {
+    let page = match a.page.as_deref().filter(|p| !p.trim().is_empty()) {
+        Some(p) => Some(existing(ctx, &ctx.index()?, p)?),
+        None => None,
+    };
+    let files: Vec<_> =
+        brainstead_core::claims::all(&ctx.vault).into_iter().filter(|f| page.as_ref().is_none_or(|p| *p == f.page)).collect();
+    let mut out = String::new();
+    for f in &files {
+        let found = brainstead_core::claims::facts(f, a.subject.as_deref(), a.attribute.as_deref());
+        if found.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("{}:\n", f.page));
+        for x in found {
+            out.push_str(&format!("- {} — {}: {}\n", x.subject, x.attribute, fact_line(&x.latest)));
+            for e in &x.earlier {
+                out.push_str(&format!("  - superseded: {}\n", fact_line(e)));
+            }
+        }
+    }
+    if out.is_empty() {
+        let on = page.map(|p| format!(" on {p}")).unwrap_or_default();
+        return Ok(format!(
+            "No kept facts match{on}. Facts are kept from the first ingest that checks them, so older pages may have none: read the page (read_section) instead."
+        ));
     }
     Ok(out)
 }
