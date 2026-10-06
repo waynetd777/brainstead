@@ -283,7 +283,8 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
             if linked.iter().any(|l| l.contains(&padded)) {
                 continue;
             }
-            if mention(page_body, name).is_some() {
+            // The fix's own rule, so every item it lists is one Fix can make.
+            if plain_mention(text, name).is_some() {
                 items.push(Item {
                     text: format!("{}: '{name}' mentioned without [[link]]", f.rel),
                     page: Some(f.rel.clone()),
@@ -508,12 +509,7 @@ fn word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
-/// The first place `name` appears as a whole word (the script's `(?<!\w)name(?!\w)`), as a byte
-/// offset into `text`.
-fn mention(text: &str, name: &str) -> Option<usize> {
-    mentions(text, name).next()
-}
-
+/// Every place `name` appears as a whole word (the script's `(?<!\w)name(?!\w)`), as byte offsets.
 fn mentions<'a>(text: &'a str, name: &'a str) -> impl Iterator<Item = usize> + 'a {
     text.match_indices(name).map(|(i, _)| i).filter(move |&i| {
         let before = text[..i].chars().next_back().is_none_or(|c| !word_char(c));
@@ -600,9 +596,15 @@ fn first_word_of(short: &str, long: &str) -> bool {
 
 // ── Safe fixes ────────────────────────────────────────────────────────────────
 
-/// The page with the first plain mention of `name` in its body made a link: not in code, a
-/// heading, the properties, or a link already.
+/// The page with the first plain mention of `name` in its body made a link.
 pub fn link_first_mention(text: &str, name: &str) -> Option<String> {
+    let at = plain_mention(text, name)?;
+    Some(format!("{}[[{name}]]{}", &text[..at], &text[at + name.len()..]))
+}
+
+/// Where `name` first appears in the page's body as a whole word that isn't in code, a heading,
+/// the properties, or a link already (a link's target or anchor too), as a byte offset.
+fn plain_mention(text: &str, name: &str) -> Option<usize> {
     let start = FRONTMATTER.find(text).map_or(0, |m| m.end());
     let lines = crate::markdown::lines(text, 0);
     for l in lines.iter().filter(|l| !l.code && l.start >= start) {
@@ -614,8 +616,7 @@ pub fn link_first_mention(text: &str, name: &str) -> Option<String> {
         let busy = link_spans(&blanked);
         let found = mentions(&blanked, name).find(|i| !busy.iter().any(|r| r.contains(i)));
         if let Some(i) = found {
-            let at = l.start + i;
-            return Some(format!("{}[[{name}]]{}", &text[..at], &text[at + name.len()..]));
+            return Some(l.start + i);
         }
     }
     None
@@ -744,6 +745,8 @@ mod tests {
         assert_eq!(link_first_mention("---\nname: Orbit App\n---\nNothing.\n", "Orbit App"), None);
         let fenced = "```\nOrbit App\n```\nOrbit App\n";
         assert_eq!(link_first_mention(fenced, "Orbit App").unwrap(), "```\nOrbit App\n```\n[[Orbit App]]\n");
+        // Only in a link's anchor: nothing to link, so the check doesn't list it either.
+        assert_eq!(link_first_mention("At the demo ([[Meeting. Demo - 2026-10-02#Questions (Lena Park)]]).\n", "Lena Park"), None);
     }
 
     #[test]
