@@ -242,7 +242,7 @@ pub fn tools() -> Vec<Value> {
         }),
         &["page", "title"],
     );
-    vec![
+    let mut all = vec![
         tool("search", "Search the vault", Read,
             "Full-text search over the vault, as Brainstead's Search does: words, \"exact phrases\", +required, -excluded, #tag. Returns the best passages, each with its page, heading and a snippet.",
             schema(json!({
@@ -378,13 +378,11 @@ pub fn tools() -> Vec<Value> {
             "Moves a note or page to Brainstead's Trash (needs the app), only when the user asks; it can be restored from the Trash or reverted in Changes.",
             schema(json!({"page": page, "reason": {"type": "string"}}), &["page"])),
         tool("trash", "The Trash", Change,
-            "Lists what's in Brainstead's Trash, with how many items it holds, newest first (the latest 50 unless limit says; query keeps those whose path has those words), or restores an entry to where it was, or with to under another path when something is there already, as the Trash's Restore as… does (needs the app). Moving something to the Trash is trash_note.",
+            "Lists what's in Brainstead's Trash, newest first, with how many items it holds and their size, 50 at a time, or restores an entry to where it was, or with to under another path when something is there already, as the Trash's Restore as… does (needs the app). Moving something to the Trash is trash_note.",
             schema(json!({
                 "action": {"type": "string", "enum": ["list", "restore"]},
                 "id": {"type": "string", "description": "For restore: the entry's id from the list."},
-                "to": {"type": "string", "description": "For restore: the vault path to put it back under, instead of where it was."},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 500, "description": "For list: how many, default 50."},
-                "query": {"type": "string", "description": "For list: only entries whose path contains this."}
+                "to": {"type": "string", "description": "For restore: the vault path to put it back under, instead of where it was."}
             }), &[])),
         tool("bookmarks", "Bookmarks", Change,
             "Lists the bookmarks, or with page, bookmarks it or takes its bookmark off, or with keep, keeps a bookmark as triage's Keep does (needs the app).",
@@ -518,7 +516,7 @@ pub fn tools() -> Vec<Value> {
         // Around the vault.
         tool("activity", "Recent activity", Read,
             "log.md, newest first: what Brainstead and the assistants changed (needs the app). With date, the files changed that day.",
-            schema(json!({"date": {"type": "string", "description": "YYYY-MM-DD."}, "limit": {"type": "integer", "minimum": 1, "maximum": 200}}), &[])),
+            schema(json!({"date": {"type": "string", "description": "YYYY-MM-DD."}}), &[])),
         tool("graph", "Links around a page", Read,
             "The pages linked to and from a page, to a depth of 1 to 3 (needs the app); the whole wiki without page.",
             schema(json!({"page": page, "depth": {"type": "integer", "minimum": 1, "maximum": 3}}), &[])),
@@ -579,7 +577,78 @@ pub fn tools() -> Vec<Value> {
         tool("app_status", "Brainstead's state", Read,
             "The vault, whether it's read-only (then nothing can be changed until the user switches it off in Settings › Vault), the index, whether Brainstead runs the daily and weekly summaries, and what ⌘Z would undo (needs the app).",
             schema(json!({}), &[])),
-    ]
+    ];
+    for t in &mut all {
+        if PAGED.contains(&t["name"].as_str().unwrap_or("")) {
+            paging(&mut t["inputSchema"]["properties"]);
+        }
+    }
+    all
+}
+
+/// The tools that list something: each gives how many there are and a page of them at a time.
+const PAGED: [&str; 14] = [
+    "backlinks",
+    "list_inbox",
+    "list_projects",
+    "trash",
+    "bookmarks",
+    "changes",
+    "chats",
+    "list_transcripts",
+    "contradictions",
+    "page_shape",
+    "triage_bookmarks",
+    "activity",
+    "graph",
+    "suggestions",
+];
+
+/// A listing tool's paging: limit, offset and query, as src/mcpActions.ts's pagedRows reads them.
+fn paging(props: &mut Value) {
+    let Some(p) = props.as_object_mut() else { return };
+    p.insert("limit".into(), json!({"type": "integer", "minimum": 1, "maximum": 500, "description": "For a list: how many to give (each tool has its own default, said in its reply)."}));
+    p.insert("offset".into(), json!({"type": "integer", "minimum": 0, "description": "For a list: how many to skip, for the next page; the reply says which offset comes next."}));
+    p.insert("query".into(), json!({"type": "string", "description": "For a list: only the rows with all of these words."}));
+}
+
+/// Rows a page at a time, as the app's listing tools give them (src/mcpActions.ts's pagedRows).
+fn page_of<'a, T>(rows: &'a [T], text: impl Fn(&T) -> String, a: &Paging, noun: (&str, &str), def: usize) -> (Vec<&'a T>, String) {
+    let words: Vec<String> = a.query.as_deref().unwrap_or("").to_lowercase().split_whitespace().map(String::from).collect();
+    let hit: Vec<&T> = rows
+        .iter()
+        .filter(|r| {
+            let t = text(r).to_lowercase();
+            words.iter().all(|w| t.contains(w))
+        })
+        .collect();
+    let limit = a.limit.unwrap_or(def).clamp(1, 500);
+    let offset = a.offset.unwrap_or(0);
+    let shown: Vec<&T> = hit.iter().skip(offset).take(limit).copied().collect();
+    let n = |k: usize| format!("{k} {}", if k == 1 { noun.0 } else { noun.1 });
+    let mut head =
+        if words.is_empty() { n(rows.len()) } else { format!("{} matching “{}”, of {}", n(hit.len()), words.join(" "), rows.len()) };
+    if offset >= hit.len() && !hit.is_empty() {
+        head.push_str(&format!("; none from offset {offset}"));
+    } else if shown.len() < hit.len() {
+        let end = offset + shown.len();
+        head.push_str(&format!("; {}–{end} shown", offset + 1));
+        if end < hit.len() {
+            head.push_str(&format!(", offset {end} for the next"));
+        }
+    }
+    (shown, head)
+}
+
+/// limit, offset and query, as every listing tool takes them.
+#[derive(Deserialize, Default)]
+struct Paging {
+    #[serde(default)]
+    limit: Option<usize>,
+    #[serde(default)]
+    offset: Option<usize>,
+    #[serde(default)]
+    query: Option<String>,
 }
 
 /// Why a call failed: arguments the tool can't take (a JSON-RPC error, as MCP asks), or the tool
@@ -700,7 +769,10 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<String, CallError> {
         "create_template" => Ok(create_template(ctx, parse(obj)?)?),
         "fix_health" => act("health.fix", obj),
         "ignore_issue" => act("health.ignore", obj),
-        "page_shape" => Ok(page_shape_tool(ctx, obj.get("page").and_then(Value::as_str))?),
+        "page_shape" => {
+            let paging: Paging = parse(obj.clone())?;
+            Ok(page_shape_tool(ctx, obj.get("page").and_then(Value::as_str), &paging)?)
+        }
         "reshape_pages" => act("health.reshape", obj),
         "write_current_state" => act("health.current_state", obj),
         "fix_name" => act("fix_name", obj),
@@ -1211,11 +1283,13 @@ fn read_parts(ctx: &Ctx, ix: &Index, rel: &str, which: Option<&str>) -> Result<S
 }
 
 #[derive(Deserialize)]
-struct PageArgs {
+struct BacklinkArgs {
     page: String,
+    #[serde(flatten)]
+    paging: Paging,
 }
 
-fn backlinks(ctx: &Ctx, a: PageArgs) -> Result<String, String> {
+fn backlinks(ctx: &Ctx, a: BacklinkArgs) -> Result<String, String> {
     let ix = ctx.index()?;
     let rel = existing(ctx, &ix, &a.page)?;
     let Some(mut meta) = ix.doc_meta(&rel)? else { return Err(format!("{rel} isn't in Brainstead's index yet.")) };
@@ -1223,8 +1297,9 @@ fn backlinks(ctx: &Ctx, a: PageArgs) -> Result<String, String> {
     if meta.backlinks.is_empty() {
         return Ok(format!("Nothing links to {rel}."));
     }
-    let mut out = format!("{} link(s) to {rel}:\n", meta.backlinks.len());
-    for b in &meta.backlinks {
+    let (shown, head) = page_of(&meta.backlinks, |b| format!("{} {}", b.path, b.context), &a.paging, ("link", "links"), 50);
+    let mut out = format!("{rel}: {head}:\n");
+    for b in shown {
         let line = b.line.map(|n| format!(" (line {})", n + 1)).unwrap_or_default();
         out.push_str(&format!("- {}{line}: {}\n", b.path, b.context));
     }
@@ -1359,7 +1434,7 @@ struct LintArgs {
 }
 
 /// The page shape dry run, for the vault or one page.
-fn page_shape_tool(ctx: &Ctx, page: Option<&str>) -> Result<String, String> {
+fn page_shape_tool(ctx: &Ctx, page: Option<&str>, paging: &Paging) -> Result<String, String> {
     use brainstead_core::pageshape;
     if let Some(p) = page.filter(|p| !p.trim().is_empty()) {
         let rel = existing(ctx, &ctx.index()?, p)?;
@@ -1383,10 +1458,16 @@ fn page_shape_tool(ctx: &Ctx, page: Option<&str>) -> Result<String, String> {
         if !rp.headings.is_empty() {
             out.push("Headings it would rewrite:".into());
             out.extend(rp.headings.iter().take(40).map(|(o, n)| format!("- {o}  →  {n}")));
+            if rp.headings.len() > 40 {
+                out.push(format!("- …and {} more", rp.headings.len() - 40));
+            }
         }
         if !rp.added.is_empty() {
             out.push("Lines it would add:".into());
             out.extend(rp.added.iter().take(40).map(|l| format!("- {l}")));
+            if rp.added.len() > 40 {
+                out.push(format!("- …and {} more", rp.added.len() - 40));
+            }
         }
         if !rp.removed.is_empty() {
             out.push("Lines it would drop (repeated in a merged See also):".into());
@@ -1408,21 +1489,21 @@ fn page_shape_tool(ctx: &Ctx, page: Option<&str>) -> Result<String, String> {
         auto.len(),
         out_of.len() - auto.len()
     )];
-    for r in out_of.iter().filter(|r| !r.auto) {
-        let why = if r.report.broken.is_empty() {
+    // Every page out of the shape, those that need the user first; give page for one's detail.
+    let why = |r: &pageshape::PageResult| {
+        if r.auto {
+            "reshape_pages can do it by itself".to_string()
+        } else if r.report.broken.is_empty() {
             r.report.reasons.join("; ")
         } else {
             format!("can't be reshaped: {}", r.report.broken.join("; "))
-        };
-        out.push(format!("- {}: {why}", r.path));
-    }
-    if !auto.is_empty() {
-        out.push(format!(
-            "By itself: {}{}",
-            auto.iter().take(30).copied().collect::<Vec<_>>().join(", "),
-            if auto.len() > 30 { ", …" } else { "" }
-        ));
-    }
+        }
+    };
+    let mut rows = out_of.clone();
+    rows.sort_by_key(|r| (r.auto, r.path.clone()));
+    let (shown, head) = page_of(&rows, |r| format!("{} {}", r.path, why(r)), paging, ("page", "pages"), 50);
+    out.push(format!("Those that need the user first, then the rest: {head}:"));
+    out.extend(shown.into_iter().map(|r| format!("- {}: {}", r.path, why(r))));
     Ok(out.join("\n"))
 }
 

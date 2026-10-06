@@ -71,6 +71,31 @@ const str = (a: Args, k: string): string | undefined =>
   typeof a[k] === "string" && (a[k] as string).trim() ? (a[k] as string).trim() : undefined;
 const has = (a: Args, k: string) => k in a && a[k] !== undefined;
 
+/** A long list a page at a time, as every listing tool gives one: the rows whose text has all of
+ *  `query`'s words, then `limit` of them (`def` unless said, at most 500) from `offset`, and a head
+ *  saying how many there are and how to see the rest. */
+export function pagedRows<T>(a: Args, rows: T[], text: (r: T) => string, noun: [string, string], def = 50): { shown: T[]; head: string } {
+  const words = (str(a, "query") ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+  const hit = words.length ? rows.filter((r) => words.every((w) => text(r).toLowerCase().includes(w))) : rows;
+  const limit = Math.min(Math.max(Math.floor(Number(a.limit)) || def, 1), 500);
+  const offset = Math.max(Math.floor(Number(a.offset)) || 0, 0);
+  const shown = hit.slice(offset, offset + limit);
+  const n = (k: number) => `${k} ${k === 1 ? noun[0] : noun[1]}`;
+  let head = words.length ? `${n(hit.length)} matching “${words.join(" ")}”, of ${rows.length}` : n(rows.length);
+  if (offset >= hit.length && hit.length) head += `; none from offset ${offset}`;
+  else if (shown.length < hit.length) {
+    const end = offset + shown.length;
+    head += `; ${offset + 1}–${end} shown${end < hit.length ? `, offset ${end} for the next` : ""}`;
+  }
+  return { shown, head };
+}
+
+/** pagedRows for a list that's one line a row: its head, then the lines shown. */
+const paged = (a: Args, lines: string[], noun: [string, string], def = 50) => {
+  const { shown, head } = pagedRows(a, lines, (l) => l, noun, def);
+  return [`${head}:`, ...shown].join("\n");
+};
+
 /** Says in the app what an assistant changed, with Undo. */
 function told(what: string) {
   toast(`An assistant: ${what}`, undoAction, "ok");
@@ -314,15 +339,13 @@ async function projectPath(name: string): Promise<string> {
 
 const inboxKey = (i: InboxItem) => `${i.kind}:${i.line + 1}`;
 
-async function listInbox(): Promise<string> {
+async function listInbox(a: Args): Promise<string> {
   const items = (await api.inboxList()).filter(unclarified);
   if (!items.length) return "The Inbox is empty.";
   const where = (i: InboxItem) =>
     i.kind === "capture" ? `capture ${i.path}` : i.kind === "thought" ? `Scratchpad ${i.stamp ?? ""}` : "To Do list › Other";
-  return [
-    `${items.length} item${items.length === 1 ? "" : "s"} to clarify:`,
-    ...items.map((i) => `- ${i.text.replace(/\n/g, " ").slice(0, 200)} — ${where(i)}  (${inboxKey(i)})`),
-  ].join("\n");
+  const lines = items.map((i) => `- ${i.text.replace(/\n/g, " ").slice(0, 200)} — ${where(i)}  (${inboxKey(i)})`);
+  return paged(a, lines, ["item to clarify", "items to clarify"]);
 }
 
 async function clarify(a: Args, r: McpRequest): Promise<string> {
@@ -634,18 +657,31 @@ async function changesTool(a: Args): Promise<string> {
   const id = str(a, "id");
   if (action === "list") {
     const rows = await api.changesList(str(a, "page"));
-    const heldRows = rows.filter((c) => c.status === "held");
-    const made = rows.filter((c) => c.status !== "held").slice(0, 30);
     if (!rows.length) return "No changes yet.";
+    const text = (c: (typeof rows)[number]) => `${c.title} ${c.page} ${originLabel(c)}`;
     const line = (c: (typeof rows)[number]) =>
       `- ${c.title} · ${c.page} · ${c.kind} · ${c.status}${c.flags.length ? ` · ${c.flags.join(" ")}` : ""} · ${originLabel(c)}  (id ${c.id})`;
+    // Held ones a page at a time; made ones, the latest 30 (limit and query narrow both).
+    const held = pagedRows(
+      a,
+      rows.filter((c) => c.status === "held"),
+      text,
+      ["change held for the user", "changes held for the user"],
+    );
+    const made = pagedRows(
+      { ...a, offset: 0, limit: a.limit ?? 30 },
+      rows.filter((c) => c.status !== "held"),
+      text,
+      ["change made", "changes made"],
+      30,
+    );
     return [
-      heldRows.length ? `${heldRows.length} held for the user:` : "Nothing held.",
-      ...byRun(heldRows).flatMap((g) => [`Run “${g.label}” (group ${g.group}):`, ...g.rows.map(line)]),
-      ...(made.length
+      rows.some((c) => c.status === "held") ? `${held.head}:` : "Nothing held.",
+      ...byRun(held.shown).flatMap((g) => [`Run “${g.label}” (group ${g.group}):`, ...g.rows.map(line)]),
+      ...(made.shown.length
         ? [
-            "Made lately (newest first; revert undoes one, revert_run a whole run by its group):",
-            ...byRun(made).flatMap((g) => [`Run “${g.label}” (group ${g.group}):`, ...g.rows.map(line)]),
+            `Made lately, newest first (revert undoes one, revert_run a whole run by its group): ${made.head}:`,
+            ...byRun(made.shown).flatMap((g) => [`Run “${g.label}” (group ${g.group}):`, ...g.rows.map(line)]),
           ]
         : []),
     ].join("\n");
@@ -1099,12 +1135,12 @@ async function trash(a: Args): Promise<string> {
   if (action === "list") {
     const all = (await api.trashList()).sort((x, y) => y.deletedAt.localeCompare(x.deletedAt));
     if (!all.length) return "The Trash is empty.";
-    const q = str(a, "query")?.trim().toLowerCase();
-    const rows = q ? all.filter((t) => t.originalRel.toLowerCase().includes(q)) : all;
-    const limit = Math.min(Math.max(Math.floor(Number(a.limit)) || 50, 1), 500);
     const mb = (all.reduce((n, t) => n + t.sizeBytes, 0) / 1e6).toFixed(1);
-    const head = `The Trash holds ${all.length} item${all.length === 1 ? "" : "s"} (${mb} MB)${q ? `; ${rows.length} match “${q}”` : ""}${rows.length > limit ? `. The newest ${limit}; raise limit or give query for others` : ""}:`;
-    return [head, ...rows.slice(0, limit).map((t) => `- ${t.originalRel} · deleted ${t.deletedAt.slice(0, 10)}  (id ${t.id})`)].join("\n");
+    const { shown, head } = pagedRows(a, all, (t) => t.originalRel, ["item", "items"]);
+    return [
+      `The Trash (${mb} MB), newest first: ${head}:`,
+      ...shown.map((t) => `- ${t.originalRel} · deleted ${t.deletedAt.slice(0, 10)}  (id ${t.id})`),
+    ].join("\n");
   }
   if (action === "restore") {
     const id = str(a, "id");
@@ -1126,7 +1162,13 @@ async function bookmarks(a: Args): Promise<string> {
   }
   if (!page) {
     const rows = await api.bookmarks();
-    return rows.length ? rows.map((b) => `- ${b.title}${b.path ? ` (${b.path})` : " (missing)"}`).join("\n") : "No bookmarks.";
+    return rows.length
+      ? paged(
+          a,
+          rows.map((b) => `- ${b.title}${b.path ? ` (${b.path})` : " (missing)"}`),
+          ["bookmark", "bookmarks"],
+        )
+      : "No bookmarks.";
   }
   const on = await api.bookmarkToggle(page);
   told(on ? `bookmarked ${page}` : `took the bookmark off ${page}`);
@@ -1158,25 +1200,26 @@ async function activity(a: Args): Promise<string> {
   if (date) {
     const files = await api.activityDay(date);
     return files.length
-      ? [`${files.length} file${files.length === 1 ? "" : "s"} changed on ${date}:`, ...files.slice(0, 80).map((f) => `- ${f.path}`)].join(
-          "\n",
+      ? paged(
+          a,
+          files.map((f) => `- ${f.path}`),
+          [`file changed on ${date}`, `files changed on ${date}`],
+          80,
         )
       : `Nothing changed on ${date}.`;
   }
   const { log } = await api.activity();
-  return log.length
-    ? log
-        .slice(0, Math.min(Number(a.limit) || 30, 200))
-        .map((e) => `- ${e.date}${e.time ? ` ${e.time}` : ""} ${e.action} ${e.title}${e.description ? ` — ${e.description}` : ""}`)
-        .join("\n")
-    : "log.md is empty.";
+  const lines = log.map(
+    (e) => `- ${e.date}${e.time ? ` ${e.time}` : ""} ${e.action} ${e.title}${e.description ? ` — ${e.description}` : ""}`,
+  );
+  return lines.length ? paged(a, lines, ["entry in log.md, newest first", "entries in log.md, newest first"], 30) : "log.md is empty.";
 }
 
 async function graph(a: Args): Promise<string> {
   const g = await api.graph(str(a, "page") ?? null, Math.min(Math.max(Number(a.depth) || 1, 1), 3));
   const name = new Map(g.nodes.map((n) => [n.id, n.title ?? n.id]));
-  const lines = g.edges.slice(0, 200).map(([s, t]) => `- ${name.get(s)} → ${name.get(t)}`);
-  return [`${g.nodes.length} pages, ${g.edges.length} links${g.edges.length > 200 ? " (the first 200)" : ""}:`, ...lines].join("\n");
+  const lines = g.edges.map(([s, t]) => `- ${name.get(s)} → ${name.get(t)}`);
+  return `${g.nodes.length} pages; ${paged(a, lines, ["link", "links"], 200)}`;
 }
 
 async function status(): Promise<string> {
@@ -1251,8 +1294,7 @@ async function suggestions(a: Args): Promise<string> {
       r
         ? `Last look: ${r.status}${r.status === "running" ? ` (${r.done} of ${r.batches} parts)` : ""}, ${r.notes} notes read.`
         : "No look yet: start_run find_tasks starts one.",
-      s.suggestions.length ? `${s.suggestions.length} suggestions:` : "No suggestions waiting.",
-      ...s.suggestions.map(line),
+      s.suggestions.length ? paged(a, s.suggestions.map(line), ["suggestion", "suggestions"]) : "No suggestions waiting.",
     ].join("\n");
   }
   const id = str(a, "id");
@@ -1278,11 +1320,11 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   "tasks.list": listTasks,
   "task.edit": editTask,
   "task.move": moveTask,
-  "inbox.list": listInbox,
+  "inbox.list": (a) => listInbox(a),
   "inbox.clarify": clarify,
-  "projects.list": async () => {
+  "projects.list": async (a) => {
     const rows = await api.projectsList();
-    return rows.length ? rows.map(projectOut).join("\n") : "No projects.";
+    return rows.length ? paged(a, rows.map(projectOut), ["project", "projects"]) : "No projects.";
   },
   "project.create": createProject,
   "project.update": updateProject,
@@ -1314,13 +1356,12 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   status: status,
   automated: automated,
   suggestions: suggestions,
-  "triage.list": async () => {
+  "triage.list": async (a) => {
     const rows = await api.bookmarksStatus();
-    return (
-      rows
-        .map((b) => `- ${b.title}${b.missing ? " (missing)" : b.stale ? ` (untouched ${b.days} days)` : ""}  (${b.path ?? b.target})`)
-        .join("\n") || "No bookmarks."
+    const lines = rows.map(
+      (b) => `- ${b.title}${b.missing ? " (missing)" : b.stale ? ` (untouched ${b.days} days)` : ""}  (${b.path ?? b.target})`,
     );
+    return lines.length ? paged(a, lines, ["bookmark", "bookmarks"]) : "No bookmarks.";
   },
   "triage.suggest": (a) => api.bookmarksSuggest((Array.isArray(a.items) ? a.items : []) as { target: string; path: string }[]),
   "reply.draft": (a) => api.draftReply(str(a, "thread") ?? null, str(a, "text") ?? null, str(a, "tone") ?? "neutral"),
@@ -1343,17 +1384,14 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
     told(`saved the chat “${c.title}”`);
     return `Saved “${c.title}” to the vault as ${f}; it keeps up to date there as the chat goes on.`;
   },
-  "meeting.transcripts": async () => {
-    const all = await api.meetingTranscripts();
-    return (
-      all
-        .filter((t) => !t.done)
-        .map(
-          (t) =>
-            `- ${t.path} · looks like ${t.inferred.type ?? "a meeting"} ${t.inferred.name ?? t.inferred.topic ?? ""} ${t.inferred.date ?? ""}${t.inferred.dateCheck ? " (the capture day: check the meeting date)" : ""}`,
-        )
-        .join("\n") || "No transcripts still to write up."
-    );
+  "meeting.transcripts": async (a) => {
+    const lines = (await api.meetingTranscripts())
+      .filter((t) => !t.done)
+      .map(
+        (t) =>
+          `- ${t.path} · looks like ${t.inferred.type ?? "a meeting"} ${t.inferred.name ?? t.inferred.topic ?? ""} ${t.inferred.date ?? ""}${t.inferred.dateCheck ? " (the capture day: check the meeting date)" : ""}`,
+      );
+    return lines.length ? paged(a, lines, ["transcript to write up", "transcripts to write up"]) : "No transcripts still to write up.";
   },
 };
 
@@ -1491,16 +1529,28 @@ async function contradictionsTool(a: Args, r: McpRequest): Promise<string> {
   const settled = new Set(["compatible", "evolution", "resolved", "ignored"]);
   const shown = a.all === true ? rep.items : rep.items.filter((i) => !i.verdict || !settled.has(i.verdict.verdict));
   const left = rep.items.length - shown.length;
-  if (rep.items.length)
+  const page = pagedRows(
+    a,
+    shown,
+    (i) => [i.subject, i.attribute, ...i.claims.map((c) => `${c.page} ${c.value}`)].join(" "),
+    ["finding", "findings"],
+    20,
+  );
+  if (rep.items.length) {
     head.push(
       ` ${shown.length} to decide${left ? `; ${left} more not a conflict, newer superseding older, resolved or ignored (all lists them)` : ""}.`,
     );
-  const rows = shown.map((i) =>
+    if (shown.length) head.push(` ${page.head}.`);
+  }
+  // Each finding's first ten claims; its page in Brainstead has them all.
+  const CLAIMS = 10;
+  const rows = page.shown.map((i) =>
     [
       `- ${i.subject} · ${i.attribute} (id ${i.id}): ${i.verdict ? `${i.verdict.verdict}${i.verdict.severity ? `, ${i.verdict.severity}` : ""}. ${i.verdict.summary}` : "not judged yet"}`,
-      ...i.claims.map(
-        (c) => `  - [[${pageName(c.page)}]]${c.asOf ? ` (as of ${c.asOf})` : ""}: ${c.value}${c.quote ? ` · “${c.quote}”` : ""}`,
-      ),
+      ...i.claims
+        .slice(0, CLAIMS)
+        .map((c) => `  - [[${pageName(c.page)}]]${c.asOf ? ` (as of ${c.asOf})` : ""}: ${c.value}${c.quote ? ` · “${c.quote}”` : ""}`),
+      ...(i.claims.length > CLAIMS ? [`  - …and ${i.claims.length - CLAIMS} more claims`] : []),
     ].join("\n"),
   );
   return [head.join(""), ...rows].join("\n");
@@ -1555,12 +1605,16 @@ async function chatsTool(a: Args): Promise<string> {
   const all = await api.chatsList();
   if (action === "list")
     return all.length
-      ? all
-          .map(
-            (c) =>
-              `- ${c.title} · ${c.updatedAt.slice(0, 16).replace("T", " ")} · ${c.filename.startsWith("local:") ? "not saved" : `saved as ${c.filename}`}  (${c.filename})`,
-          )
-          .join("\n")
+      ? paged(
+          a,
+          [...all]
+            .sort((x, y) => y.updatedAt.localeCompare(x.updatedAt))
+            .map(
+              (c) =>
+                `- ${c.title} · ${c.updatedAt.slice(0, 16).replace("T", " ")} · ${c.filename.startsWith("local:") ? "not saved" : `saved as ${c.filename}`}  (${c.filename})`,
+            ),
+          ["chat, newest first", "chats, newest first"],
+        )
       : "No chats.";
   const want = str(a, "chat")?.trim();
   if (!want) throw new Error("Give chat: its file or title, from list.");

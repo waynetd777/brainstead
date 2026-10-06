@@ -51,4 +51,4 @@ Search, any page or one of its sections, backlinks, which page a name means, the
 Reading pages, search, facts, the summaries, the health report and the Page shape check work whether the app is open or not. Every change, and tasks, the Inbox, projects, the Weekly review, Changes, runs and Activity, need the app: the assistant opens Brainstead and waits for it. An assistant can also bring Brainstead's window to the front when you ask to see something, on a screen, a Settings pane, a note or a search. While the vault is read-only ([Settings › Vault](app:settings/vault)) nothing can be changed.
 
 ## Limits
-An assistant can make up to 120 tool calls a minute. Antigravity takes no outside tools in the mode Ask runs it, so it reads with its own tools only.
+An assistant can make up to 120 tool calls a minute. Long lists (the Trash, Changes, chats, links to a page and the rest) come a page at a time, each saying how many there are, so an assistant can ask for the next page or narrow the list by words. Antigravity takes no outside tools in the mode Ask runs it, so it reads with its own tools only.

@@ -120,6 +120,24 @@ fn reading_tools() {
 
     let bl = ok(&f.ctx, "backlinks", json!({"page": "Orbit App"}));
     assert!(bl.contains("wiki/concepts/Hub Platform.md"), "{bl}");
+    // A page at a time: how many, which are shown and the next offset.
+    let n = bl.lines().filter(|l| l.starts_with("- ")).count();
+    assert!(n > 1, "{bl}");
+    let one = ok(&f.ctx, "backlinks", json!({"page": "Orbit App", "limit": 1}));
+    assert!(one.contains(&format!("{n} links; 1–1 shown, offset 1 for the next:")), "{one}");
+    assert_eq!(one.lines().filter(|l| l.starts_with("- ")).count(), 1);
+    let last = ok(&f.ctx, "backlinks", json!({"page": "Orbit App", "limit": 1, "offset": n - 1}));
+    assert!(last.contains(&format!("{n}–{n} shown:")), "{last}");
+    let hub = ok(&f.ctx, "backlinks", json!({"page": "Orbit App", "query": "hub platform"}));
+    assert!(hub.contains("matching “hub platform”") && hub.contains("Hub Platform.md"), "{hub}");
+    let shape = ok(&f.ctx, "page_shape", json!({"limit": 1}));
+    assert!(shape.contains("Those that need the user first, then the rest:"), "{shape}");
+    // Every listing tool takes the same paging.
+    let list = rpc(&f.ctx, 1, "tools/list", json!({}));
+    for t in list["result"]["tools"].as_array().unwrap() {
+        let paged = t["inputSchema"]["properties"]["offset"].is_object();
+        assert_eq!(paged, PAGED.contains(&t["name"].as_str().unwrap()), "{}", t["name"]);
+    }
 
     assert!(ok(&f.ctx, "resolve_entity", json!({"name": "OA"})).contains("by an alias"));
     assert!(ok(&f.ctx, "resolve_entity", json!({"name": "Orbit App"})).contains("by its file name"));

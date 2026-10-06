@@ -596,6 +596,35 @@ describe("MCP actions", () => {
       await expect(run("open", { page: "Nowhere" })).rejects.toThrow(/no page called Nowhere/);
     });
 
+    it("pages every list the same way", async () => {
+      answers.chats_list = () =>
+        Array.from({ length: 3 }, (_, i) => ({
+          filename: `local:${i}.json`,
+          id: `${i}`,
+          title: `Chat ${i}`,
+          updatedAt: `2026-10-0${i + 1}T09:00:00`,
+        }));
+      const out = (await run("chats", { limit: 2 })) as string;
+      expect(out.split("\n")).toEqual([
+        "3 chats, newest first; 1–2 shown, offset 2 for the next:",
+        "- Chat 2 · 2026-10-03 09:00 · not saved  (local:2.json)",
+        "- Chat 1 · 2026-10-02 09:00 · not saved  (local:1.json)",
+      ]);
+      answers.projects_list = () => [];
+      expect(await run("projects.list")).toBe("No projects.");
+      answers.graph = () => ({
+        nodes: [
+          { id: "a", title: "A" },
+          { id: "b", title: "B" },
+        ],
+        edges: [
+          ["a", "b"],
+          ["b", "a"],
+        ],
+      });
+      expect(await run("graph", { limit: 1 })).toBe("2 pages; 2 links; 1–1 shown, offset 1 for the next:\n- A → B");
+    });
+
     it("deletes a saved search", async () => {
       expect(await run("saved_searches", { name: "Launch", delete: true })).toBe("Deleted the saved search “Launch”.");
       expect(calls.find(([c]) => c === "smart_list_delete")![1]).toEqual({ name: "Launch" });
@@ -622,12 +651,15 @@ describe("MCP actions", () => {
           sizeBytes: 100000,
         }));
       const out = (await run("trash")) as string;
-      expect(out.split("\n")[0]).toBe("The Trash holds 60 items (6.0 MB). The newest 50; raise limit or give query for others:");
+      expect(out.split("\n")[0]).toBe("The Trash (6.0 MB), newest first: 60 items; 1–50 shown, offset 50 for the next:");
       expect(out.split("\n")).toHaveLength(51);
       expect(out.split("\n")[1]).toMatch(/deleted 2026-09-28/);
       expect(await run("trash", { query: "idea. 5", limit: 5 })).toMatch(
-        /^The Trash holds 60 items \(6\.0 MB\); 11 match “idea\. 5”\. The newest 5/,
+        /: 15 items matching “idea\. 5”, of 60; 1–5 shown, offset 5 for the next:/,
       );
+      const next = (await run("trash", { offset: 50 })) as string;
+      expect(next.split("\n")[0]).toMatch(/60 items; 51–60 shown:$/);
+      expect(await run("trash", { offset: 70 })).toMatch(/none from offset 70/);
     });
 
     it("restores from the Trash under another path, and stops every run", async () => {

@@ -43,7 +43,7 @@ The assistant never edits a file itself. Claude Code, Codex and Copilot get Brai
 
 **What it can read**: search, any page or section, backlinks, which page a name means, the facts ingest kept for each wiki page (`facts`), your tasks by list, the Inbox, projects, the daily and weekly summaries, the Weekly review's progress and suggestions, Changes, runs, transcripts, the Trash, Activity, the links around a page, sources not yet in the wiki, Knowledge health's report (`lint`, as the screen shows it while the app is open) and its Page shape check (`page_shape`), the contradictions found, Ask's chats, the settings, whether the app is running, and the in-app help.
 
-Nothing changes while the vault is read-only. Antigravity takes no outside tools in the mode Ask runs it, so it reads with its own tools only.
+Every tool that lists something says how many there are and gives a page at a time (`limit`, `offset`, and `query` to keep rows with those words). Nothing changes while the vault is read-only. Antigravity takes no outside tools in the mode Ask runs it, so it reads with its own tools only.
 
 ## Sessions outside the app
 
