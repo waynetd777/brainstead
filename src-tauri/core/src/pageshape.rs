@@ -556,6 +556,29 @@ fn reshape_unchecked(page: &str, is_source: &dyn Fn(&str) -> bool) -> (String, R
         }
     }
 
+    // Two or more summing sections, each dated (Status (Mar 2026), Status (Apr 2026)): the newest
+    // is the Current state, the others Timeline entries (D-20261006-14).
+    if summing.len() > 1 {
+        let dates: Vec<Option<HeadingDate>> = summing.iter().map(|(h, _)| as_of(h).and(read_date(h))).collect();
+        let keys: Vec<Option<(i32, u32, i32)>> =
+            dates.iter().map(|d| d.as_ref().and_then(|d| d.when.year().and_then(|y| d.when.in_year(y))).map(Date::key)).collect();
+        if keys.iter().all(Option::is_some) {
+            let newest = keys.iter().max().copied().flatten();
+            if keys.iter().filter(|k| **k == newest).count() == 1 {
+                let keep = keys.iter().position(|k| *k == newest).unwrap();
+                let mut rest = Vec::new();
+                for (i, (s, d)) in summing.drain(..).zip(dates).enumerate() {
+                    if i == keep {
+                        rest.push(s);
+                    } else {
+                        dated.push((Head::Read(d.unwrap()), s.1, true));
+                    }
+                }
+                summing = rest;
+            }
+        }
+    }
+
     // Settle each date, rewrite its heading and add its Source line. A missing year comes from
     // the sections around it only for a level-2 section, whose order is the author's; inside the
     // Timeline the order is the app's, so only the note it cites can give one.
@@ -590,6 +613,7 @@ fn reshape_unchecked(page: &str, is_source: &dyn Fn(&str) -> bool) -> (String, R
         entries.push(Entry { date, unit: Unit { text, ord: unit.ord }, source });
     }
     entries.sort_by_key(|e| std::cmp::Reverse(e.date.map_or((i32::MIN, 0, 0), Date::key)));
+    let entries = merge_same_source(entries, &mut r);
     let mut cited: HashMap<String, usize> = HashMap::new();
     for e in &entries {
         if let Some(s) = &e.source {
@@ -673,6 +697,72 @@ fn reshape_unchecked(page: &str, is_source: &dyn Fn(&str) -> bool) -> (String, R
         last = u.ord;
     }
     (with_tail(&out, page), r)
+}
+
+/// Entries from one source on the same date as one (D-20261006-14): the first keeps its heading,
+/// each later one follows it under its own title as a `####` heading (its headings a level down),
+/// without its Source line. Entries come sorted, so those of one date are next to each other.
+fn merge_same_source(entries: Vec<Entry>, r: &mut Report) -> Vec<Entry> {
+    let mut out: Vec<Entry> = Vec::new();
+    for e in entries {
+        let key = e.source.as_deref().map(crate::links::key);
+        let into = out
+            .iter_mut()
+            .rev()
+            .take_while(|o| o.date == e.date)
+            .find(|o| key.is_some() && o.source.as_deref().map(crate::links::key) == key);
+        let (Some(into), Some(_)) = (into, e.date) else {
+            out.push(e);
+            continue;
+        };
+        let lines = markdown::lines(&e.unit.text, 0);
+        let mut text = String::new();
+        let mut source_dropped = false;
+        for (k, raw) in e.unit.text.split_inclusive('\n').enumerate() {
+            let l = &lines[k];
+            let ending = &raw[l.text.len()..];
+            let ending = if ending.is_empty() { "\n" } else { ending };
+            let new = if k == 0 {
+                let title = markdown::heading(l.text).map_or("", |h| h.1);
+                let title = title.split_once(" — ").map_or(title, |x| x.1).to_string();
+                let title = if Date::parse_iso(&title).is_some() || title.is_empty() { "More from the same source".into() } else { title };
+                Some(format!("#### {title}"))
+            } else if !source_dropped && SOURCE_LINE.is_match(l.text) {
+                source_dropped = true;
+                // A Source line this reshape added isn't added; one already there is left out.
+                match r.added.iter().position(|a| a == l.text) {
+                    Some(i) => {
+                        r.added.remove(i);
+                    }
+                    None => r.removed.push(l.text.to_string()),
+                }
+                continue;
+            } else {
+                markdown::heading(l.text).filter(|(n, _)| !l.code && *n >= 4 && *n < 6).map(|_| format!("#{}", l.text.trim_start()))
+            };
+            match new {
+                Some(n) => {
+                    // The heading as it was on the page, not as this reshape first rewrote it.
+                    match r.headings.iter().position(|(_, w)| w == l.text) {
+                        Some(i) => r.headings[i].1 = n.clone(),
+                        None => r.headings.push((l.text.to_string(), n.clone())),
+                    }
+                    text.push_str(&n);
+                    text.push_str(ending);
+                }
+                None => text.push_str(raw),
+            }
+        }
+        if !into.unit.text.ends_with('\n') {
+            into.unit.text.push('\n');
+        }
+        if !ends_blank(&into.unit.text) {
+            into.unit.text.push('\n');
+        }
+        into.unit.text.push_str(&text);
+        into.unit.ord = None;
+    }
+    out
 }
 
 /// The Timeline section cut into its heading (with any text before the first entry) and its `###` entries.
@@ -1130,7 +1220,34 @@ mod tests {
     }
 
     #[test]
-    fn repeated_sources_are_listed_not_merged() {
+    fn entries_from_one_source_on_one_date_become_one() {
+        let (new, r) = reshape(&fixture("same-source-same-date"), &is_source);
+        assert!(r.auto(), "{r:?}");
+        assert_eq!(new.matches("Source: [[1-1. Maya - 2026-06-10]]").count(), 1);
+        assert_eq!(
+            headings(&new),
+            [
+                "# Orbit Pilot",
+                "## Timeline",
+                "### 2026-10-02 — Steerco",
+                "### 2026-06 — Pilot scope agreed",
+                "#### Actions",
+                "#### Comms plan for the pilot"
+            ]
+        );
+        assert!(r.headings.contains(&("## Jun 2026 — Comms plan for the pilot".into(), "#### Comms plan for the pilot".into())));
+    }
+
+    #[test]
+    fn of_dated_summing_sections_the_newest_is_the_current_state() {
+        let (new, r) = reshape(&fixture("two-status"), &is_source);
+        assert!(r.auto(), "{r:?}");
+        assert_eq!(headings(&new), ["# Orbit Strategy", "## Current state", "## Open questions", "## Timeline", "### 2026-03 — Status"]);
+        assert!(new.contains("## Current state\n\nAs of Apr 2026.\n\nApproved by the board."));
+    }
+
+    #[test]
+    fn repeated_sources_on_different_dates_are_listed_not_merged() {
         let (new, r) = reshape(&fixture("repeated"), &is_source);
         assert_eq!(r.repeated, ["Meeting. Orbit App Steerco - 2026-10-02"]);
         assert_eq!(new.matches("### 2026-10").count(), 2);
