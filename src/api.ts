@@ -778,6 +778,19 @@ export type TaskLineEdit =
 export type ChangeKind = "edit" | "new" | "task" | "rename" | "trash";
 
 /** A change in Changes: what an assistant or a run did, or a change held for you. */
+/** Write Current state's run, going or last. */
+export interface CurrentStateRun {
+  running: boolean;
+  run: string;
+  total: number;
+  done: number;
+  written: number;
+  nothing: number;
+  failed: string[];
+  error: string | null;
+  model: string;
+}
+
 export interface ChangeRow {
   id: string;
   created: string;
@@ -968,6 +981,12 @@ export const api = {
   healthCreatePage: (name: string, folder: "entities" | "concepts") => invoke<string>("health_create_page", { name, folder }),
   healthLinkGhost: (target: string, to: string, pages: string[]) => invoke<number>("health_link_ghost", { target, to, pages }),
   onChangesChanged: (f: () => void): Promise<UnlistenFn> => listen("changes-changed", () => f()),
+  /** Write Current state: a run in the background on the pages named, or every page that wants one, at most `limit`. False when one is going. */
+  currentStateStart: (pages: string[] | null, limit: number | null) => invoke<boolean>("current_state_start", { pages, limit }),
+  currentStateStatus: () => invoke<CurrentStateRun>("current_state_status"),
+  currentStateStop: () => invoke<void>("current_state_stop"),
+  onCurrentStateChanged: (f: (r: CurrentStateRun) => void): Promise<UnlistenFn> =>
+    listen<CurrentStateRun>("current-state-changed", (e) => f(e.payload)),
   onHealthChanged: (f: (c: { decisions: number; total: number }) => void): Promise<UnlistenFn> =>
     listen<{ decisions: number; total: number }>("health-changed", (e) => f(e.payload)),
   settingsRead: () => invoke<Settings>("settings_read"),

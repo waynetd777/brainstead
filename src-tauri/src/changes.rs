@@ -308,8 +308,10 @@ fn log_line(c: &Change) -> Option<String> {
     Some(match c.origin.kind.as_str() {
         "ingest" => return c.origin.run.as_deref().or(c.origin.chat.as_deref()).and_then(crate::ingest::take_log),
         "review" => reviews::log_entry("review", c.origin.label.as_deref().unwrap_or(&c.title), None, now),
-        // Reshape pages writes one line for its run.
-        "lint" if c.origin.run.as_deref().is_some_and(|r| r.starts_with(RESHAPE_RUN)) => return None,
+        // Reshape pages and Write Current state write one line for their run.
+        "lint" if c.origin.run.as_deref().is_some_and(|r| r.starts_with(RESHAPE_RUN) || r.starts_with(crate::currentstate::RUN)) => {
+            return None
+        }
         "lint" => reviews::log_entry("lint-fix", "Knowledge health", Some(&c.title), now),
         _ => reviews::log_entry(
             if c.kind == Kind::New { "create" } else { "update" },

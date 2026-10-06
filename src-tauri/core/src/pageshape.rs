@@ -1040,6 +1040,88 @@ pub fn item(path: &str, text: &str, sources: &Sources) -> Option<crate::lint::It
     })
 }
 
+/// Whether the page has a Current state section.
+pub fn has_current_state(page: &str) -> bool {
+    parse(page).sections.iter().any(|s| name(s.heading) == "current state")
+}
+
+/// A page with a Timeline (something to say how things stand) but no Current state.
+pub fn wants_current_state(page: &str) -> bool {
+    let p = parse(page);
+    !p.sections.iter().any(|s| name(s.heading) == "current state") && p.sections.iter().any(|s| classify(s.heading) == Kind::Timeline)
+}
+
+/// What a model is shown to write a page's Current state from (D-20261006-10): the page's
+/// opening text and its newest Timeline entries, within `budget` characters, and nothing else.
+pub fn current_state_prompt(path: &str, page: &str, budget: usize) -> String {
+    let p = parse(page);
+    let mut text = p.opening.trim().to_string();
+    if let Some(t) = p.sections.iter().find(|s| classify(s.heading) == Kind::Timeline) {
+        for e in timeline_parts(t.text).1 {
+            if text.chars().count() + e.chars().count() > budget {
+                break;
+            }
+            text.push_str("\n\n");
+            text.push_str(e.trim());
+        }
+    }
+    let title = crate::filename::stem(path);
+    format!(
+        "Write the Current state section of the wiki page \"{title}\": what is true now, from the page's opening and its newest timeline entries below (newest first).\n\n\
+         - At most 120 words: two to six short bullet points, or a short paragraph.\n\
+         - Only facts in the text below. Say when for dated facts (\"From 28 September, …\", \"As of the 2 October steerco, …\").\n\
+         - Cite with [[links]] copied exactly from the text below; add no other links.\n\
+         - Answer with the section's text only: no heading, nothing before or after it.\n\
+         - If the text says nothing about how things stand now, answer NONE.\n\n\
+         ---\n{text}\n---\n"
+    )
+}
+
+/// A model's Current state, checked against the page: its text, or why it can't be used.
+pub fn current_state_answer(page: &str, answer: &str) -> Result<String, String> {
+    let mut t = answer.trim();
+    if let Some(inner) = t.strip_prefix("```").and_then(|x| x.rsplit_once("```")).map(|x| x.0) {
+        t = inner.split_once('\n').map_or("", |x| x.1).trim();
+    }
+    let t = t.strip_prefix("## Current state").unwrap_or(t).trim();
+    if t.is_empty() || t.eq_ignore_ascii_case("none") {
+        return Err("the model found nothing about how things stand now".into());
+    }
+    if t.chars().count() > 1500 {
+        return Err("the answer was too long for a Current state".into());
+    }
+    if t.lines().any(|l| markdown::heading(l).is_some()) {
+        return Err("the answer had headings in it".into());
+    }
+    let have: std::collections::HashSet<String> =
+        crate::links::parse_links(&markdown::lines(page, 0)).into_iter().map(|l| crate::links::key(&l.target)).collect();
+    if let Some(l) = crate::links::parse_links(&markdown::lines(t, 0)).into_iter().find(|l| !have.contains(&crate::links::key(&l.target))) {
+        return Err(format!("the answer links [[{}]], which the page doesn't", l.target));
+    }
+    Ok(t.to_string())
+}
+
+/// The page with a Current state section of `text` where the shape puts it: after the opening.
+pub fn with_current_state(page: &str, text: &str) -> String {
+    let p = parse(page);
+    let at = p.front.len() + p.opening.len();
+    let mut out = page[..at].to_string();
+    if !p.opening.is_empty() {
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+        if !ends_blank(&out) {
+            out.push('\n');
+        }
+    }
+    out.push_str(&format!("## {CURRENT_STATE}\n\n{}\n", text.trim()));
+    if at < page.len() {
+        out.push('\n');
+        out.push_str(&page[at..]);
+    }
+    out
+}
+
 /// Which link targets are vault notes or sources rather than wiki pages, from the vault's file
 /// paths (vault-relative, `/`-separated; anything in a dot folder is left out).
 pub struct Sources(HashMap<String, bool>);
@@ -1329,6 +1411,32 @@ mod tests {
         for (p, bytes) in &before {
             assert_eq!(&std::fs::read(d.path().join(p)).unwrap(), bytes, "{p}");
         }
+    }
+
+    #[test]
+    fn a_current_state_goes_after_the_opening_and_keeps_the_shape() {
+        let (page, _) = reshape(&fixture("dated-only"), &is_source);
+        assert!(!has_current_state(&page));
+        let prompt = current_state_prompt("wiki/entities/Orbit App.md", &page, 6000);
+        assert!(prompt.contains("\"Orbit App\"") && prompt.contains("### 2026-10-02 — Steerco") && !prompt.contains("## See also"));
+        let ans = current_state_answer(&page, "- Launch moves to 28 November [[Meeting. Orbit App Steerco - 2026-10-02]].").unwrap();
+        let new = with_current_state(&page, &ans);
+        assert!(has_current_state(&new));
+        assert!(new.contains("on the [[Hub Platform]].\n\n## Current state\n\n- Launch moves to 28 November [[Meeting. Orbit App Steerco - 2026-10-02]].\n\n## Timeline\n"), "{new}");
+        assert!(in_shape(&new, &is_source));
+        // Only lines added: the heading and the text.
+        assert_eq!(new.len(), page.len() + "## Current state\n\n".len() + ans.len() + 2);
+    }
+
+    #[test]
+    fn a_current_state_answer_is_checked() {
+        let page = "# Orbit App\n\nSee [[Lena]].\n";
+        assert_eq!(current_state_answer(page, "```\nLive with [[Lena]].\n```").unwrap(), "Live with [[Lena]].");
+        assert_eq!(current_state_answer(page, "## Current state\n\nLive.").unwrap(), "Live.");
+        assert!(current_state_answer(page, "NONE").is_err());
+        assert!(current_state_answer(page, "Live with [[Maya]].").unwrap_err().contains("Maya"));
+        assert!(current_state_answer(page, "Live.\n\n### More").is_err());
+        assert!(current_state_answer(page, &"word ".repeat(400)).is_err());
     }
 
     #[test]

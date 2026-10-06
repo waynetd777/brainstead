@@ -75,7 +75,7 @@ fn main() {
     let (shaped, auto, review, broken) = (
         count(&|r| r.in_shape),
         count(&|r| !r.in_shape && r.auto),
-        count(&|r| !r.auto && r.report.broken.is_empty()),
+        count(&|r| !r.in_shape && !r.auto && r.report.broken.is_empty()),
         count(&|r| !r.report.broken.is_empty()),
     );
     let mut kinds: BTreeMap<&str, usize> = BTreeMap::new();
@@ -107,7 +107,7 @@ fn main() {
         }
     }
     md.push_str("\n## Review pages\n\n");
-    for r in results.iter().filter(|r| !r.auto && r.report.broken.is_empty()) {
+    for r in results.iter().filter(|r| !r.in_shape && !r.auto && r.report.broken.is_empty()) {
         md.push_str(&format!("- `{}`\n", r.path));
         for x in &r.report.reasons {
             md.push_str(&format!("  - {x}\n"));

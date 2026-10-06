@@ -442,6 +442,14 @@ pub fn tools() -> Vec<Value> {
         tool("reshape_pages", "Reshape pages", Change,
             "Reshape pages, as Knowledge health's Page shape check does it (needs the app): every page that can be reshaped by itself, or the pages named (as proposed, even those that need the user; only when the user asked). Sections move whole and dated headings are rewritten; no text is lost. Each page is one change in Changes, in one run the user can revert alone or all together (changes revert_run).",
             schema(json!({"pages": {"type": "array", "items": page, "description": "Only these pages, by name or path."}}), &[])),
+        tool("write_current_state", "Write Current state", Run,
+            "Knowledge health's Write Current state (needs the app): for wiki pages with a Timeline but no Current state (lint lists them under Pages with no Current state), the cheap model writes one from each page's opening and newest Timeline entries only, checked (no links the page doesn't have) and made as a change in one Changes run. Runs in the background: limit does only that many first (a sample to look at), pages only those named; status says how the run is going; stop stops it after the page it's on.",
+            schema(json!({
+                "pages": {"type": "array", "items": page},
+                "limit": {"type": "integer", "minimum": 1},
+                "status": {"type": "boolean"},
+                "stop": {"type": "boolean"}
+            }), &[])),
         tool("fix_name", "Fix a name everywhere", Change,
             "Corrects a misspelt name across the notes and wiki, as Fix name does (needs the app); sources are left alone. Without apply it only says what would change; with apply true it changes the files (undoable).",
             schema(json!({
@@ -599,6 +607,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<String, CallError> {
         "fix_health" => act("health.fix", obj),
         "page_shape" => Ok(page_shape_tool(ctx, obj.get("page").and_then(Value::as_str))?),
         "reshape_pages" => act("health.reshape", obj),
+        "write_current_state" => act("health.current_state", obj),
         "fix_name" => act("fix_name", obj),
         "triage_bookmarks" => {
             let has_items = obj.get("items").and_then(Value::as_array).is_some_and(|a| !a.is_empty());

@@ -9,7 +9,7 @@
 // needs judgement goes to Ask, whose changes are listed in Changes.
 
 import { useEffect, useState } from "react";
-import { api, LintCheck, LintItem, LintReport } from "./api";
+import { api, CurrentStateRun, LintCheck, LintItem, LintReport } from "./api";
 import { askWith } from "./askState";
 import { ingest } from "./Ingest";
 import { Icon } from "./icons";
@@ -269,6 +269,8 @@ export const CHECK_TIPS: Record<string, string> = {
   duplicates: "Pages so alike in name or text that they may be about the same thing",
   "stale-pages": "Pages many others link to that haven't changed in 90 days or more",
   "changed-sources": "Sources that changed after the pages citing them were written",
+  "no-current-state":
+    "Wiki pages with a Timeline but no Current state section; Write Current state has the model write one from the page's newest entries",
   "page-shape":
     "Entity and concept pages not laid out as opening text, Current state, topics, Timeline (newest first) and See also; Reshape pages moves their sections",
   "system-callouts": 'System notes whose "This is a system note" header has gone; Fix puts it back as Brainstead last saw it',
@@ -314,6 +316,7 @@ function Group({
             {isOpen && (
               <div className="ckitems">
                 {c.id === "page-shape" && <ReshapeAll items={c.items} on={on} />}
+                {c.id === "no-current-state" && <WriteCurrentState n={c.items.length} />}
                 {c.items.slice(0, 200).map((i) => (
                   <Row key={i.text} check={c.id} i={i} on={on} />
                 ))}
@@ -420,6 +423,70 @@ function Row({ check, i, on }: { check: string; i: LintItem; on: Handlers }) {
         </BusyButton>
       )}
       {check === "uningested-sources" && page && <IngestButton path={page} />}
+    </div>
+  );
+}
+
+const SAMPLE = 5;
+
+/** Write Current state: a sample first, then the rest, with the run's progress while it goes. */
+function WriteCurrentState({ n }: { n: number }) {
+  const [run, setRun] = useState<CurrentStateRun | null>(null);
+  useEffect(() => {
+    void api
+      .currentStateStatus()
+      .then(setRun)
+      .catch(() => {});
+    const off = api.onCurrentStateChanged((r) => {
+      setRun(r);
+      if (!r.running) void reloadHealth(true);
+    });
+    return () => void off.then((f) => f()).catch(() => {});
+  }, []);
+  const start = (limit: number | null) =>
+    api
+      .currentStateStart(null, limit)
+      .then((ok) => !ok && toast("Write Current state is running already.", undefined, "bad"))
+      .catch(reportEditError);
+  if (run?.running)
+    return (
+      <div className="ckitem">
+        <span className="spin" />
+        <span className="grow faint small">
+          Writing Current state: {run.done} of {run.total}, {run.written} written
+        </span>
+        <button type="button" className="btn sm ghost" title="Stop after the page it's on" onClick={() => void api.currentStateStop()}>
+          Stop
+        </button>
+      </div>
+    );
+  const last =
+    run && run.total
+      ? `Last run: ${run.written} written${run.nothing ? `, ${run.nothing} with nothing current to say` : ""}${run.failed.length ? `, ${run.failed.length} couldn't be: ${run.failed[0]}` : ""}. `
+      : "";
+  return (
+    <div className="ckitem">
+      <span className="grow faint small" title={run?.failed.join("\n") || undefined}>
+        {last}The model writes each from the page's opening and newest Timeline entries; each is a change in Changes.
+      </span>
+      <button
+        type="button"
+        className="btn sm"
+        disabled={!n}
+        title={`Write ${Math.min(SAMPLE, n)} first, to look at in Changes`}
+        onClick={() => void start(SAMPLE)}
+      >
+        Write {Math.min(SAMPLE, n)}
+      </button>
+      <button
+        type="button"
+        className="btn sm"
+        disabled={!n}
+        title="Write a Current state on every page listed"
+        onClick={() => void start(null)}
+      >
+        Write all{n ? ` (${n})` : ""}
+      </button>
     </div>
   );
 }

@@ -461,6 +461,13 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
         .filter_map(|(f, t)| crate::pageshape::item(&f.rel, t, &shape))
         .collect();
     checks.push(Check { id: "page-shape", title: "Pages not in the page shape", classic: false, items });
+    // Pages with a Timeline but no Current state: Write Current state (a model run) can write it.
+    let items = md
+        .iter()
+        .filter(|(f, t)| crate::pageshape::shaped(&f.rel) && crate::pageshape::wants_current_state(t))
+        .map(|(f, _)| Item { text: format!("{}: no Current state", f.rel), page: Some(f.rel.clone()), ..Default::default() })
+        .collect();
+    checks.push(Check { id: "no-current-state", title: "Pages with no Current state", classic: false, items });
 
     Report {
         checks,

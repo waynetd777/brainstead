@@ -8,6 +8,7 @@ mod bridge;
 mod capture;
 mod changes;
 mod contradict;
+mod currentstate;
 mod dataview;
 mod edits;
 mod find;
@@ -802,6 +803,9 @@ pub fn run() {
             knowledge::health_report,
             knowledge::health_fix,
             knowledge::health_reshape,
+            currentstate::current_state_start,
+            currentstate::current_state_status,
+            currentstate::current_state_stop,
             knowledge::health_dismiss,
             knowledge::health_trash_image,
             knowledge::health_create_page,

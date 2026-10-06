@@ -19,6 +19,7 @@ import {
   ChangeOrigin,
   ChangeOutcome,
   ChangeSubmit,
+  CurrentStateRun,
   Instruction,
   FindSuggestion,
   FixNameRequest,
@@ -984,6 +985,24 @@ async function reshapePages(a: Args): Promise<string> {
     .join(" ");
 }
 
+/** write_current_state: Knowledge health's Write Current state run: start it, or its status, or stop it. */
+async function writeCurrentState(a: Args): Promise<string> {
+  const said = (r: CurrentStateRun) =>
+    `${r.running ? "Running" : "Last run"}: ${r.done} of ${r.total} pages done, ${r.written} written, ${r.nothing} with nothing current to say${r.failed.length ? `; couldn't: ${r.failed.join("; ")}` : ""}${r.run ? ` (run group ${r.run}; changes revert_run undoes it)` : ""}.`;
+  if (a.stop === true) {
+    await api.currentStateStop();
+    return "Stopping after the page it's on.";
+  }
+  if (a.status === true) return said(await api.currentStateStatus());
+  const pages = Array.isArray(a.pages) ? (a.pages as unknown[]).map(String).filter((p) => p.trim()) : null;
+  const limit = typeof a.limit === "number" && a.limit > 0 ? Math.floor(a.limit) : null;
+  const ok = await api.currentStateStart(pages?.length ? pages : null, limit);
+  if (!ok) return `Write Current state is running already. ${said(await api.currentStateStatus())}`;
+  told("started Write Current state");
+  const r = await api.currentStateStatus();
+  return `Started on ${r.total} page${r.total === 1 ? "" : "s"} with ${r.model}; each is a change in Changes. Ask with status for progress.`;
+}
+
 async function fixName(a: Args): Promise<string> {
   const wrong = str(a, "wrong");
   const right = str(a, "right");
@@ -1194,6 +1213,7 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   "run.stop": stopRun,
   "health.fix": healthFix,
   "health.reshape": reshapePages,
+  "health.current_state": writeCurrentState,
   fix_name: fixName,
   trash: trash,
   bookmarks: bookmarks,
