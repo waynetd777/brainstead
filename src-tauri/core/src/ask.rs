@@ -80,7 +80,7 @@ impl Cli {
 /// The MCP server's name, as each CLI is told it.
 pub const MCP_NAME: &str = "brainstead";
 /// Its tools, for the CLIs that list each one (Copilot).
-pub const MCP_TOOLS: [&str; 59] = [
+pub const MCP_TOOLS: [&str; 69] = [
     "search",
     "read_section",
     "backlinks",
@@ -103,9 +103,13 @@ pub const MCP_TOOLS: [&str; 59] = [
     "create_note",
     "rename_note",
     "trash_note",
-    "trash",
+    "list_trash",
+    "restore_from_trash",
+    "list_bookmarks",
     "bookmarks",
+    "list_saved_searches",
     "saved_searches",
+    "list_changes",
     "changes",
     "start_run",
     "run_status",
@@ -116,11 +120,13 @@ pub const MCP_TOOLS: [&str; 59] = [
     "weekly_start_over",
     "weekly_step",
     "save_chat",
+    "list_chats",
     "chats",
     "list_transcripts",
     "fix_health",
     "ignore_issue",
     "health_issue",
+    "list_contradictions",
     "contradictions",
     "page_shape",
     "reshape_pages",
@@ -131,10 +137,14 @@ pub const MCP_TOOLS: [&str; 59] = [
     "doc_check",
     "activity",
     "graph",
+    "list_suggestions",
     "suggestions",
     "moving_over",
+    "list_automated_tools",
     "automated_tools",
+    "list_task_lists",
     "task_lists",
+    "list_settings",
     "settings",
     "import_sources",
     "create_template",
@@ -176,7 +186,7 @@ Tasks are `- [ ]` lines with dates as emoji: 📅 due, ⏳ scheduled (deferred u
 {can}\n\
 Link notes you mention as [[wikilinks]] with the note's file name without `.md`, so the app can open them. Answer plainly and briefly unless asked for depth; say when the vault has nothing on a point rather than guessing.",
         can = if tools {
-            "You can't change files in the vault yourself (you may keep your own memory up to date: it lives outside the vault); Brainstead's tools do what its screens do. Read with search, read_section, backlinks, resolve_entity, lint, list_tasks, list_inbox and list_projects. When the user asks, the tools make the change straight away, each recorded in Brainstead's Changes screen where the user can revert it: task changes (edit_task, move_task), clarifying the Inbox, projects, and prose, renames and deletes: edit_page (any page, or a new wiki page), create_note, create_task, rename_note, trash_note, delete_task. Runs (start_run: ingest, summaries, the nightly check, contradictions, meeting notes) record their own changes there. Bookmarks, saved searches and Knowledge health's safe fixes are made at once too, undoable with ⌘Z in the app rather than in Changes. A change to a template (Templates/, or renaming or trashing one), one that adds code that runs (a script, a Tasks function, a Templater tag), or one that changes a system note's header is held for the user, and only they can accept it, in the app: you can't. Change only what the user asked for. Quote the sources a change rests on word for word: a quote that isn't in its source is flagged to the user. changes lists what was changed and what's held for the user, and reverts one when the user asks. Say what you changed."
+            "You can't change files in the vault yourself (you may keep your own memory up to date: it lives outside the vault); Brainstead's tools do what its screens do. Read with search, read_section, backlinks, resolve_entity, lint, list_tasks, list_inbox and list_projects. When the user asks, the tools make the change straight away, each recorded in Brainstead's Changes screen where the user can revert it: task changes (edit_task, move_task), clarifying the Inbox, projects, and prose, renames and deletes: edit_page (any page, or a new wiki page), create_note, create_task, rename_note, trash_note, delete_task. Runs (start_run: ingest, summaries, the nightly check, contradictions, meeting notes) record their own changes there. Bookmarks, saved searches and Knowledge health's safe fixes are made at once too, undoable with ⌘Z in the app rather than in Changes. A change to a template (Templates/, or renaming or trashing one), one that adds code that runs (a script, a Tasks function, a Templater tag), or one that changes a system note's header is held for the user, and only they can accept it, in the app: you can't. Change only what the user asked for. Quote the sources a change rests on word for word: a quote that isn't in its source is flagged to the user. list_changes lists what was changed and what's held for the user, and changes reverts one when the user asks. Say what you changed."
         } else {
             "You can read and search the vault, and nothing else: you can't change any file in it (your own memory, outside the vault, you may keep up to date). If asked to change something, say what you would change and where, so the user can do it."
         }

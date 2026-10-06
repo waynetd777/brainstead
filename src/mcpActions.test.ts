@@ -19,7 +19,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 
 import type { InboxItem, TaskRow } from "./api";
-import { findTask, runAction, taskLineOut } from "./mcpActions";
+import { findTask, Listing, runAction, taskLineOut } from "./mcpActions";
 
 const row = (over: Partial<TaskRow>): TaskRow => ({
   path: "Me. To Do List.md",
@@ -45,7 +45,14 @@ const edited = (a: Record<string, unknown> | undefined) => ({
   lineText: "- [x] Call Sam about the launch",
   undo: "Ticked",
 });
-const run = (action: string, args: Record<string, unknown> = {}) => runAction({ id: "1", action, args });
+const raw = (action: string, args: Record<string, unknown> = {}) => runAction({ id: "1", action, args });
+/** An action's text: a listing's text, or what it gives as it is. */
+const run = async (action: string, args: Record<string, unknown> = {}) => {
+  const r = await raw(action, args);
+  return r && typeof r === "object" && "structured" in r ? (r as Listing).text : r;
+};
+/** A listing's rows as data, as the server passes them on as structuredContent. */
+const data = async (action: string, args: Record<string, unknown> = {}) => ((await raw(action, args)) as Listing).structured;
 
 describe("MCP actions", () => {
   beforeEach(() => {
@@ -246,6 +253,7 @@ describe("MCP actions", () => {
 
   it("reads and sets how long Changes keeps its history", async () => {
     expect(await run("changes", { action: "history" })).toMatch(/for 90 days or up to 500 MB/);
+    expect(await data("changes", { action: "history" })).toEqual({ history: { days: 90, mb: 500 } });
     expect(await run("changes", { action: "history", days: 180, mb: 1000 })).toMatch(/180 days or up to 1 GB/);
     expect(await run("changes", { action: "history" })).toMatch(/180 days/);
     await expect(run("changes", { action: "history", days: 7 })).rejects.toThrow(/days is 30, 90/);
@@ -562,7 +570,7 @@ describe("MCP actions", () => {
     it("saves a task list and shows its tasks", async () => {
       answers.settings_write = (a) => a!.settings;
       await run("task_lists", { action: "save", name: "Quick calls", view: "next", context: "@calls", effort: 15 });
-      expect(await run("task_lists")).toBe("- Quick calls: next, @calls, 15 min or less");
+      expect(await run("task_lists")).toBe("1 saved list:\n- Quick calls: next, @calls, 15 min or less");
       answers.tasks_all = () => [
         row({ contexts: ["calls"], effortMin: 10 }),
         row({ line: 3, contexts: ["calls"], effortMin: 60, text: "Long call" }),
@@ -651,7 +659,7 @@ describe("MCP actions", () => {
           sizeBytes: 100000,
         }));
       const out = (await run("trash")) as string;
-      expect(out.split("\n")[0]).toBe("The Trash (6.0 MB), newest first: 60 items; 1–50 shown, offset 50 for the next:");
+      expect(out.split("\n")[0]).toBe("The Trash (5.7 MB), newest first: 60 items; 1–50 shown, offset 50 for the next:");
       expect(out.split("\n")).toHaveLength(51);
       expect(out.split("\n")[1]).toMatch(/deleted 2026-09-28/);
       expect(await run("trash", { query: "idea. 5", limit: 5 })).toMatch(
@@ -660,6 +668,66 @@ describe("MCP actions", () => {
       const next = (await run("trash", { offset: 50 })) as string;
       expect(next.split("\n")[0]).toMatch(/60 items; 51–60 shown:$/);
       expect(await run("trash", { offset: 70 })).toMatch(/none from offset 70/);
+    });
+
+    it("gives each listing's rows as data too, a page at a time", async () => {
+      answers.trash_list = () =>
+        Array.from({ length: 3 }, (_, i) => ({
+          id: `t${i}`,
+          originalRel: `Idea. ${i}.md`,
+          layer: "note",
+          basename: `Idea. ${i}.md`,
+          deletedAt: `2026-09-0${i + 1}T10:00`,
+          sizeBytes: 1024,
+        }));
+      expect(await data("trash", { limit: 2 })).toEqual({
+        total: 3,
+        matching: 3,
+        offset: 0,
+        next_offset: 2,
+        bytes: 3072,
+        size: "3.0 KB",
+        items: [
+          { id: "t2", path: "Idea. 2.md", layer: "note", deleted: "2026-09-03T10:00", bytes: 1024 },
+          { id: "t1", path: "Idea. 1.md", layer: "note", deleted: "2026-09-02T10:00", bytes: 1024 },
+        ],
+      });
+      answers.trash_list = () => [];
+      expect(await data("trash")).toMatchObject({ total: 0, items: [] });
+      answers.projects_list = () => [];
+      expect(await data("projects.list")).toMatchObject({ total: 0, next_offset: null, items: [] });
+    });
+
+    it("says less unless detail asks for more", async () => {
+      answers.projects_list = () => [
+        {
+          path: "Project. Orbit.md",
+          name: "Orbit",
+          status: "active",
+          area: "Work",
+          outcome: "Live",
+          next: 2,
+          waiting: 1,
+          someday: 0,
+          done: 4,
+        },
+      ];
+      expect(await run("projects.list")).toBe("1 project:\n- Orbit · active · 2 next  (Project. Orbit.md)");
+      expect(await run("projects.list", { detail: true })).toMatch(/Work · 2 next, 1 waiting, 0 someday, 4 done · outcome: Live/);
+      answers.activity = () => ({
+        log: [{ date: "2026-10-01", time: "09:30", action: "ingest", title: "Orbit", description: "two pages" }],
+      });
+      expect(await run("activity")).toBe("1 entry in log.md, newest first:\n- 2026-10-01 ingest Orbit");
+      expect(await run("activity", { detail: true })).toMatch(/2026-10-01 09:30 ingest Orbit — two pages/);
+      answers.graph = () => ({
+        nodes: [
+          { id: "a", title: "A", layer: "wiki", type: "entity", depth: 0, degree: 3 },
+          { id: "b", title: "B", layer: "wiki", type: null, depth: 1, degree: 1 },
+        ],
+        edges: [["a", "b"]],
+      });
+      expect(await run("graph")).not.toMatch(/Pages:/);
+      expect(await run("graph", { detail: true })).toMatch(/Pages:\n- A · entity · wiki · 0 away · 3 links\n- B · wiki · 1 away · 1 links/);
     });
 
     it("restores from the Trash under another path, and stops every run", async () => {

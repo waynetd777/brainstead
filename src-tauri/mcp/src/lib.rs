@@ -27,14 +27,18 @@ const VERSIONS: [&str; 3] = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const MAX_CHARS: usize = 30_000;
 const TODO_LIST: &str = "Me. To Do List.md";
 
-const INSTRUCTIONS: &str = "Brainstead's tools over the user's vault (notes, a wiki in wiki/, sources in sources/), covering what the app's screens do. \
-Read with search, read_section, backlinks, resolve_entity, list_tasks, list_inbox, list_projects, summary (the daily and weekly summaries: what the user did), weekly_review, lint, page_shape, contradictions, facts, pending_sources, chats, graph and activity; help answers questions about the app itself. \
-Changes to the vault's notes happen straight away, each recorded in Brainstead's Changes screen where the user can revert it: tasks (edit_task, move_task, create_task, delete_task), Inbox clarifying, projects (create_project, update_project), and prose, renames and deletes (edit_page, create_note, create_template, rename_note, trash_note). \
-A change to Templates/ (a rename or trash of a template too, or a rename whose link rewrites touch one), one that adds code that runs (a script, a Tasks function, a Templater tag), or one that changes a system note's header is always held for the user. \
-Other tools (bookmarks, saved searches, the weekly review's suggestions and Finish and save, fix_health, health_issue, fix_name, import_sources) change things at once, undoable with ⌘Z in the app; ignore_issue is undone with its show_again; weekly_step, contradictions' mark, chats, task_lists and settings change things at once with no ⌘Z, only as the user asked; runs, reshape_pages and write_current_state record their own changes in Changes. While the vault is read-only (app_status says) every change is refused until the user turns it off. \
-Change only what the user asked for. In a session nobody is watching (a loop, a scheduled agent), pass unattended: true on every call (every tool takes it): a change that fails a check is then held for the user instead, and for the rest of the session nothing held can be accepted and weekly_start_over and moving_over's retire are refused. \
-changes lists what was changed and what's held, and reverts one; it accepts a held change only when the user is there and only one held because a check failed: the user accepts the rest in the app. \
-Quote sources word for word in edit_page's quotes; a quote that isn't in its source is flagged. Tools marked as needing the app open Brainstead when it isn't running.";
+/// What every session is told first. Clients cut it short (Claude Code at about 2,000 characters),
+/// so it stays under that; each tool's description says the rest.
+const INSTRUCTIONS: &str = "Brainstead's tools over the user's vault (notes, a wiki in wiki/, sources in sources/), doing what the app's screens do. \
+The list_* tools and the others marked read-only only read; help answers questions about the app itself. \
+Every change to a note (tasks, the Inbox, projects, edit_page, create_note, rename_note, trash_note) is made at once and recorded in Brainstead's Changes, where the user can revert it. \
+A change to Templates/, one that adds code that runs (a script, a Tasks function, a Templater tag) or one that changes a system note's header is always held for the user to accept in the app. \
+Other tools change things at once; each one's description says how it's undone. \
+Change only what the user asked for. While the vault is read-only (app_status says) every change is refused. \
+In a session nobody is watching (a loop, a scheduled agent), pass unattended: true on every call: a change that fails a check is then held for the user, and for the rest of the session nothing held can be accepted and weekly_start_over and moving_over are refused. \
+changes accepts a held change only while the user is there, and only one held because a check failed. \
+Quote sources word for word in edit_page's quotes: a quote that isn't in its source is flagged. \
+Tools marked as needing the app open Brainstead when it isn't running.";
 
 /// Where the server works.
 #[derive(Debug)]
@@ -143,9 +147,15 @@ pub fn handle(ctx: &Ctx, msg: Value) -> Option<Value> {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
             match call(ctx, name, args) {
-                Ok(text) => Ok(json!({"content": [{"type": "text", "text": cap(text)}], "isError": false})),
+                Ok(out) => {
+                    let mut r = json!({"content": [{"type": "text", "text": cap(out.text)}], "isError": false});
+                    if let Some(s) = out.structured {
+                        r["structuredContent"] = s;
+                    }
+                    Ok(r)
+                }
                 Err(CallError::Tool(e)) => Ok(json!({"content": [{"type": "text", "text": e}], "isError": true})),
-                Err(CallError::Args(e)) => Err((-32602, e)),
+                Err(CallError::Unknown(e)) => Err((-32602, e)),
             }
         }
         "prompts/list" => Ok(json!({"prompts": []})),
@@ -219,22 +229,31 @@ fn tool(name: &str, title: &str, effect: Effect, description: &str, mut input: V
 const EDIT_PAGE: &str = "Changes one page (a note, a wiki page, a project: any page in the vault), or makes a new wiki page (needs the app); a new note is create_note. The change is made at once and recorded in Brainstead's Changes, where the user can revert it. Give exactly one of: section + content (that section's new text, without its heading; a section that isn't there is added at the end, or on a wiki entity or concept page where the page shape puts it: a topical one above the Timeline, a summing one such as Summary or Status as the Current state), edits (exact find and replace pairs, each find text appearing once in the page), or content alone (the whole page; required for a new page, whose path must be wiki/entities/<Name>.md, wiki/concepts/<Name>.md or wiki/summaries/<Name>.md). Keep what's in the text you replace that you aren't changing: links, tags, and block ids such as ^q3 at a line's end. Cite what the change rests on in quotes, copied word for word from the source; cite in the text as [[Source#Heading]] or [[Source.pdf#page=6]]; a PDF quote with anchor page=N must be on that page. A quote that isn't in its source is flagged to the user.";
 
 /// The tools, as `tools/list` gives them. Those marked "needs the app" run in Brainstead itself
-/// (the server opens it when it isn't running), so they behave as the screens do.
+/// (the server opens it when it isn't running), so they behave as the screens do. What only reads
+/// is a tool of its own (list_changes beside changes…), so a client can let it run unasked.
 pub fn tools() -> Vec<Value> {
     use Effect::*;
     let page = json!({"type": "string", "description": "A page's name (Orbit App), its [[link]], or its path in the vault (wiki/entities/Orbit App.md)."});
     let task = json!({"type": "string", "description": "The task's id from list_tasks: path:line, as in `Me. To Do List.md:12`."});
     let task_text = json!({"type": "string", "description": "The task's text as list_tasks showed it (or enough of it), to make sure it's the same task if lines moved."});
-    let date = json!({"type": ["string", "null"], "description": "YYYY-MM-DD, or null to clear it."});
+    let date = json!({"type": ["string", "null"], "pattern": DATE, "description": "YYYY-MM-DD, or null to clear it."});
+    let day = |what: &str| json!({"type": "string", "pattern": DATE, "description": format!("YYYY-MM-DD: {what}")});
+    let reason = json!({"type": "string", "description": "Why, briefly: shown with the change in Changes."});
+    let detail =
+        json!({"type": "boolean", "description": "true for the full rows (see the description); a shorter line each when left out."});
+    let layers = json!({"type": "array", "items": {"type": "string", "enum": ["notes", "wiki", "sources", "templates"]}, "description": "Only these parts of the vault; all when left out."});
     let edit_schema = schema(
         json!({
             "page": page,
             "title": {"type": "string", "description": "One line for Changes: what the change does."},
-            "reason": {"type": "string", "description": "Why, briefly."},
-            "section": {"type": "string"},
-            "content": {"type": "string"},
-            "edits": {"type": "array", "items": schema(json!({"find": {"type": "string"}, "replace": {"type": "string"}}), &["find", "replace"])},
-            "quotes": {"type": "array", "items": schema(json!({
+            "reason": reason,
+            "section": {"type": "string", "description": "With content: the heading of the section to replace (its text only, without #s)."},
+            "content": {"type": "string", "description": "With section, that section's new text without its heading; alone, the whole page."},
+            "edits": {"type": "array", "description": "Find and replace pairs, each find text appearing exactly once in the page.", "items": schema(json!({
+                "find": {"type": "string", "description": "Text as it is in the page now, word for word."},
+                "replace": {"type": "string", "description": "What it becomes."}
+            }), &["find", "replace"])},
+            "quotes": {"type": "array", "description": "What the change rests on, quoted from its sources.", "items": schema(json!({
                 "source": {"type": "string", "description": "The source's name or path."},
                 "anchor": {"type": "string", "description": "A heading in it, or page=N for a PDF."},
                 "text": {"type": "string", "description": "Word for word from the source."}
@@ -244,24 +263,33 @@ pub fn tools() -> Vec<Value> {
     );
     let mut all = vec![
         tool("search", "Search the vault", Read,
-            "Full-text search over the vault, as Brainstead's Search does: words, \"exact phrases\", +required, -excluded, #tag. Returns the best passages, each with its page, heading and a snippet.",
+            "Full-text search over the vault, as Brainstead's Search does. Returns the best matching files, each with its path, title, the heading of the best passage and a snippet of it. Use it to find where something is written; read_section then reads the page. detail gives the whole snippet with each file's part of the vault and date.",
             schema(json!({
-                "query": {"type": "string"},
-                "layers": {"type": "array", "items": {"type": "string", "enum": ["notes", "wiki", "sources", "templates"]}, "description": "Only these parts of the vault; all when left out."},
-                "since": {"type": "string", "description": "YYYY-MM-DD: only files changed on or after this day."},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 30, "description": "Default 10."}
+                "query": {"type": "string", "description": "Words, \"exact phrases\", +required, -excluded and #tag, as Search takes them: soft launch +Orbit."},
+                "layers": layers,
+                "since": day("only files changed on or after this day."),
+                "limit": {"type": "integer", "minimum": 1, "maximum": 30, "description": "How many files, at most 30. Default 10."},
+                "detail": detail
             }), &["query"])),
         tool("read_section", "Read a page", Read,
-            "Reads a page, or one section of it by heading (to the next heading of the same level). A long page without a heading lists its headings. For a PDF or Office source, heading picks a page (page=6), slide (Slide 2) or sheet by name.",
-            schema(json!({"page": page, "heading": {"type": "string"}}), &["page"])),
-        tool("backlinks", "Pages linking here", Read, "The notes and pages that link to a page, with the line each link is on.", schema(json!({"page": page}), &["page"])),
+            "Reads a page, or one section of it by heading (to the next heading of the same level). A long page without a heading lists its headings, so read it a section at a time. For a PDF or Office source, heading picks a page (page=6), slide (Slide 2) or sheet by name.",
+            schema(json!({"page": page, "heading": {"type": "string", "description": "The section's heading text (Current state), or for a PDF or Office file a page, slide or sheet. The whole page when left out."}}), &["page"])),
+        tool("backlinks", "Pages linking here", Read,
+            "The notes and pages that link to a page, each with the line its link is on. Use it to see where something is mentioned before renaming or changing it, or to find the notes about an entity. Links are resolved as the app resolves them: by name, alias or path.",
+            schema(json!({"page": page}), &["page"])),
         tool("resolve_entity", "Which page a name means", Read,
             "Which page a name means: by file name, then alias, then a close spelling. Use it before creating a page, so you don't make a second page for something that has one.",
-            schema(json!({"name": {"type": "string"}}), &["name"])),
+            schema(json!({"name": {"type": "string", "description": "The name as written: Orbit, Orbit App, Lena."}}), &["name"])),
         tool("facts", "Facts from the wiki", Read,
             "The facts ingest checked against their sources and kept with each wiki page: per subject and attribute, the latest value with its as of date, quote, source and Timeline entry, then the values it superseded. Answers \"what's the latest go_live_date for Orbit App\" without reading pages. Give a page, a subject, an attribute (go_live_date, owner, status, role…; synonyms count), or any mix. Facts are kept from the first ingest that checks them, so a page may have none yet.",
-            schema(json!({"page": page, "subject": {"type": "string"}, "attribute": {"type": "string"}}), &[])),
-        tool("pending_sources", "Sources not yet in the wiki", Read, "Files in sources/ that no wiki page cites yet in its sources: property: notes, PDFs, Office files and images (whose text is read from the picture), each ready for start_run's ingest.", schema(json!({}), &[])),
+            schema(json!({
+                "page": page,
+                "subject": {"type": "string", "description": "What the fact is about, by name: Orbit App."},
+                "attribute": {"type": "string", "description": "Which fact: go_live_date, owner, status, role… (synonyms count)."}
+            }), &[])),
+        tool("pending_sources", "Sources not yet in the wiki", Read,
+            "Files in sources/ that no wiki page cites yet in its sources: property: notes, PDFs, Office files and images (whose text is read from the picture). Each path is ready to pass to start_run's ingest. Use it to see what's still to be ingested; an empty list means the wiki is up to date with Sources.",
+            schema(json!({}), &[])),
         tool("lint", "Knowledge health report", Read,
             "Knowledge health's checks on the wiki, as its screen lists them when Brainstead is open (ignored issues and pairs marked not duplicates left out, and the checks only the app runs: claims with no citation and system notes missing their header), else from the vault. Each check says whether it's counted (the grey ones, only worth a look, aren't) and each item marked [safe fix] can be fixed with fix_health. Wiki checks: missing pages, broken sources, orphan pages, missing cross-links, stale updated: dates, unlogged writes, sources not yet ingested and images nothing uses. More checks: possible duplicates, stale pages others rely on, sources changed since they were cited, pages not in the page shape (reshape_pages) and pages with no Current state (write_current_state). For one page when given. Missing pages, duplicates and unused images have health_issue for their buttons.",
             schema(json!({"page": page}), &[])),
@@ -274,7 +302,7 @@ pub fn tools() -> Vec<Value> {
             }), &[])),
         // Tasks.
         tool("list_tasks", "List tasks", Read,
-            "Tasks as Brainstead's lists show them (needs the app). Each line gives the task, its dates and chips, and its id (path:line) to act on it with edit_task or move_task.",
+            "Tasks as Brainstead's lists show them (needs the app). Each line gives the task, its dates and chips, and its id (path:line) to act on it with edit_task, move_task or delete_task. Narrow with view, project, context, query or a saved list rather than raising limit.",
             schema(json!({
                 "view": {"type": "string", "enum": ["today", "next", "followups", "waiting", "deferred", "someday", "done-this-week", "done-last-week", "all"], "description": "today: overdue, due and deferred until today, leaving out tasks deferred to a later day. next: open tasks that aren't follow-ups, waiting, someday, deferred or still in the Inbox (the default). deferred: the Deferred list, tasks deferred to a later day. all: every open task."},
                 "project": {"type": "string", "description": "Only this project's tasks, by its name."},
@@ -282,7 +310,7 @@ pub fn tools() -> Vec<Value> {
                 "query": {"type": "string", "description": "Only tasks whose text has these words."},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 300, "description": "Default 50."},
                 "detail": {"type": "boolean", "description": "Also the heading, effort, created and done dates."},
-                "list": {"type": "string", "description": "A saved list's name (task_lists): its view, context and effort, instead of view and context."}
+                "list": {"type": "string", "description": "A saved list's name (list_task_lists): its view, context and effort, instead of view and context."}
             }), &[])),
         tool("edit_task", "Change a task", Change,
             "Changes a task, as the task screens do (needs the app): made straight away and recorded in Changes, where the user can revert it (⌘Z undoes it too). Give only the fields to change; several at once is fine, made as one change. Ticking a recurring task adds its next occurrence, as in the app.",
@@ -290,68 +318,71 @@ pub fn tools() -> Vec<Value> {
                 "task": task, "text": task_text,
                 "done": {"type": "boolean", "description": "true ticks it (with today's ✅ date), false unticks it."},
                 "due": date, "defer": date, "start": date, "created": date,
-                "priority": {"type": "string", "enum": ["highest", "high", "medium", "low", "lowest", "none"]},
+                "priority": {"type": "string", "enum": ["highest", "high", "medium", "low", "lowest", "none"], "description": "none takes the priority off."},
                 "contexts": {"type": "array", "items": {"type": "string"}, "description": "The task's contexts, replacing what it has: [\"calls\"]. [] clears them."},
                 "effort": {"type": ["string", "null"], "description": "15m, 1h, 1h30m, 2d; null clears it."},
                 "project": {"type": ["string", "null"], "description": "A project's name; null takes it out of its project."},
                 "waiting": {"type": "boolean", "description": "true marks it waiting for someone (#waiting-for), false no longer."},
-                "status": {"type": "string", "enum": ["cancelled", "open", "in_progress"]}
+                "status": {"type": "string", "enum": ["cancelled", "open", "in_progress"], "description": "cancelled drops it without deleting the line."}
             }), &["task", "text"])),
         tool("move_task", "Reorder a task", Change,
-            "Moves a task in the manual order of Next actions, Follow-ups, Waiting for and Someday (needs the app), next to another task. Recorded in Changes, where the user can revert it.",
+            "Moves a task in the manual order of Next actions, Follow-ups, Waiting for and Someday (needs the app), next to another task. Give after or before, with the other task's id from list_tasks. The move is recorded in Changes, where the user can revert it. To change what a task is (its dates, project or status), use edit_task.",
             schema(json!({
                 "task": task, "text": task_text,
                 "after": {"type": "string", "description": "The id of the task it should come after."},
                 "before": {"type": "string", "description": "The id of the task it should come before."}
             }), &["task", "text"])),
         tool("create_task", "Add a task", Change,
-            "Adds a task (needs the app): to a project's Next actions when a project is given, else to the To Do list. Recorded in Changes, where the user can revert it.",
+            "Adds a task (needs the app): to a project's Next actions when a project is given, else to the To Do list. Write it as one line starting with a verb. It's recorded in Changes, where the user can revert it. To capture something still to be clarified, the Inbox is the user's; add only what the user asked for.",
             schema(json!({
                 "text": {"type": "string", "description": "The task, one line, starting with a verb."},
                 "project": {"type": "string", "description": "A project's name (Orbit App launch) or its note."},
                 "context": {"type": "string", "description": "Where or with what: calls, computer, errands, office."},
                 "effort": {"type": "string", "description": "15m, 1h, 1h30m, 2d."},
-                "due": {"type": "string", "description": "YYYY-MM-DD."},
-                "reason": {"type": "string"}
+                "due": day("the due date."),
+                "reason": reason
             }), &["text"])),
         tool("delete_task", "Delete a task", Destroy,
             "Takes a task's line out of its note (needs the app); revertable in Changes. Only when the user asks: to finish a task, tick it with edit_task instead; to drop it, set status cancelled.",
-            schema(json!({"task": task, "text": task_text, "reason": {"type": "string"}}), &["task", "text"])),
+            schema(json!({"task": task, "text": task_text, "reason": reason}), &["task", "text"])),
         // Inbox and projects.
         tool("list_inbox", "List the Inbox", Read,
-            "What's waiting in the Inbox to clarify (needs the app): captures from Outlook and Teams, Scratchpad thoughts and tasks under Other on the To Do list, each with its id.",
+            "What's waiting in the Inbox to clarify (needs the app): captures from Outlook and Teams, Scratchpad thoughts and tasks under Other on the To Do list. Each row has its id (task:14, capture:…) for clarify_inbox. Clarified items aren't listed.",
             schema(json!({}), &[])),
         tool("clarify_inbox", "Clarify an Inbox item", Change,
             "Decides what an Inbox item is, as the Inbox screen does (needs the app); its edits to notes are recorded in Changes, where the user can revert them, and held together when one is held. next and waiting write a task (to a project's Next actions when project is given); someday writes a #someday-maybe task; project makes a new project from it; done ticks or clears it; reference files it in a note (note or new_note), or keeps a capture in Sources; ingest ingests a capture into the wiki; delete takes it out (a capture goes to the Trash).",
             schema(json!({
                 "item": {"type": "string", "description": "The item's id from list_inbox, as in task:14."},
-                "becomes": {"type": "string", "enum": ["next", "waiting", "someday", "project", "done", "reference", "ingest", "delete"]},
+                "becomes": {"type": "string", "enum": ["next", "waiting", "someday", "project", "done", "reference", "ingest", "delete"], "description": "What it is, as the Inbox's buttons name it."},
                 "text": {"type": "string", "description": "The task's text, if it should read differently: start with a verb."},
                 "project": {"type": "string", "description": "For next, waiting or someday: the project it belongs to, by name."},
-                "context": {"type": "string"},
+                "context": {"type": "string", "description": "For next, waiting or someday: where or with what, as in calls or office."},
                 "effort": {"type": "string", "description": "15m, 1h…"},
-                "due": {"type": "string", "description": "YYYY-MM-DD."},
+                "due": day("the task's due date."),
                 "project_name": {"type": "string", "description": "For project: the new project's name (the item's text when left out)."},
-                "area": {"type": "string"}, "outcome": {"type": "string"},
+                "area": {"type": "string", "description": "For project: the area of responsibility it sits under."},
+                "outcome": {"type": "string", "description": "For project: what done looks like, one sentence."},
                 "note": {"type": "string", "description": "For reference: the path of the note to add it to as a bullet."},
                 "new_note": {"type": "string", "description": "For reference: a new note's title to hold it."}
             }), &["item", "becomes"])),
-        tool("list_projects", "List projects", Read, "Every project with its status, area, outcome and task counts (needs the app).", schema(json!({}), &[])),
+        tool("list_projects", "List projects", Read,
+            "Every project, as the Projects screen lists them (needs the app): its name, status and count of next actions, with its note's path. detail adds the area, outcome and the waiting, someday and done counts. Use the name with list_tasks' project, create_task or update_project.",
+            schema(json!({"detail": detail}), &[])),
         tool("create_project", "Create a project", Change,
-            "Makes a project note, as the Projects screen does (needs the app); recorded in Changes, where the user can revert it.",
+            "Makes a project note, as the Projects screen does (needs the app). It's named and laid out as the vault's other projects are, and recorded in Changes, where the user can revert it. Add its first tasks with create_task and the project's name.",
             schema(json!({
-                "name": {"type": "string"},
-                "status": {"type": "string", "enum": ["active", "on-hold", "someday", "done"]},
-                "area": {"type": "string"},
+                "name": {"type": "string", "description": "The project's name, as its note will be titled: Orbit App launch."},
+                "status": {"type": "string", "enum": ["active", "on-hold", "someday", "done"], "description": "Default active."},
+                "area": {"type": "string", "description": "The area of responsibility it sits under."},
                 "outcome": {"type": "string", "description": "What done looks like, one sentence."}
             }), &["name"])),
         tool("update_project", "Change a project", Change,
-            "Sets a project's status, area or outcome (needs the app); recorded in Changes, where the user can revert it. null clears area or outcome.",
+            "Sets a project's status, area or outcome (needs the app), as its page on the Projects screen does. Give only what changes; null clears area or outcome. Recorded in Changes, where the user can revert it.",
             schema(json!({
                 "project": {"type": "string", "description": "The project's name."},
                 "status": {"type": "string", "enum": ["active", "on-hold", "someday", "done"]},
-                "area": {"type": ["string", "null"]},
-                "outcome": {"type": ["string", "null"]}
+                "area": {"type": ["string", "null"], "description": "The area of responsibility; null clears it."},
+                "outcome": {"type": ["string", "null"], "description": "What done looks like, one sentence; null clears it."}
             }), &["project"])),
         // Notes and pages.
         tool("edit_page", "Change a page", Change, EDIT_PAGE, edit_schema),
@@ -359,63 +390,87 @@ pub fn tools() -> Vec<Value> {
             "Makes a new note (not a wiki page: edit_page makes those), needs the app; recorded in Changes, where the user can revert it. Brainstead names it the vault's way, `Type. Title - YYYY-MM-DD.md`, from type, title and date. Either give content (write it as the vault's other notes of that type are written: read the type's template in Templates/ with read_section and follow its properties and headings), or give template to have Brainstead run that template as New note does, answering its questions from answers in order. To change a note that exists, use edit_page.",
             schema(json!({
                 "type": {"type": "string", "description": "The note's type, as the vault's names use it: Meeting, 1-1, Idea, Project, Ask… Leave out for a plain title."},
-                "title": {"type": "string"},
-                "date": {"type": "string", "description": "YYYY-MM-DD (or YYYY-MM), for notes about a day: meetings, 1-1s, journals."},
+                "title": {"type": "string", "description": "The note's title, the part of its name after the type."},
+                "date": {"type": "string", "pattern": DAY_OR_MONTH, "description": "YYYY-MM-DD (or YYYY-MM), for notes about a day: meetings, 1-1s, journals."},
                 "folder": {"type": "string", "description": "A folder in the vault to put it in; the top level when left out. Not sources/, wiki/ or Templates/."},
                 "content": {"type": "string", "description": "The whole note: properties (frontmatter) if any, then the body. Not with template."},
                 "template": {"type": "string", "description": "A template's name in Templates/ (Meeting, 1-1…) to make the note from, instead of content."},
                 "answers": {"type": "array", "items": {"type": "string"}, "description": "With template: answers to its questions, in the order it asks them (a choice by its label)."},
-                "reason": {"type": "string", "description": "Why, briefly."}
+                "reason": reason
             }), &["title"])),
         tool("rename_note", "Rename a note", Change,
-            "Renames a note in its folder, with the links to it rewritten (needs the app); revertable in Changes. Give the new name's parts; Brainstead builds `Type. Title - date.md`.",
+            "Renames a note in its folder, with the links to it rewritten (needs the app); revertable in Changes. Give the new name's parts; Brainstead builds `Type. Title - date.md`. A rename that touches Templates/ is held for the user.",
             schema(json!({
                 "page": page,
-                "type": {"type": "string"}, "title": {"type": "string"}, "date": {"type": "string"},
-                "reason": {"type": "string"}
+                "type": {"type": "string", "description": "The new name's type: Meeting, Idea… Leave out for a plain title."},
+                "title": {"type": "string", "description": "The new name's title."},
+                "date": {"type": "string", "pattern": DAY_OR_MONTH, "description": "The new name's date, YYYY-MM-DD or YYYY-MM, if it has one."},
+                "reason": reason
             }), &["page", "title"])),
         tool("trash_note", "Move a note to the Trash", Destroy,
-            "Moves a note or page to Brainstead's Trash (needs the app), only when the user asks; it can be restored from the Trash or reverted in Changes.",
-            schema(json!({"page": page, "reason": {"type": "string"}}), &["page"])),
-        tool("trash", "The Trash", Change,
-            "Lists what's in Brainstead's Trash, newest first, with how many items it holds and their size, 50 at a time, or restores an entry to where it was, or with to under another path when something is there already, as the Trash's Restore as… does (needs the app). Moving something to the Trash is trash_note.",
+            "Moves a note or page to Brainstead's Trash (needs the app), only when the user asks. It can be put back with restore_from_trash or reverted in Changes. To see what's in the Trash, use list_trash.",
+            schema(json!({"page": page, "reason": reason}), &["page"])),
+        tool("list_trash", "What's in the Trash", Read,
+            "Lists what's in Brainstead's Trash, newest first, with how many items it holds and their size as the Trash screen gives it (needs the app). Each row has its id for restore_from_trash. Moving something to the Trash is trash_note.",
+            schema(json!({}), &[])),
+        tool("restore_from_trash", "Restore from the Trash", Change,
+            "Puts an entry from Brainstead's Trash back where it was, as the Trash's Restore does (needs the app). When something is at that path already, give to for another path, as Restore as… does. The id comes from list_trash.",
             schema(json!({
-                "action": {"type": "string", "enum": ["list", "restore"]},
-                "id": {"type": "string", "description": "For restore: the entry's id from the list."},
-                "to": {"type": "string", "description": "For restore: the vault path to put it back under, instead of where it was."}
-            }), &[])),
-        tool("bookmarks", "Bookmarks", Change,
-            "Lists the bookmarks, or with page, bookmarks it or takes its bookmark off, or with keep, keeps a bookmark as triage's Keep does (needs the app).",
-            schema(json!({"page": {"type": "string", "description": "A note's path to bookmark or unbookmark."}, "keep": {"type": "string", "description": "A bookmark's target to keep: it won't need triage for two weeks."}}), &[])),
-        tool("saved_searches", "Saved searches", Change,
-            "Lists the saved searches, or with name and query saves one, as Search's Save search does (a name that's taken is refused), or with name and delete deletes one, as its x does (needs the app). Undoable with ⌘Z in the app.",
-            schema(json!({"name": {"type": "string"}, "query": {"type": "string"}, "delete": {"type": "boolean", "description": "Delete the saved search called name."}, "layers": {"type": "array", "items": {"type": "string", "enum": ["notes", "wiki", "sources", "templates"]}, "description": "Only these parts of the vault, as search's layers; all when left out."}}), &[])),
+                "id": {"type": "string", "description": "The entry's id from list_trash."},
+                "to": {"type": "string", "description": "The vault path to put it back under, instead of where it was."}
+            }), &["id"])),
+        tool("list_bookmarks", "Bookmarks", Read,
+            "Lists the bookmarks as the sidebar shows them (needs the app): each one's title and the note it points at, or missing when that note is gone. Bookmark or unbookmark with bookmarks; triage_bookmarks says how long since each changed.",
+            schema(json!({}), &[])),
+        tool("bookmarks", "Bookmark a note", Destroy,
+            "With page, bookmarks a note or takes its bookmark off (needs the app), as a note's Bookmark does; with keep, keeps a bookmark as triage's Keep does, so it won't need triage for two weeks. Undoable with ⌘Z in the app. Only as the user asked; list_bookmarks lists them.",
+            schema(json!({"page": {"type": "string", "description": "A note's path to bookmark, or unbookmark when it has one."}, "keep": {"type": "string", "description": "A bookmark's target to keep: it won't need triage for two weeks."}}), &[])),
+        tool("list_saved_searches", "Saved searches", Read,
+            "Lists the saved searches, as Search's sidebar shows them (needs the app): each one's name and query. Run one with search and its query; save or delete one with saved_searches.",
+            schema(json!({}), &[])),
+        tool("saved_searches", "Save or delete a search", Destroy,
+            "With name and query, saves a search as Search's Save search does (a name that's taken is refused); with name and delete, deletes one, as its x does (needs the app). Undoable with ⌘Z in the app. Only as the user asked; list_saved_searches lists them.",
+            schema(json!({
+                "name": {"type": "string", "description": "The saved search's name."},
+                "query": {"type": "string", "description": "To save: the search, as search's query takes it."},
+                "delete": {"type": "boolean", "description": "Delete the saved search called name."},
+                "layers": layers
+            }), &["name"])),
         // What agents changed.
-        tool("changes", "Changes", Destroy,
-            "What assistants and Brainstead's runs changed, and the changes held for the user (needs the app). list shows the held changes and the latest made, by run; show gives one change's diff, quotes and flags; accept makes a held change (on the page as it is now) and reject turns it down; accept_run and reject_run do every held change in a run (group from list); revert undoes a change that was made, also after later edits, and says when its lines have been edited since; revert_run reverts every change a run made (Changes' Revert all). accept and accept_run work only while the user is there (never with unattended) and only for a change held because a check failed: one held because it changes a template, adds code that runs, changes a system note's header, renames or trashes a template (or rewrites links in one), or comes from a job set to hold its changes is the user's to accept, in the app. history reads how long Changes keeps its history (Settings › AI assistants › Keep the history of agent changes), and with days or mb sets it. Accept, reject, revert or change the history only as the user asked.",
+        tool("list_changes", "What assistants changed", Read,
+            "What assistants and Brainstead's runs changed, and the changes held for the user, as the Changes screen shows them (needs the app). list gives the held changes a page at a time and the latest made, grouped by run, each with its id and its run's group; show gives one change's diff, quotes and flags; history says how long Changes keeps its history. detail adds each change's kind, who made it and why. Act on them with changes.",
             schema(json!({
-                "action": {"type": "string", "enum": ["list", "show", "accept", "reject", "accept_run", "reject_run", "revert", "revert_run", "history"]},
-                "id": {"type": "string", "description": "The change's id from list."},
-                "group": {"type": "string", "description": "For accept_run, reject_run and revert_run: the run's group from list."},
+                "action": {"type": "string", "enum": ["list", "show", "history"], "description": "Default list."},
+                "id": {"type": "string", "description": "For show: the change's id from list."},
                 "page": {"type": "string", "description": "For list: only this page's changes, by its path."},
+                "detail": detail
+            }), &[])),
+        tool("changes", "Accept, reject or revert changes", Destroy,
+            "Decides on what assistants and runs changed (needs the app); list_changes lists them. accept makes a held change (on the page as it is now) and reject turns it down; accept_run and reject_run do every held change in a run (its group); revert undoes a change that was made, also after later edits, and says when its lines have been edited since; revert_run reverts every change a run made (Changes' Revert all); history with days or mb sets how long Changes keeps its history. accept and accept_run work only while the user is there (never with unattended) and only for a change held because a check failed: one held because it changes a template, adds code that runs, changes a system note's header, renames or trashes a template (or rewrites links in one), or comes from a job set to hold its changes is the user's to accept, in the app. Accept, reject, revert or change the history only as the user asked.",
+            schema(json!({
+                "action": {"type": "string", "enum": ["accept", "reject", "accept_run", "reject_run", "revert", "revert_run", "history"]},
+                "id": {"type": "string", "description": "For accept, reject and revert: the change's id from list_changes."},
+                "group": {"type": "string", "description": "For accept_run, reject_run and revert_run: the run's group from list_changes."},
                 "days": {"type": "integer", "enum": [30, 90, 180, 365], "description": "For history: keep this many days."},
                 "mb": {"type": "integer", "enum": [100, 250, 500, 1000, 2000], "description": "For history: keep at most this many MB."}
-            }), &[])),
+            }), &["action"])),
         // Runs and the wiki.
         tool("start_run", "Start a run", Run,
-            "Starts work Brainstead does with a model on the user's account, as its screens do (needs the app): ingest sources into the wiki (notes, PDFs, Office files or images; their changes are made and recorded in Changes), the nightly check, the daily or weekly summary (daily_summary, weekly_summary; date picks the day or week; summary reads them), the weekly review's preparation (weekly_prep: suggestions for each step of the week's review, nothing changed until one is accepted; weekly_review lists them), a look through the last 90 days of notes for tasks and projects (find_tasks; suggestions lists what it found), a contradictions check, or a meeting note from a Teams transcript (list_transcripts; once made, the note is ingested and the transcript moved to the Trash, as the user's settings say). It returns once started; run_status shows progress and stop_run stops it.",
+            "Starts work Brainstead does with a model on the user's account, as its screens do (needs the app): ingest sources into the wiki (notes, PDFs, Office files or images; their changes are made and recorded in Changes), the nightly check, the daily or weekly summary (daily_summary, weekly_summary; date picks the day or week; summary reads them), the weekly review's preparation (weekly_prep: suggestions for each step of the week's review, nothing changed until one is accepted; weekly_review lists them), a look through the last 90 days of notes for tasks and projects (find_tasks; list_suggestions lists what it found), a contradictions check, or a meeting note from a Teams transcript (list_transcripts; once made, the note is ingested and the transcript moved to the Trash, as the user's settings say). It returns once started; run_status shows progress and stop_run stops it.",
             schema(json!({
-                "run": {"type": "string", "enum": ["ingest", "nightly", "daily_summary", "weekly_summary", "weekly_prep", "find_tasks", "contradictions", "meeting_note"]},
+                "run": {"type": "string", "enum": ["ingest", "nightly", "daily_summary", "weekly_summary", "weekly_prep", "find_tasks", "contradictions", "meeting_note"], "description": "Which run."},
                 "sources": {"type": "array", "items": {"type": "string"}, "description": "For ingest: vault paths to ingest, in sources/ or notes (pending_sources lists those not yet ingested). All are checked before any is queued. Every ingest waits in one queue with the app's own, one at a time, oldest source first (by the date in its name, else the file's), so the order given and how many calls make no difference."},
                 "transcript": {"type": "string", "description": "For meeting_note: the transcript's path."},
                 "type": {"type": "string", "description": "For meeting_note: Meeting or 1-1, if Brainstead guessed wrong."},
                 "name": {"type": "string", "description": "For meeting_note: the meeting's name, or who the 1-1 was with."},
-                "date": {"type": "string", "description": "For meeting_note: the meeting's day, YYYY-MM-DD; needed when list_transcripts says the date is only the capture day (ask the user). For daily_summary: the day to summarise (default yesterday); for weekly_summary: a day in the week to summarise."}
+                "date": {"type": "string", "pattern": DATE, "description": "For meeting_note: the meeting's day, YYYY-MM-DD; needed when list_transcripts says the date is only the capture day (ask the user). For daily_summary: the day to summarise (default yesterday); for weekly_summary: a day in the week to summarise."}
             }), &["run"])),
-        tool("run_status", "How runs are going", Read, "Ingests running and lately done, the nightly check, the daily and weekly summaries, the weekly review's preparation, Find tasks and projects, the contradictions check, meeting notes being written and Write Current state (needs the app).", schema(json!({}), &[])),
-        tool("stop_run", "Stop a run", Change,
-            "Stops a run that's going (needs the app).",
-            schema(json!({"run": {"type": "string", "enum": ["ingest", "nightly", "daily_summary", "weekly_summary", "weekly_prep", "find_tasks", "contradictions", "write_current_state"]}, "id": {"type": "string", "description": "For ingest: the run's id, else the one running."}}), &["run"])),
+        tool("run_status", "How runs are going", Read,
+            "How Brainstead's runs are going (needs the app): ingests running and lately done, the nightly check, the daily and weekly summaries, the weekly review's preparation, Find tasks and projects, the contradictions check, meeting notes being written and Write Current state. Each says whether it's running, done or failed, with its progress. Use it after start_run, rather than starting a run again; stop_run stops one.",
+            schema(json!({}), &[])),
+        tool("stop_run", "Stop a run", Destroy,
+            "Stops a run that's going (needs the app), as its Stop button does. What it already changed stays, listed in Changes; the part not yet done is dropped, so start it again with start_run to finish. Stopping a run that isn't going does nothing. Only when the user asks.",
+            schema(json!({"run": {"type": "string", "enum": ["ingest", "nightly", "daily_summary", "weekly_summary", "weekly_prep", "find_tasks", "contradictions", "write_current_state"], "description": "Which run, as run_status names it."}, "id": {"type": "string", "description": "For ingest: the run's id from run_status, else the one running."}}), &["run"])),
         // Summaries and the weekly review.
         tool("summary", "A daily or weekly summary", Read,
             "The daily or weekly summary Brainstead wrote (what the user did that day or week, from their notes, tasks and log): the latest on file, or the one for day. For \"what did I do yesterday\", give kind daily and yesterday's date.",
@@ -426,8 +481,8 @@ pub fn tools() -> Vec<Value> {
         tool("weekly_review", "The weekly review", Read,
             "The guided weekly review (needs the app): when it's scheduled and its suggestions are next prepared, the week it's for (on a Monday or Tuesday the week just ended, otherwise this one; a paused review keeps its week), its progress (steps done, the step it's on, notes and decisions so far), the path of the week's own review note once it's finished (Me. Weekly Review - YYYY-Www.md, what the user did and wrote; read it with read_section), and the prepared suggestions not yet accepted or skipped, grouped by step, each with its id, text, source and what accepting does. weekly_suggestion accepts or skips one; start_run weekly_prep prepares them again.",
             schema(json!({}), &[])),
-        tool("weekly_suggestion", "Accept or skip a weekly review suggestion", Change,
-            "Accepts a prepared weekly review suggestion, doing what the Weekly review's button does (a task added, ticked, deferred or reworded, or an Inbox item clarified, undoable with ⌘Z in the app; a link added to a note, made as a change recorded in Changes, where the user can revert it); or skips it. Either way it's hidden from the review and an accepted one goes in the review's log (needs the app). Accept only what the user asked for.",
+        tool("weekly_suggestion", "Accept or skip a weekly review suggestion", Destroy,
+            "Accepts a prepared weekly review suggestion, doing what the Weekly review's button does (a task added, ticked, deferred or reworded, or an Inbox item clarified, undoable with ⌘Z in the app; a link added to a note, made as a change recorded in Changes, where the user can revert it); or skips it. Either way it's hidden from the review for good and an accepted one goes in the review's log (needs the app). Accept or skip only what the user asked for.",
             schema(json!({
                 "id": {"type": "string", "description": "The suggestion's id from weekly_review."},
                 "action": {"type": "string", "enum": ["accept", "skip"]}
@@ -448,17 +503,25 @@ pub fn tools() -> Vec<Value> {
             schema(json!({
                 "title": {"type": "string", "description": "The chat's title, as its tab shows it. The chat open in Ask when left out."}
             }), &[])),
-        tool("chats", "Ask's chats", Destroy,
-            "Brainstead's Ask chats (needs the app): list gives them, newest first, with each one's file and whether it's saved in the vault; read gives one's messages; rename renames one (its tab and, when saved, its note); trash moves one to the Trash, as History's Move to the Trash does. Rename or delete only when the user asks.",
+        tool("list_chats", "Ask's chats", Read,
+            "Brainstead's Ask chats (needs the app): list gives them, newest first, with each one's file and whether it's saved in the vault; read gives one's messages. Rename or trash one with chats; save one to the vault with save_chat.",
             schema(json!({
-                "action": {"type": "string", "enum": ["list", "read", "rename", "trash"]},
-                "chat": {"type": "string", "description": "The chat's file or title, from list."},
-                "title": {"type": "string", "description": "For rename: the new title."}
+                "action": {"type": "string", "enum": ["list", "read"], "description": "Default list."},
+                "chat": {"type": "string", "description": "For read: the chat's file or title, from list."}
             }), &[])),
-        tool("list_transcripts", "Transcripts to write up", Read, "Teams meeting transcripts in Sources still without a meeting note, with what Brainstead guesses about each (needs the app).", schema(json!({}), &[])),
+        tool("chats", "Rename or trash a chat", Destroy,
+            "Changes one of Brainstead's Ask chats (needs the app): rename renames it (its tab and, when saved, its note); trash moves it to the Trash, as History's Move to the Trash does. list_chats lists them. Rename or trash only when the user asks.",
+            schema(json!({
+                "action": {"type": "string", "enum": ["rename", "trash"]},
+                "chat": {"type": "string", "description": "The chat's file or title, from list_chats."},
+                "title": {"type": "string", "description": "For rename: the new title."}
+            }), &["action", "chat"])),
+        tool("list_transcripts", "Transcripts to write up", Read,
+            "Teams meeting transcripts in Sources still without a meeting note (needs the app). Each row has the transcript's path and what Brainstead guesses it is: Meeting or 1-1, its name or who it was with, and its date, flagged when the date is only the day it was captured. Write one up with start_run meeting_note, giving the right date when it's flagged.",
+            schema(json!({}), &[])),
         tool("fix_health", "Fix Knowledge health issues", Change,
             "Applies Knowledge health's safe fixes (needs the app): missing cross-links, stale updated: dates, unlogged writes' log lines and system notes' lost headers; all of them, or the items named (their text as lint gives it). Undoable. Page shape items are reshape_pages'. Issues that need judgement aren't safe fixes: make those with edit_page.",
-            schema(json!({"items": {"type": "array", "items": {"type": "string"}}}), &[])),
+            schema(json!({"items": {"type": "array", "items": {"type": "string"}, "description": "Only these issues, by their text as lint gives it; every safe fix when left out."}}), &[])),
         tool("ignore_issue", "Ignore a Knowledge health issue", Change,
             "Knowledge health's Ignore (needs the app): stops listing an issue that has no fix (its text as lint gives it) until its page changes; only when the user asked, and not for missing pages, duplicates, unused images, sources not yet ingested or page shape, which have buttons of their own (health_issue, start_run ingest, reshape_pages). With show_again, Show again: the ignored issues listed again, of one check (its id) or all. Ignored issues are left out of the app's count and of lint while the app is open.",
             schema(json!({
@@ -466,22 +529,26 @@ pub fn tools() -> Vec<Value> {
                 "show_again": {"type": "boolean", "description": "List ignored issues again instead."},
                 "check": {"type": "string", "description": "With show_again: the check's id (orphans, stale-pages…); every check when left out."}
             }), &[])),
-        tool("health_issue", "A Knowledge health issue's button", Change,
-            "Does what an issue's own button on Knowledge health does (needs the app), the issue named by its text as lint gives it. create (Create, on a missing page): writes the page as a new entity page, or a concept with folder concepts; link_to (Link to…, on a missing page): points every link to the missing page at an existing page, given as to; not_duplicates (Not duplicates, on a possible duplicate): the pair isn't listed again; move_to_trash (Move to the Trash, on an image nothing uses; trash restores it). A page made is undone with ⌘Z in the app; each relinked page is a change in Changes, with Revert. Only as the user asked.",
+        tool("health_issue", "A Knowledge health issue's button", Destroy,
+            "Does what an issue's own button on Knowledge health does (needs the app), the issue named by its text as lint gives it. create (Create, on a missing page): writes the page as a new entity page, or a concept with folder concepts; link_to (Link to…, on a missing page): points every link to the missing page at an existing page, given as to; not_duplicates (Not duplicates, on a possible duplicate): the pair isn't listed again; move_to_trash (Move to the Trash, on an image nothing uses; restore_from_trash puts it back). A page made is undone with ⌘Z in the app; each relinked page is a change in Changes, with Revert. Only as the user asked.",
             schema(json!({
                 "action": {"type": "string", "enum": ["create", "link_to", "not_duplicates", "move_to_trash"]},
                 "item": {"type": "string", "description": "The issue's text, as lint gives it."},
                 "to": {"type": "string", "description": "For link_to: the page the links should point at, by name or path."},
                 "folder": {"type": "string", "enum": ["entities", "concepts"], "description": "For create: default entities."}
             }), &["action", "item"])),
-        tool("contradictions", "Contradictions", Change,
-            "The Contradictions screen (needs the app): list gives the last check's findings still to decide (with all, every one), each with its id, the claims that clash (page, value, as-of date and quote) and the model's verdict; mark settles one as its buttons do (resolved: Mark resolved; ignored: Ignore, not a real contradiction, so it isn't flagged again); save writes the report as a new note, Contradictions - YYYY-MM-DD, as Save report as note does. start_run contradictions runs the check again. Mark only as the user asked.",
+        tool("list_contradictions", "Contradictions", Read,
+            "The Contradictions screen's findings (needs the app): when the last check ran, then the findings still to decide (with all, every one), each with its id, the claims that clash (page, value, as-of date and quote) and the model's verdict. Settle one or save the report with contradictions; start_run contradictions runs the check again.",
             schema(json!({
-                "action": {"type": "string", "enum": ["list", "mark", "save"]},
-                "id": {"type": "string", "description": "For mark: the finding's id from list."},
-                "as": {"type": "string", "enum": ["resolved", "ignored"], "description": "For mark."},
-                "all": {"type": "boolean", "description": "For list: every finding, also those not a conflict, superseded, resolved or ignored; else only those to decide."}
+                "all": {"type": "boolean", "description": "Every finding, also those not a conflict, superseded, resolved or ignored; else only those to decide."}
             }), &[])),
+        tool("contradictions", "Settle a contradiction", Change,
+            "Acts on the Contradictions screen (needs the app): mark settles a finding as its buttons do (resolved: Mark resolved; ignored: Ignore, not a real contradiction, so it isn't flagged again); save writes the report as a new note, Contradictions - YYYY-MM-DD, as Save report as note does, recorded in Changes. list_contradictions lists the findings. Mark only as the user asked.",
+            schema(json!({
+                "action": {"type": "string", "enum": ["mark", "save"]},
+                "id": {"type": "string", "description": "For mark: the finding's id from list_contradictions."},
+                "as": {"type": "string", "enum": ["resolved", "ignored"], "description": "For mark."}
+            }), &["action"])),
         tool("page_shape", "Page shape", Read,
             "Knowledge health's Page shape check: which wiki entity and concept pages aren't in the page shape (opening text, Current state, topical sections, a Timeline of `### YYYY-MM-DD — title` entries newest first, each with a Source: [[…]] line, then See also), which of them Reshape pages can do by itself and why the rest need the user. With page, that page's report: the headings it would rewrite and the lines it would add.",
             schema(json!({"page": page}), &[])),
@@ -491,71 +558,90 @@ pub fn tools() -> Vec<Value> {
         tool("write_current_state", "Write Current state", Run,
             "Knowledge health's Write Current state (needs the app): for wiki pages with a Timeline but no Current state (lint lists them under Pages with no Current state), the cheap model writes one from each page's opening and newest Timeline entries only, checked (no links the page doesn't have) and made as a change in one Changes run. Runs in the background: limit does only that many first (a sample to look at), pages only those named; status says how the run is going; stop stops it after the page it's on.",
             schema(json!({
-                "pages": {"type": "array", "items": page},
-                "limit": {"type": "integer", "minimum": 1},
-                "status": {"type": "boolean"},
-                "stop": {"type": "boolean"}
+                "pages": {"type": "array", "items": page, "description": "Only these pages; every page without a Current state when left out."},
+                "limit": {"type": "integer", "minimum": 1, "description": "Only this many pages first, as a sample to look at."},
+                "status": {"type": "boolean", "description": "true only says how the run is going; nothing is started."},
+                "stop": {"type": "boolean", "description": "true stops the run after the page it's on."}
             }), &[])),
         tool("fix_name", "Fix a name everywhere", Change,
             "Corrects a misspelt name across the notes and wiki, as Fix name does (needs the app); sources are left alone. Without apply it only says what would change; with apply true it changes the files (undoable).",
             schema(json!({
-                "wrong": {"type": "string"}, "right": {"type": "string"},
-                "apply": {"type": "boolean"},
+                "wrong": {"type": "string", "description": "The name as it's misspelt: Lenna."},
+                "right": {"type": "string", "description": "The name as it should be: Lena."},
+                "apply": {"type": "boolean", "description": "true makes the change; left out, it only says what would change."},
                 "remember": {"type": "boolean", "description": "Also correct it in future captures, transcripts and ingests."}
             }), &["wrong", "right"])),
         // The skill screens.
         tool("triage_bookmarks", "Triage bookmarks", Run,
-            "Without items, lists the bookmarks with how long since each changed (needs the app). With items, asks the model for a keep, update or drop suggestion on each, as the Triage screen does.",
-            schema(json!({"items": {"type": "array", "items": schema(json!({"target": {"type": "string"}, "path": {"type": "string"}}), &["target", "path"])}}), &[])),
+            "Without items, lists the bookmarks with how long since each changed (needs the app). With items, asks the model for a keep, update or drop suggestion on each, as the Triage screen does; nothing is changed. Act on a suggestion with bookmarks or edit_page, as the user decides.",
+            schema(json!({"items": {"type": "array", "description": "The bookmarks to ask about, as the list gives them.", "items": schema(json!({
+                "target": {"type": "string", "description": "The bookmark's target, from the list."},
+                "path": {"type": "string", "description": "The note it points at, from the list."}
+            }), &["target", "path"])}}), &[])),
         tool("draft_reply", "Draft a reply", Run,
-            "Drafts a reply to an email thread in sources/ (thread) or to pasted text, as the Draft reply screen does (needs the app). Nothing is sent.",
-            schema(json!({"thread": {"type": "string"}, "text": {"type": "string"}, "tone": {"type": "string", "description": "neutral, warm, brief, formal…"}}), &[])),
+            "Drafts a reply to an email thread in sources/ (thread) or to pasted text, as the Draft reply screen does (needs the app). It says how fully the draft answers the thread. Nothing is sent and nothing in the vault changes: give the draft to the user.",
+            schema(json!({
+                "thread": {"type": "string", "description": "The email thread's path in sources/."},
+                "text": {"type": "string", "description": "Instead of thread: the message to reply to, pasted."},
+                "tone": {"type": "string", "description": "neutral, warm, brief, formal…"}
+            }), &[])),
         tool("doc_check", "Check a document", Run,
-            "Checks a document against the version in force in the canonical docs register, as Doc check does (needs the app). Without candidate it gives the register.",
-            schema(json!({"candidate": {"type": "string", "description": "The document to check, by path."}, "doc": {"type": "string", "description": "The register's document name."}, "mode": {"type": "string", "enum": ["standard", "callouts"]}}), &[])),
+            "Checks a document against the version in force in the canonical docs register, as Doc check does (needs the app). Without candidate it gives the register, so you can pick doc from it. Nothing in the vault changes.",
+            schema(json!({"candidate": {"type": "string", "description": "The document to check, by path."}, "doc": {"type": "string", "description": "The register's document name."}, "mode": {"type": "string", "enum": ["standard", "callouts"], "description": "standard lists the differences; callouts marks them in the document's text."}}), &[])),
         // Around the vault.
         tool("activity", "Recent activity", Read,
-            "log.md, newest first: what Brainstead and the assistants changed (needs the app). With date, the files changed that day.",
-            schema(json!({"date": {"type": "string", "description": "YYYY-MM-DD."}}), &[])),
+            "log.md, newest first: what Brainstead and the assistants changed in the vault (needs the app), a line an entry with its date, action and title. With date, the files changed that day instead. detail adds each entry's time and description.",
+            schema(json!({"date": day("the files changed that day."), "detail": detail}), &[])),
         tool("graph", "Links around a page", Read,
-            "The pages linked to and from a page, to a depth of 1 to 3 (needs the app); the whole wiki without page.",
-            schema(json!({"page": page, "depth": {"type": "integer", "minimum": 1, "maximum": 3}}), &[])),
-        tool("suggestions", "Suggested tasks and projects", Change,
-            "Find tasks and projects' suggestions (needs the app): tasks and projects a read of the user's notes from the last 90 days found, each with the note and quote it rests on; start_run find_tasks looks again. list gives them with their ids; accept makes one (a task added to its project's Next actions or the To Do list, a project note with its first next actions) as a change recorded in Changes, where the user can revert it (⌘Z doesn't undo it), with text to reword it (or a project's name) and outcome for a project's; skip leaves one out. Neither comes back. Accept or skip only what the user asked for.",
+            "The pages linked to and from a page, to a depth of 1 to 3 (needs the app), as the Graph screen draws it; the whole wiki without page. It lists the links between them, one `from → to` a line. detail lists the pages too, each with its type, how far it is from the page and how many links it has.",
+            schema(json!({"page": page, "depth": {"type": "integer", "minimum": 1, "maximum": 3, "description": "How many links away to go. Default 1."}, "detail": detail}), &[])),
+        tool("list_suggestions", "Suggested tasks and projects", Read,
+            "Find tasks and projects' suggestions (needs the app): tasks and projects a read of the user's notes from the last 90 days found, each with the note and quote it rests on and its id, and how the last look went. Accept or skip one with suggestions; start_run find_tasks looks again.",
+            schema(json!({}), &[])),
+        tool("suggestions", "Accept or skip a suggestion", Destroy,
+            "Acts on a Find tasks and projects suggestion (needs the app). accept makes it (a task added to its project's Next actions or the To Do list, a project note with its first next actions) as a change recorded in Changes, where the user can revert it (⌘Z doesn't undo it), with text to reword it (or a project's name) and outcome for a project's; skip leaves it out. Neither comes back. Accept or skip only what the user asked for.",
             schema(json!({
-                "action": {"type": "string", "enum": ["list", "accept", "skip"]},
-                "id": {"type": "string", "description": "The suggestion's id from list."},
+                "action": {"type": "string", "enum": ["accept", "skip"]},
+                "id": {"type": "string", "description": "The suggestion's id from list_suggestions."},
                 "text": {"type": "string", "description": "For accept: the task's wording, or the project's name, if it should differ."},
                 "outcome": {"type": "string", "description": "For accept on a project: what done looks like, if it should differ."}
-            }), &[])),
-        tool("moving_over", "Moving over from the previous app", Destroy,
-            "Settings › General › Moving over (needs the app). status says whether the previous app's skills (.claude/skills/) and scripts (scripts/) are still in the vault; retire does what its Retire them button does: both folders go to Brainstead's Trash (restorable from there), the name corrections are kept, and CLAUDE.md tells agents to use these tools. It says what it removed. Only when the user asks: retire is refused once any call in the session passed unattended: true.",
-            schema(json!({"action": {"type": "string", "enum": ["status", "retire"]}}), &[])),
-        tool("automated_tools", "Tools that start sessions", Change,
-            "The user's own tools that start Claude Code sessions (Settings › Jobs & schedule): the daily summary counts their sessions as automated instead of as the user's work (needs the app). list gives them, and as suggestions the folders whose recent sessions were nearly all one prompt and done; add lists one (a name, and folder and/or opening: the folder its sessions run in, or the words their first message starts with); remove takes one off by name. Only when the user asks.",
+            }), &["action", "id"])),
+        tool("moving_over", "Retire the previous app's skills", Destroy,
+            "Settings › General › Moving over's Retire them (needs the app): the previous app's skills (.claude/skills/) and scripts (scripts/) go to Brainstead's Trash (restorable from there), the name corrections are kept, and CLAUDE.md tells agents to use these tools. It says what it removed; app_status says whether they're still there. Only when the user asks: refused once any call in the session passed unattended: true.",
+            schema(json!({}), &[])),
+        tool("list_automated_tools", "Tools that start sessions", Read,
+            "The user's own tools that start Claude Code sessions (Settings › Jobs & schedule), whose sessions the daily summary counts as automated instead of as the user's work (needs the app). It lists them, then as suggestions the folders whose recent sessions were nearly all one prompt and done. Add or remove one with automated_tools.",
+            schema(json!({}), &[])),
+        tool("automated_tools", "Add or remove a tool that starts sessions", Destroy,
+            "Changes the user's list of tools that start Claude Code sessions (Settings › Jobs & schedule; needs the app): add lists one (a name, and folder and/or opening: the folder its sessions run in, or the words their first message starts with); remove takes one off by name. list_automated_tools lists them. Only when the user asks.",
             schema(json!({
-                "action": {"type": "string", "enum": ["list", "add", "remove"]},
-                "name": {"type": "string", "description": "For add and remove: the tool's name."},
+                "action": {"type": "string", "enum": ["add", "remove"]},
+                "name": {"type": "string", "description": "The tool's name."},
                 "folder": {"type": "string", "description": "For add: its sessions run in a folder whose path contains this."},
                 "opening": {"type": "string", "description": "For add: its sessions' first message starts with these words."}
-            }), &[])),
-        tool("task_lists", "Saved task lists", Change,
-            "Tasks' saved lists: a view with its context, effort and grouping, by name (needs the app). list gives them; save saves one, as Save this list… does (replacing one of the same name); remove takes one off. list_tasks with list shows one's tasks. Only when the user asks.",
+            }), &["action", "name"])),
+        tool("list_task_lists", "Saved task lists", Read,
+            "Tasks' saved lists (needs the app): each one's name, view, context, effort and grouping. list_tasks with list shows one's tasks; save or remove one with task_lists.",
+            schema(json!({}), &[])),
+        tool("task_lists", "Save or remove a task list", Destroy,
+            "Saves or removes one of Tasks' saved lists: a view with its context, effort and grouping, by name (needs the app). save saves one, as Save this list… does (replacing one of the same name); remove takes one off. list_task_lists lists them. Only when the user asks.",
             schema(json!({
-                "action": {"type": "string", "enum": ["list", "save", "remove"]},
-                "name": {"type": "string"},
+                "action": {"type": "string", "enum": ["save", "remove"]},
+                "name": {"type": "string", "description": "The list's name."},
                 "view": {"type": "string", "description": "For save: today, next, deferred, waiting, someday… as list_tasks takes it."},
                 "context": {"type": "string", "description": "For save: a context such as @calls, or none."},
                 "effort": {"type": "integer", "enum": [15, 30, 60], "description": "For save: only tasks of this many minutes or less; any effort when left out."},
                 "group": {"type": "string", "enum": ["none", "project", "context", "due"], "description": "For save: default none."}
-            }), &[])),
-        tool("settings", "Brainstead's settings", Change,
-            "Reads or changes Brainstead's settings, as the Settings screen does (needs the app). get lists each setting this tool can change, with its pane, label and value; set changes one by its key from get. The vault, Read-only and the folders left out are the user's to change, in the app. Change only what the user asked for; ⌘Z doesn't undo it.",
+            }), &["action", "name"])),
+        tool("list_settings", "Brainstead's settings", Read,
+            "Brainstead's settings that settings can change, as the Settings screen shows them (needs the app): each one's key, pane, label and value. The vault, Read-only and the folders left out aren't listed: they're the user's to change, in the app.",
+            schema(json!({}), &[])),
+        tool("settings", "Change a setting", Change,
+            "Changes one of Brainstead's settings by its key from list_settings, as the Settings screen does (needs the app). The value is checked against the setting's kind: true or false, a time HH:MM, a day (mon…sun), a number from its choices, or text. Change only what the user asked for; ⌘Z doesn't undo it.",
             schema(json!({
-                "action": {"type": "string", "enum": ["get", "set"]},
-                "key": {"type": "string", "description": "For set: the setting's key from get."},
-                "value": {"description": "For set: the new value (true or false, a number, a time HH:MM, or text, as get shows it)."}
-            }), &[])),
+                "key": {"type": "string", "description": "The setting's key from list_settings."},
+                "value": {"type": ["boolean", "number", "string"], "description": "The new value, of the kind list_settings shows: true or false, a number, a time HH:MM, a day, or text."}
+            }), &["key", "value"])),
         tool("import_sources", "Add files to Sources", Change,
             "Copies files from the Mac into sources/, as Sources' Import does (needs the app): PDFs, Office files, images, notes and the rest, up to 200 MB each. New sources are then ingested as they arrive when the user has that on (Settings › AI assistants). Only files the user named.",
             schema(json!({"paths": {"type": "array", "items": {"type": "string"}, "description": "Absolute paths of the files to add."}}), &["paths"])),
@@ -564,7 +650,7 @@ pub fn tools() -> Vec<Value> {
             schema(json!({
                 "name": {"type": "string", "description": "The template's name, without .md."},
                 "content": {"type": "string", "description": "The whole template: properties, headings and Templater tags as the vault's other templates have them."},
-                "reason": {"type": "string"}
+                "reason": reason
             }), &["name", "content"])),
         tool("open", "Open Brainstead", Read,
             "Opens Brainstead (starting it when it isn't running) and brings its window to the front, on a screen, a Settings pane, a note or a search when given; it changes nothing. Only when the user asks to see something.",
@@ -575,34 +661,132 @@ pub fn tools() -> Vec<Value> {
                 "query": {"type": "string", "description": "With screen search: what to search for."}
             }), &[])),
         tool("app_status", "Brainstead's state", Read,
-            "The vault, whether it's read-only (then nothing can be changed until the user switches it off in Settings › Vault), the index, whether Brainstead runs the daily and weekly summaries, and what ⌘Z would undo (needs the app).",
+            "The vault, whether it's read-only (then nothing can be changed until the user switches it off in Settings › Vault), the index, whether Brainstead runs the daily and weekly summaries, whether the previous app's skills are still in the vault (moving_over retires them), and what ⌘Z would undo (needs the app).",
             schema(json!({}), &[])),
     ];
+    let outputs = outputs();
     for t in &mut all {
-        if PAGED.contains(&t["name"].as_str().unwrap_or("")) {
+        let name = t["name"].as_str().unwrap_or("").to_string();
+        if PAGED.contains(&name.as_str()) {
             paging(&mut t["inputSchema"]["properties"]);
+        }
+        if IDEMPOTENT.contains(&name.as_str()) {
+            t["annotations"]["idempotentHint"] = json!(true);
+        }
+        if let Some(o) = outputs.get(name.as_str()) {
+            t["outputSchema"] = o.clone();
         }
     }
     all
 }
 
+/// A day, and a day or a month, as the date arguments take them.
+const DATE: &str = r"^\d{4}-\d{2}-\d{2}$";
+const DAY_OR_MONTH: &str = r"^\d{4}-\d{2}(-\d{2})?$";
+
 /// The tools that list something: each gives how many there are and a page of them at a time.
-const PAGED: [&str; 14] = [
+const PAGED: [&str; 18] = [
     "backlinks",
     "list_inbox",
     "list_projects",
-    "trash",
-    "bookmarks",
-    "changes",
-    "chats",
+    "list_trash",
+    "list_bookmarks",
+    "list_saved_searches",
+    "list_changes",
+    "list_chats",
     "list_transcripts",
-    "contradictions",
+    "list_contradictions",
     "page_shape",
     "triage_bookmarks",
     "activity",
     "graph",
-    "suggestions",
+    "list_suggestions",
+    "list_automated_tools",
+    "list_task_lists",
+    "list_settings",
 ];
+
+/// Tools that change something but do the same the second time: setting a value, stopping a run.
+const IDEMPOTENT: [&str; 4] = ["settings", "stop_run", "update_project", "task_lists"];
+
+/// A page of rows as data: how many there are, how many match `query`, where this page starts and
+/// the next one, and the rows (src/mcpActions.ts's listing gives the same).
+fn page_schema(item: Value) -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "total": {"type": "integer", "description": "How many there are."},
+            "matching": {"type": "integer", "description": "How many have query's words."},
+            "offset": {"type": "integer"},
+            "next_offset": {"type": ["integer", "null"], "description": "The offset for the next page; null on the last."},
+            "items": {"type": "array", "items": {"type": "object", "properties": item}}
+        },
+        "required": ["total", "items"]
+    })
+}
+
+/// The listing tools' structuredContent, by tool. A tool with a schema here gives its rows as data
+/// as well as text, every time it succeeds.
+fn outputs() -> std::collections::HashMap<&'static str, Value> {
+    let s = |t: &str| json!({"type": t});
+    let sn = || json!({"type": ["string", "null"]});
+    let change = json!({"id": s("string"), "title": s("string"), "page": s("string"), "kind": s("string"), "status": s("string"), "flags": {"type": "array", "items": s("string")}, "origin": s("string"), "group": s("string"), "reason": s("string"), "created": s("string")});
+    let mut changes = json!({"type": "object", "properties": {
+        "held": page_schema(change.clone()),
+        "made": page_schema(change),
+        "change": {"type": "object", "description": "show: the change, with its diff and quotes."},
+        "history": {"type": "object", "properties": {"days": s("integer"), "mb": s("integer")}}
+    }});
+    changes["description"] = json!("list gives held and made; show gives change; history gives history.");
+    let mut chats = page_schema(json!({"file": s("string"), "title": s("string"), "updated": s("string"), "saved": s("boolean")}));
+    chats["properties"]["chat"] = json!({"type": "object", "description": "read: the chat's title and messages."});
+    chats["required"] = json!([]);
+    std::collections::HashMap::from([
+        (
+            "search",
+            page_schema(
+                json!({"path": s("string"), "title": s("string"), "layer": s("string"), "date": s("string"), "heading": s("string"), "snippet": s("string")}),
+            ),
+        ),
+        (
+            "list_tasks",
+            page_schema(
+                json!({"id": s("string"), "text": s("string"), "path": s("string"), "due": sn(), "scheduled": sn(), "start": sn(), "done": s("boolean"), "doneOn": sn(), "project": sn(), "contexts": {"type": "array", "items": s("string")}, "effort": sn(), "heading": sn()}),
+            ),
+        ),
+        (
+            "list_inbox",
+            page_schema(json!({"id": s("string"), "kind": s("string"), "text": s("string"), "path": s("string"), "stamp": sn()})),
+        ),
+        (
+            "list_projects",
+            page_schema(
+                json!({"name": s("string"), "path": s("string"), "status": s("string"), "area": sn(), "outcome": sn(), "next": s("integer"), "waiting": s("integer"), "someday": s("integer"), "done": s("integer")}),
+            ),
+        ),
+        ("list_trash", {
+            let mut t = page_schema(
+                json!({"id": s("string"), "path": s("string"), "layer": s("string"), "deleted": s("string"), "bytes": s("integer")}),
+            );
+            t["properties"]["bytes"] = json!({"type": "integer", "description": "Everything in the Trash, in bytes."});
+            t["properties"]["size"] = json!({"type": "string", "description": "The same, as the Trash screen says it."});
+            t
+        }),
+        ("list_changes", changes),
+        (
+            "activity",
+            page_schema(
+                json!({"date": s("string"), "time": sn(), "action": s("string"), "title": s("string"), "description": s("string"), "path": s("string")}),
+            ),
+        ),
+        ("list_chats", chats),
+        ("list_bookmarks", page_schema(json!({"title": s("string"), "target": s("string"), "path": sn()}))),
+        (
+            "list_transcripts",
+            page_schema(json!({"path": s("string"), "type": sn(), "name": sn(), "date": sn(), "dateCheck": s("boolean")})),
+        ),
+    ])
+}
 
 /// A listing tool's paging: limit, offset and query, as src/mcpActions.ts's pagedRows reads them.
 fn paging(props: &mut Value) {
@@ -651,11 +835,25 @@ struct Paging {
     query: Option<String>,
 }
 
-/// Why a call failed: arguments the tool can't take (a JSON-RPC error, as MCP asks), or the tool
-/// ran and couldn't do it (a result marked as an error, which the model reads and can act on).
+/// Why a call failed: a tool there's no such thing as (a JSON-RPC error, as MCP asks), or anything
+/// else, arguments that don't fit included (a result marked as an error, which the model reads and
+/// can correct its call from).
 enum CallError {
-    Args(String),
+    Unknown(String),
     Tool(String),
+}
+
+/// What a tool gives back: its text, and for a listing tool with an output schema, the same rows
+/// as data (MCP's structuredContent).
+struct Out {
+    text: String,
+    structured: Option<Value>,
+}
+
+impl From<String> for Out {
+    fn from(text: String) -> Self {
+        Out { text, structured: None }
+    }
 }
 
 impl From<String> for CallError {
@@ -668,12 +866,14 @@ impl From<String> for CallError {
 /// rate-limit tool calls).
 const PER_MINUTE: usize = 120;
 
-fn call(ctx: &Ctx, name: &str, args: Value) -> Result<String, CallError> {
+fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
+    // Arguments that don't fit are the tool's error, so the model reads why and can call again.
     fn parse<T: for<'de> Deserialize<'de>>(v: Value) -> Result<T, CallError> {
-        serde_json::from_value(v).map_err(|e| CallError::Args(format!("Those arguments don't fit: {e}")))
+        serde_json::from_value(v)
+            .map_err(|e| CallError::Tool(format!("Those arguments don't fit: {e}. The tool's inputSchema says what it takes.")))
     }
     if !tools().iter().any(|t| t["name"] == name) {
-        return Err(CallError::Args(format!("Unknown tool: {name}")));
+        return Err(CallError::Unknown(format!("Unknown tool: {name}")));
     }
     {
         let mut calls = ctx.calls.lock().unwrap();
@@ -687,31 +887,34 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<String, CallError> {
         calls.push(now);
     }
     let mut obj = if args.is_null() { json!({}) } else { args };
+    if !obj.is_object() {
+        return Err(CallError::Tool("Arguments are an object of named values, as the tool's inputSchema says.".into()));
+    }
     let unattended = obj.get("unattended").and_then(Value::as_bool) == Some(true);
     if unattended {
         ctx.unattended.store(true, std::sync::atomic::Ordering::Relaxed);
     }
     // Once a call has said nobody's watching, the whole session is (D-20261005-09).
     let unwatched = ctx.unattended.load(std::sync::atomic::Ordering::Relaxed);
-    let act = |action: &str, a: Value| -> Result<String, CallError> { Ok(act(ctx, action, a)?) };
+    let act = |action: &str, a: Value| -> Result<Out, CallError> { Ok(act(ctx, action, a)?) };
     // The app records these in Changes as this session's (D-20261005-10).
     if ["edit_task", "move_task", "clarify_inbox", "create_project", "update_project"].contains(&name) {
         obj["origin"] = serde_json::to_value(origin(ctx, unattended)).unwrap_or_default();
     }
     match name {
         "search" => Ok(search(ctx, parse(obj)?)?),
-        "read_section" => Ok(read_section(ctx, parse(obj)?)?),
-        "backlinks" => Ok(backlinks(ctx, parse(obj)?)?),
-        "resolve_entity" => Ok(resolve_entity(ctx, parse(obj)?)?),
-        "facts" => Ok(facts(ctx, parse(obj)?)?),
-        "pending_sources" => Ok(pending_sources(ctx)),
+        "read_section" => Ok(read_section(ctx, parse(obj)?)?.into()),
+        "backlinks" => Ok(backlinks(ctx, parse(obj)?)?.into()),
+        "resolve_entity" => Ok(resolve_entity(ctx, parse(obj)?)?.into()),
+        "facts" => Ok(facts(ctx, parse(obj)?)?.into()),
+        "pending_sources" => Ok(pending_sources(ctx).into()),
         // The app's report when it's open, as the screen shows it; else the core's checks.
         "lint" if bridge::app_alive(&ctx.data) => act("health.lint", obj),
-        "lint" => Ok(lint_tool(ctx, parse(obj)?)?),
-        "help" => Ok(help(parse(obj)?)?),
-        "edit_page" => Ok(edit_page(ctx, parse(obj)?)?),
-        "create_task" => Ok(create_task(ctx, parse(obj)?)?),
-        "delete_task" => Ok(delete_task(ctx, parse(obj)?)?),
+        "lint" => Ok(lint_tool(ctx, parse(obj)?)?.into()),
+        "help" => Ok(help(parse(obj)?)?.into()),
+        "edit_page" => Ok(edit_page(ctx, parse(obj)?)?.into()),
+        "create_task" => Ok(create_task(ctx, parse(obj)?)?.into()),
+        "delete_task" => Ok(delete_task(ctx, parse(obj)?)?.into()),
         "create_note" => {
             let a: NoteArgs = parse(obj.clone())?;
             if a.template.as_deref().is_some_and(|t| !t.trim().is_empty()) {
@@ -719,11 +922,11 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<String, CallError> {
                 obj["origin"] = serde_json::to_value(origin(ctx, a.unattended)).unwrap_or_default();
                 act("note.from_template", obj)
             } else {
-                Ok(create_note(ctx, a)?)
+                Ok(create_note(ctx, a)?.into())
             }
         }
-        "rename_note" => Ok(rename_note(ctx, parse(obj)?)?),
-        "trash_note" => Ok(trash_note(ctx, parse(obj)?)?),
+        "rename_note" => Ok(rename_note(ctx, parse(obj)?)?.into()),
+        "trash_note" => Ok(trash_note(ctx, parse(obj)?)?.into()),
         "list_tasks" => act("tasks.list", obj),
         "edit_task" => act("task.edit", obj),
         "move_task" => act("task.move", obj),
@@ -732,46 +935,76 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<String, CallError> {
         "list_projects" => act("projects.list", obj),
         "create_project" => act("project.create", obj),
         "update_project" => act("project.update", obj),
-        "trash" => act("trash", obj),
-        "bookmarks" => act("bookmarks", obj),
-        "saved_searches" => act("saved_searches", obj),
+        // The read tools and the change tools beside them share the app's action, each held to its
+        // own actions, so a read tool never changes anything.
+        "list_trash" => act("trash", acting(obj, name, &["list"], "list", &[])?),
+        "restore_from_trash" => act("trash", acting(obj, name, &["restore"], "restore", &[])?),
+        "list_bookmarks" => act("bookmarks", without(obj, &["page", "keep"])),
+        "bookmarks" => {
+            let given = |k: &str| obj.get(k).and_then(Value::as_str).is_some_and(|v| !v.trim().is_empty());
+            if !given("page") && !given("keep") {
+                return Err(CallError::Tool("Give page (to bookmark or unbookmark a note) or keep. list_bookmarks lists them.".into()));
+            }
+            act("bookmarks", obj)
+        }
+        "list_saved_searches" => act("saved_searches", without(obj, &["name", "query", "delete", "layers"])),
+        "saved_searches" => {
+            let deleting = obj.get("delete").and_then(Value::as_bool) == Some(true);
+            if !deleting && obj.get("query").and_then(Value::as_str).is_none_or(|q| q.trim().is_empty()) {
+                return Err(CallError::Tool(
+                    "Give query to save the search, or delete: true to delete it. list_saved_searches lists them.".into(),
+                ));
+            }
+            act("saved_searches", obj)
+        }
+        "list_changes" => act("changes", acting(obj, name, &["list", "show", "history"], "list", &["days", "mb"])?),
         "changes" => {
-            let action = obj.get("action").and_then(Value::as_str).unwrap_or("list");
+            let action = obj.get("action").and_then(Value::as_str).unwrap_or("");
             if (action == "accept" || action == "accept_run") && unwatched {
                 return Err(CallError::Tool(
                     "Nothing held can be accepted in a session nobody is watching: the user accepts held changes on Brainstead's Changes screen.".into(),
                 ));
             }
-            act("changes", obj)
+            if action == "history" && obj.get("days").is_none() && obj.get("mb").is_none() {
+                return Err(CallError::Tool(
+                    "Give days or mb to set how long Changes keeps its history; list_changes history reads it.".into(),
+                ));
+            }
+            act(
+                "changes",
+                acting(obj, name, &["accept", "reject", "accept_run", "reject_run", "revert", "revert_run", "history"], "", &["page"])?,
+            )
         }
-        "weekly_start_over" | "moving_over"
-            if unwatched && (name == "weekly_start_over" || obj.get("action").and_then(Value::as_str) == Some("retire")) =>
-        {
+        "weekly_start_over" | "moving_over" if unwatched => {
             Err(CallError::Tool("That's only for when the user is there and asks for it, not in an unattended session.".into()))
         }
         "weekly_start_over" => act("weekly.start_over", obj),
-        "moving_over" => act("moving_over", obj),
+        "moving_over" => act("moving_over", acting(obj, name, &["retire"], "retire", &[])?),
         "start_run" => act("run.start", obj),
         "run_status" => act("run.status", obj),
         "stop_run" => act("run.stop", obj),
         "list_transcripts" => act("meeting.transcripts", obj),
-        "summary" => Ok(summary(ctx, parse(obj)?)?),
+        "summary" => Ok(summary(ctx, parse(obj)?)?.into()),
         "weekly_review" => act("weekly.status", obj),
         "weekly_suggestion" => act("weekly.suggestion", obj),
         "save_chat" => act("chat.save", obj),
         "weekly_step" => act("weekly.step", obj),
-        "chats" => act("chats", obj),
+        "list_chats" => act("chats", acting(obj, name, &["list", "read"], "list", &["title"])?),
+        "chats" => act("chats", acting(obj, name, &["rename", "trash"], "", &[])?),
         "health_issue" => act("health.issue", obj),
-        "contradictions" => act("contradictions", obj),
-        "task_lists" => act("task_lists", obj),
-        "settings" => act("settings", obj),
+        "list_contradictions" => act("contradictions", acting(obj, name, &["list"], "list", &["id", "as"])?),
+        "contradictions" => act("contradictions", acting(obj, name, &["mark", "save"], "", &["all"])?),
+        "list_task_lists" => act("task_lists", acting(obj, name, &["list"], "list", &["name", "view", "context", "effort", "group"])?),
+        "task_lists" => act("task_lists", acting(obj, name, &["save", "remove"], "", &[])?),
+        "list_settings" => act("settings", acting(obj, name, &["get"], "get", &["key", "value"])?),
+        "settings" => act("settings", acting(obj, name, &["set"], "set", &[])?),
         "import_sources" => act("sources.import", obj),
-        "create_template" => Ok(create_template(ctx, parse(obj)?)?),
+        "create_template" => Ok(create_template(ctx, parse(obj)?)?.into()),
         "fix_health" => act("health.fix", obj),
         "ignore_issue" => act("health.ignore", obj),
         "page_shape" => {
             let paging: Paging = parse(obj.clone())?;
-            Ok(page_shape_tool(ctx, obj.get("page").and_then(Value::as_str), &paging)?)
+            Ok(page_shape_tool(ctx, obj.get("page").and_then(Value::as_str), &paging)?.into())
         }
         "reshape_pages" => act("health.reshape", obj),
         "write_current_state" => act("health.current_state", obj),
@@ -789,18 +1022,48 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<String, CallError> {
         "graph" => act("graph", obj),
         "open" => act("open", obj),
         "app_status" => act("status", obj),
-        "automated_tools" => act("automated", obj),
-        "suggestions" => act("suggestions", obj),
-        _ => Err(CallError::Args(format!("Unknown tool: {name}"))),
+        "list_automated_tools" => act("automated", acting(obj, name, &["list"], "list", &["name", "folder", "opening"])?),
+        "automated_tools" => act("automated", acting(obj, name, &["add", "remove"], "", &[])?),
+        "list_suggestions" => act("suggestions", acting(obj, name, &["list"], "list", &["id", "text", "outcome"])?),
+        "suggestions" => act("suggestions", acting(obj, name, &["accept", "skip"], "", &[])?),
+        _ => Err(CallError::Unknown(format!("Unknown tool: {name}"))),
     }
+}
+
+/// Holds a tool to its own actions in the app's shared one: `action` must be one of `allowed`
+/// (`default` when it's left out, or required when `default` is empty), and the arguments only
+/// the other tool takes are dropped.
+fn acting(mut obj: Value, tool: &str, allowed: &[&str], default: &str, drop: &[&str]) -> Result<Value, CallError> {
+    let action = obj.get("action").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| default.to_string());
+    if !allowed.contains(&action.as_str()) {
+        let list = allowed.join(", ");
+        return Err(CallError::Tool(if action.is_empty() {
+            format!("Give action: {list}.")
+        } else {
+            format!("{tool} does {list}, not {action}: the tools/list descriptions say which tool does that.")
+        }));
+    }
+    obj["action"] = json!(action);
+    Ok(without(obj, drop))
+}
+
+/// The arguments without these.
+fn without(mut obj: Value, keys: &[&str]) -> Value {
+    if let Some(m) = obj.as_object_mut() {
+        for k in keys {
+            m.remove(*k);
+        }
+    }
+    obj
 }
 
 /// How long the server waits for the app to answer one action.
 const ACT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(150);
 
 /// Runs an action in the app (src/mcpActions.ts, through core/src/bridge.rs), opening the app
-/// first when it isn't running. A text result is given back as it is; anything else as JSON.
-fn act(ctx: &Ctx, action: &str, args: Value) -> Result<String, String> {
+/// first when it isn't running. A text result is given back as it is, a listing as its text and
+/// data; anything else as JSON.
+fn act(ctx: &Ctx, action: &str, args: Value) -> Result<Out, String> {
     open_app(ctx)?;
     let req = bridge::Request { id: bridge::new_id(), action: action.into(), args, chat: ctx.chat.clone(), model: ctx.model.clone() };
     let r = bridge::ask(&ctx.data, &req, ACT_TIMEOUT);
@@ -808,9 +1071,14 @@ fn act(ctx: &Ctx, action: &str, args: Value) -> Result<String, String> {
         return Err(r.error.unwrap_or_else(|| "It didn't work.".into()));
     }
     Ok(match r.result {
-        Value::String(s) => s,
-        Value::Null => "Done.".into(),
-        v => serde_json::to_string_pretty(&v).unwrap_or_default(),
+        Value::String(s) => s.into(),
+        Value::Null => String::from("Done.").into(),
+        // A listing's text and its rows as data (src/mcpActions.ts's listed).
+        Value::Object(mut m) if m.get("text").is_some_and(Value::is_string) && m.contains_key("structured") => Out {
+            text: m.remove("text").and_then(|t| t.as_str().map(String::from)).unwrap_or_default(),
+            structured: m.remove("structured"),
+        },
+        v => serde_json::to_string_pretty(&v).unwrap_or_default().into(),
     })
 }
 
@@ -917,7 +1185,7 @@ fn change(ctx: &Ctx, page: &str, kind: Kind, title: &str, reason: &str, unattend
 
 /// Sends a change to the app, which makes it or holds it; its reply, and `notes` after it.
 fn send(ctx: &Ctx, change: Value, notes: Vec<String>) -> Result<String, String> {
-    let mut out = act(ctx, "change.submit", json!({ "change": change }))?;
+    let mut out = act(ctx, "change.submit", json!({ "change": change }))?.text;
     for n in notes {
         out.push_str(&format!("\n{n}"));
     }
@@ -1096,9 +1364,14 @@ struct SearchArgs {
     layers: Vec<String>,
     since: Option<String>,
     limit: Option<usize>,
+    #[serde(default)]
+    detail: bool,
 }
 
-fn search(ctx: &Ctx, a: SearchArgs) -> Result<String, String> {
+/// How much of a passage search shows without detail.
+const SNIPPET: usize = 160;
+
+fn search(ctx: &Ctx, a: SearchArgs) -> Result<Out, String> {
     let ix = ctx.index()?;
     let layers = a
         .layers
@@ -1119,23 +1392,38 @@ fn search(ctx: &Ctx, a: SearchArgs) -> Result<String, String> {
     let res = ix.search(&SearchRequest { q: a.query.clone(), layers, limit: 200 })?;
     let day = |ms: i64| chrono::DateTime::from_timestamp_millis(ms).map(|d| d.with_timezone(&chrono::Local).date_naive());
     let hits: Vec<_> = res.hits.iter().filter(|h| since.is_none_or(|s| day(h.file.mtime).is_some_and(|d| d >= s))).collect();
-    if hits.is_empty() {
-        return Ok(format!("Nothing in the vault matches {}.", a.query));
-    }
-    let mut out = format!("{} of {} matching files for {}:\n", hits.len().min(limit), hits.len(), a.query);
+    let mut items = Vec::new();
+    let mut out = if hits.is_empty() {
+        format!("Nothing in the vault matches {}.", a.query)
+    } else {
+        format!("{} of {} matching files for {}:\n", hits.len().min(limit), hits.len(), a.query)
+    };
     for (i, h) in hits.iter().take(limit).enumerate() {
         let when = h.file.date.clone().or_else(|| day(h.file.mtime).map(|d| d.to_string())).unwrap_or_default();
-        out.push_str(&format!("\n{}. {} — {} ({}, {when})\n", i + 1, h.file.path, h.file.title, h.file.layer));
+        let snip: String = h.snippet.iter().map(|s| s.text.as_str()).collect();
+        let snip = snip.split_whitespace().collect::<Vec<_>>().join(" ");
+        if a.detail {
+            out.push_str(&format!("\n{}. {} — {} ({}, {when})\n", i + 1, h.file.path, h.file.title, h.file.layer));
+        } else {
+            out.push_str(&format!("\n{}. {} — {}\n", i + 1, h.file.path, h.file.title));
+        }
         if !h.heading.is_empty() {
             out.push_str(&format!("   § {}\n", h.heading));
         }
-        let snip: String = h.snippet.iter().map(|s| s.text.as_str()).collect();
-        let snip = snip.split_whitespace().collect::<Vec<_>>().join(" ");
-        if !snip.is_empty() {
-            out.push_str(&format!("   {snip}\n"));
+        let shown = if a.detail || snip.chars().count() <= SNIPPET {
+            snip.clone()
+        } else {
+            format!("{}…", snip.chars().take(SNIPPET).collect::<String>().trim_end())
+        };
+        if !shown.is_empty() {
+            out.push_str(&format!("   {shown}\n"));
         }
+        items.push(
+            json!({"path": h.file.path, "title": h.file.title, "layer": h.file.layer, "date": when, "heading": h.heading, "snippet": snip}),
+        );
     }
-    Ok(out)
+    let structured = json!({"total": hits.len(), "matching": hits.len(), "offset": 0, "next_offset": null, "items": items});
+    Ok(Out { text: out, structured: Some(structured) })
 }
 
 /// What a page argument names.
@@ -1392,7 +1680,7 @@ fn summary(ctx: &Ctx, a: SummaryArgs) -> Result<String, CallError> {
     let kind = match a.kind.as_deref().map(str::trim).unwrap_or("daily") {
         "" | "daily" => ReviewKind::Daily,
         "weekly" => ReviewKind::Weekly,
-        k => return Err(CallError::Args(format!("kind is daily or weekly, not {k}."))),
+        k => return Err(CallError::Tool(format!("kind is daily or weekly, not {k}."))),
     };
     let read = |p: &str| std::fs::read_to_string(ctx.vault.join(p)).ok();
     let name = if kind == ReviewKind::Daily { "daily" } else { "weekly" };
@@ -1401,11 +1689,11 @@ fn summary(ctx: &Ctx, a: SummaryArgs) -> Result<String, CallError> {
             reviews::latest(kind, ctx.today, read).ok_or_else(|| format!("There's no {name} summary from the last few weeks on file."))?
         }
         Some(d) => {
-            let t = Target::parse(d).map_err(|_| CallError::Args(format!("day is YYYY-MM-DD (or a week, 2026-W40), not {d}.")))?;
+            let t = Target::parse(d).map_err(|_| CallError::Tool(format!("day is YYYY-MM-DD (or a week, 2026-W40), not {d}.")))?;
             let t = match (kind, t) {
                 (ReviewKind::Weekly, Target::Day(day)) => Target::week_of(day),
                 (ReviewKind::Daily, Target::Week { .. }) => {
-                    return Err(CallError::Args("A daily summary is for a day: give YYYY-MM-DD.".into()))
+                    return Err(CallError::Tool("A daily summary is for a day: give YYYY-MM-DD.".into()))
                 }
                 (_, t) => t,
             };

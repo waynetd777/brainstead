@@ -77,7 +77,10 @@ claude mcp add -s user brainstead -- "/Applications/Brainstead.app/Contents/MacO
 - It reads the vault from disk and the index read-only, and writes nothing itself. A change (`edit_page`, `create_note`, a task, a rename…) is checked here, then sent to the app as `change.submit`, which makes or holds it.
 - Every other action (ticking a task, clarifying the Inbox, starting a run, reverting a change) is a request file in the app data folder's `bridge/`. The running app takes it up and hands it to the window, which runs it with the same functions its screens call (`src/mcpActions.ts`), so undo, `log.md`, the read-only switch and Templater behave as on screen.
 - The server opens the app when it isn't running.
-- Tools have titles and the four MCP hints, bad calls are JSON-RPC errors, and calls are limited to 120 a minute.
+- Tools have titles and the four MCP hints, and what only reads is a tool of its own (`list_changes` beside `changes`, `list_trash` beside `restore_from_trash`…), marked read-only, so a client can let it run unasked. A read tool sends the same app action as its change tool, held to the read actions in `acting`.
+- An unknown tool is a JSON-RPC error; arguments a tool can't take, and a tool that can't do it, are the tool's error (`isError`), saying why, so the model can correct its call. Calls are limited to 120 a minute.
+- The listing tools have an `outputSchema` and give their rows as `structuredContent` too: an action in `src/mcpActions.ts` returns `listed(...)`'s `{ text, structured }`, and `act` passes both on. `search`, `list_projects`, `list_changes`, `activity` and `graph` give a short line a row unless `detail`.
+- The server's instructions stay under 2,000 characters (Claude Code keeps no more; a test checks), and every parameter has a description (a test checks that too).
 - A new screen action gets an action in `src/mcpActions.ts`, a tool in `src-tauri/mcp/src/lib.rs` and its name in `ask::MCP_TOOLS` (`src-tauri/core/src/ask.rs`). A test in `src-tauri/mcp`, run by `make check`, keeps the server's tools and that list in step.
 
 ## Read aloud

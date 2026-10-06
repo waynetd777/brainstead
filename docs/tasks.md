@@ -53,7 +53,7 @@ Tasks (⌥⌘3) has the GTD lists: **Next actions**, **Follow-ups**, **Waiting f
 - Drag rows into your own order; it's kept in the file as `^rank-N`.
 - Keys: `↑` `↓` choose a task, `↩` opens it, `Space` ticks, `⌫` deletes (⌘Z puts it back), `/` searches; they work on Today, Projects and the weekly review too.
 - **Search tasks** narrows every list to the tasks matching all its words (in the task, its note, heading, project, tags or context); the counts on the left follow it.
-- Group by **Project**, **Context** or **Due**, filter by context and effort, and **Save this list…** for a view you use often (assistants use `task_lists`, and `list_tasks` with a saved list's name).
+- Group by **Project**, **Context** or **Due**, filter by context and effort, and **Save this list…** for a view you use often (assistants use `list_task_lists` and `task_lists`, and `list_tasks` with a saved list's name).
 - **New task** adds one to the To Do list, with the list's tag and the chosen context so it shows where you are (`#waiting-for` in Waiting for, say). From a list with neither, it waits in the Inbox.
 - **Find tasks and projects**, at the top of Next actions and of the active Projects, has an assistant read your notes from the last 90 days for things you meant to do that aren't tasks yet, and pieces of work your notes keep returning to that aren't projects. Each suggestion quotes its note (Brainstead checks the quote is there), and **Accept**, **Edit** or **Skip** decides it; an accepted one is listed in Changes with Revert, and neither comes back. It only runs when you start it, there or from ⌘K.
 

@@ -70,7 +70,7 @@ Knowledge health checks the wiki whenever the vault changes: missing pages and l
 
 ## Contradictions
 
-The contradictions check reads the claims on the pages that changed, adds the facts ingest kept for them, groups claims about the same thing, and has the AI judge the ones whose values differ: **Real** (with its severity), **Newer supersedes older**, **Not a conflict** or **Unclear**. When the judge has a fix for a real one, it's made and listed in Changes. **Mark resolved**, **Ignore**, or **Save report as note**; assistants do the same with `contradictions`. The [nightly check](day-to-day.md#summaries-and-jobs) runs it on the pages that changed each day.
+The contradictions check reads the claims on the pages that changed, adds the facts ingest kept for them, groups claims about the same thing, and has the AI judge the ones whose values differ: **Real** (with its severity), **Newer supersedes older**, **Not a conflict** or **Unclear**. When the judge has a fix for a real one, it's made and listed in Changes. **Mark resolved**, **Ignore**, or **Save report as note**; assistants list them with `list_contradictions` and do the same with `contradictions`. The [nightly check](day-to-day.md#summaries-and-jobs) runs it on the pages that changed each day.
 
 ## Graph
 

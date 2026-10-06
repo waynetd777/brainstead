@@ -85,14 +85,23 @@ fn speaks_the_protocol() {
     assert_eq!(hint("search", "readOnlyHint"), true);
     assert_eq!(hint("edit_task", "readOnlyHint"), false);
     assert_eq!(hint("changes", "destructiveHint"), true);
+    assert_eq!(hint("list_changes", "readOnlyHint"), true);
+    assert_eq!((hint("stop_run", "destructiveHint"), hint("stop_run", "idempotentHint")), (json!(true), json!(true)));
+    // Every list_* tool only reads.
+    for t in list["result"]["tools"].as_array().unwrap() {
+        if t["name"].as_str().unwrap().starts_with("list_") {
+            assert_eq!(t["annotations"]["readOnlyHint"], true, "{}", t["name"]);
+        }
+    }
     assert_eq!(hint("edit_page", "destructiveHint"), false);
     assert_eq!(hint("start_run", "openWorldHint"), true);
-    // An unknown tool and arguments that don't fit are protocol errors; a tool that runs and
-    // can't do it says so in its result.
+    // An unknown tool is a protocol error; arguments that don't fit, and a tool that runs and
+    // can't do it, say so in the result, for the model to correct its call.
     let r = rpc(&f.ctx, 8, "tools/call", json!({"name": "nope", "arguments": {}}));
     assert_eq!(r["error"]["code"], -32602);
     let r = rpc(&f.ctx, 9, "tools/call", json!({"name": "search", "arguments": {"query": 3}}));
-    assert_eq!(r["error"]["code"], -32602);
+    assert_eq!(r["result"]["isError"], true);
+    assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("inputSchema"));
     let r = rpc(&f.ctx, 10, "tools/call", json!({"name": "read_section", "arguments": {"page": "Nowhere at all"}}));
     assert_eq!(r["result"]["isError"], true);
     assert_eq!(rpc(&f.ctx, 4, "nope", json!({}))["error"]["code"], -32601);
@@ -471,8 +480,7 @@ fn summaries_by_day_or_the_latest() {
     assert!(week.contains("2026-W39") && week.contains("A quiet week"), "{week}");
     assert!(ok(&f.ctx, "summary", json!({"kind": "weekly"})).contains("A quiet week"));
     assert!(refused(&f.ctx, "summary", json!({"day": "2026-09-29"})).contains("no daily summary for 2026-09-29"));
-    let r = rpc(&f.ctx, 2, "tools/call", json!({"name": "summary", "arguments": {"kind": "monthly"}}));
-    assert_eq!(r["error"]["code"], -32602);
+    assert!(refused(&f.ctx, "summary", json!({"kind": "monthly"})).contains("kind is daily or weekly"));
 }
 
 #[test]
@@ -534,7 +542,7 @@ fn held_changes_are_accepted_only_while_the_user_is_there() {
     assert!(refused(&f.ctx, "moving_over", json!({"action": "retire"})).contains("unattended"));
     // Reading still works.
     let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Nothing held."), error: None });
-    ok(&f.ctx, "changes", json!({"action": "list"}));
+    ok(&f.ctx, "list_changes", json!({"action": "list"}));
     app.join().unwrap();
 }
 
@@ -576,4 +584,83 @@ fn a_long_page_or_section_is_shown_in_part() {
     let log = format!("Started.\n{}Latest entry.\n", "- an entry\n".repeat(5_000));
     let f = fit(&log, log.chars().count(), false);
     assert!(f.contains("Started.") && f.ends_with("Latest entry.\n") && f.chars().count() < MAX_CHARS);
+}
+
+#[test]
+fn the_instructions_fit_what_clients_keep() {
+    // Claude Code keeps about 2,000 characters of a server's instructions.
+    assert!(INSTRUCTIONS.chars().count() < 2000, "{} characters", INSTRUCTIONS.chars().count());
+}
+
+#[test]
+fn every_parameter_says_what_it_is() {
+    fn walk(tool: &str, props: &Value) {
+        for (k, v) in props.as_object().unwrap() {
+            assert!(v["description"].is_string() || v.get("enum").is_some(), "{tool}.{k} has no description");
+            if let Some(p) = v["items"].get("properties") {
+                walk(tool, p);
+            }
+        }
+    }
+    for t in tools() {
+        walk(t["name"].as_str().unwrap(), &t["inputSchema"]["properties"]);
+        assert!(t["description"].as_str().unwrap().len() > 120, "{}'s description is too short to say when to use it", t["name"]);
+    }
+}
+
+#[test]
+fn listings_give_their_rows_as_data() {
+    let f = fixture();
+    // search, here: its files as data, matching its outputSchema's required fields.
+    let r = rpc(&f.ctx, 1, "tools/call", json!({"name": "search", "arguments": {"query": "soft launch"}}));
+    let s = &r["result"]["structuredContent"];
+    assert!(s["total"].as_u64().unwrap() >= 1 && s["items"][0]["path"].is_string(), "{s}");
+    let list = rpc(&f.ctx, 2, "tools/list", json!({}));
+    let search = list["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "search").unwrap().clone();
+    for k in search["outputSchema"]["required"].as_array().unwrap() {
+        assert!(s.get(k.as_str().unwrap()).is_some(), "search's data has no {k}");
+    }
+    // A short snippet unless detail.
+    let short = ok(&f.ctx, "search", json!({"query": "soft launch"}));
+    let long = ok(&f.ctx, "search", json!({"query": "soft launch", "detail": true}));
+    assert!(short.len() <= long.len());
+    // From the app: its text and data are passed on as they are.
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply {
+        ok: true,
+        result: json!({"text": "The Trash is empty.", "structured": {"total": 0, "items": []}}),
+        error: None,
+    });
+    let r = rpc(&f.ctx, 3, "tools/call", json!({"name": "list_trash", "arguments": {}}));
+    let req = app.join().unwrap();
+    assert_eq!((req.action.as_str(), req.args["action"].as_str()), ("trash", Some("list")));
+    assert_eq!(r["result"]["content"][0]["text"], "The Trash is empty.");
+    assert_eq!(r["result"]["structuredContent"], json!({"total": 0, "items": []}));
+}
+
+#[test]
+fn a_read_tool_never_changes_anything() {
+    let f = fixture();
+    // Each list_* tool keeps to its own actions; asking it to change something is refused here,
+    // before the app hears of it.
+    for (tool_name, args) in [
+        ("list_changes", json!({"action": "revert", "id": "1"})),
+        ("list_chats", json!({"action": "trash", "chat": "x"})),
+        ("list_trash", json!({"action": "restore", "id": "t1"})),
+        ("list_settings", json!({"action": "set", "key": "theme", "value": "dark"})),
+        ("list_suggestions", json!({"action": "accept", "id": "s1"})),
+    ] {
+        assert!(refused(&f.ctx, tool_name, args).contains("which tool does that"), "{tool_name}");
+    }
+    // And a change tool gives no list.
+    assert!(refused(&f.ctx, "changes", json!({"action": "list"})).contains("not list"));
+    assert!(refused(&f.ctx, "changes", json!({"action": "history"})).contains("list_changes history reads it"));
+    assert!(refused(&f.ctx, "bookmarks", json!({})).contains("list_bookmarks"));
+    // The read tool sends the app's own action, with what only the change tool takes dropped.
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
+    ok(&f.ctx, "list_settings", json!({"key": "theme"}));
+    let req = app.join().unwrap();
+    assert_eq!((req.action.as_str(), req.args["action"].as_str(), req.args.get("key")), ("settings", Some("get"), None));
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
+    ok(&f.ctx, "settings", json!({"key": "theme", "value": "dark"}));
+    assert_eq!(app.join().unwrap().args["action"], "set");
 }

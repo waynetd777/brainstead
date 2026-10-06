@@ -15,6 +15,7 @@ import moment from "moment";
 import { listen } from "@tauri-apps/api/event";
 import {
   api,
+  Bookmark,
   ChangeKind,
   ChangeOrigin,
   ChangeOutcome,
@@ -24,8 +25,10 @@ import {
   FindSuggestion,
   FixNameRequest,
   InboxItem,
+  LogEntry,
   ProjectRow,
   Settings,
+  ChatSummary,
   TaskDateKind,
   TaskLineEdit,
   TaskRow,
@@ -44,6 +47,7 @@ import { todayRows, toggleTaskEdit, undoAction, viewRows, VIEWS } from "./taskMo
 import { cancelled, completion, inQuote, LineChange, reopened, started, waitingToggled, withPriority } from "./tasksq/edits";
 import type { PriorityName } from "./tasksq/fields";
 import { toast } from "./Toast";
+import { fmtBytes } from "./ui";
 import { fresh, keepsPaused, reviewBody, reviewWeek, scheduleLabel, STEPS } from "./Weekly";
 import { ask, isSaved, keepChat, renameSaved, trashSaved } from "./askState";
 import { applyTheme, settings } from "./store";
@@ -74,7 +78,13 @@ const has = (a: Args, k: string) => k in a && a[k] !== undefined;
 /** A long list a page at a time, as every listing tool gives one: the rows whose text has all of
  *  `query`'s words, then `limit` of them (`def` unless said, at most 500) from `offset`, and a head
  *  saying how many there are and how to see the rest. */
-export function pagedRows<T>(a: Args, rows: T[], text: (r: T) => string, noun: [string, string], def = 50): { shown: T[]; head: string } {
+export function pagedRows<T>(
+  a: Args,
+  rows: T[],
+  text: (r: T) => string,
+  noun: [string, string],
+  def = 50,
+): { shown: T[]; head: string; page: PageInfo } {
   const words = (str(a, "query") ?? "").toLowerCase().split(/\s+/).filter(Boolean);
   const hit = words.length ? rows.filter((r) => words.every((w) => text(r).toLowerCase().includes(w))) : rows;
   const limit = Math.min(Math.max(Math.floor(Number(a.limit)) || def, 1), 500);
@@ -87,7 +97,43 @@ export function pagedRows<T>(a: Args, rows: T[], text: (r: T) => string, noun: [
     const end = offset + shown.length;
     head += `; ${offset + 1}–${end} shown${end < hit.length ? `, offset ${end} for the next` : ""}`;
   }
-  return { shown, head };
+  const next = offset + shown.length < hit.length ? offset + shown.length : null;
+  return { shown, head, page: { total: rows.length, matching: hit.length, offset, next_offset: next } };
+}
+
+/** Where a page of rows sits, as a listing tool's data gives it (the server's page_schema). */
+export interface PageInfo {
+  total: number;
+  matching: number;
+  offset: number;
+  next_offset: number | null;
+}
+
+/** What a listing tool gives back: its text, and the same rows as data, which the server passes on
+ *  as the tool's structuredContent (its outputSchema says the shape). */
+export interface Listing {
+  text: string;
+  structured: Record<string, unknown>;
+}
+
+/** A page of rows as a Listing: the head, a line a row, and each row as an item. `empty` is the
+ *  text when there are none; `before` lines go above the head. */
+export function listed<T>(
+  a: Args,
+  rows: T[],
+  o: {
+    text: (r: T) => string;
+    noun: [string, string];
+    def?: number;
+    line: (r: T) => string;
+    item: (r: T) => Record<string, unknown>;
+    empty: string;
+    before?: string[];
+  },
+): Listing {
+  const { shown, head, page } = pagedRows(a, rows, o.text, o.noun, o.def);
+  const lines = rows.length ? [`${head}:`, ...shown.map(o.line)] : [o.empty];
+  return { text: [...(o.before ?? []), ...lines].join("\n"), structured: { ...page, items: shown.map(o.item) } };
 }
 
 /** pagedRows for a list that's one line a row: its head, then the lines shown. */
@@ -170,7 +216,7 @@ export function taskLineOut(t: TaskRow, detail = false): string {
 /** A view's id as the assistants know it: the Deferred list is `deferred`. */
 const viewName = (id: string) => (id === "scheduled" ? "deferred" : id);
 
-async function listTasks(a: Args): Promise<string> {
+async function listTasks(a: Args): Promise<Listing> {
   const all = await api.tasksAll();
   const today = localToday();
   // The Deferred list's id is `scheduled` (saved lists keep it); `deferred` is its name.
@@ -178,7 +224,7 @@ async function listTasks(a: Args): Promise<string> {
   const named = saved ? (settings.get().taskLists ?? []).find((l) => l.name.toLowerCase() === saved.toLowerCase()) : undefined;
   if (saved && !named)
     throw new Error(
-      `No saved list “${saved}”. task_lists lists them: ${(settings.get().taskLists ?? []).map((l) => l.name).join(", ") || "none"}.`,
+      `No saved list “${saved}”. list_task_lists lists them: ${(settings.get().taskLists ?? []).map((l) => l.name).join(", ") || "none"}.`,
     );
   if (named) a = { ...a, view: named.view, context: named.context || undefined };
   const asked = str(a, "view") ?? "next";
@@ -203,10 +249,34 @@ async function listTasks(a: Args): Promise<string> {
   if (named?.effort) rows = rows.filter((t) => withinEffort(t, named.effort));
   const limit = Math.min(Number(a.limit) || 50, 300);
   const shown = viewName(view);
-  if (!rows.length) return `No tasks in ${shown}${project || context || q ? " with those filters" : ""}.`;
+  const page = rows.slice(0, limit);
+  const structured = {
+    total: rows.length,
+    matching: rows.length,
+    offset: 0,
+    next_offset: rows.length > limit ? limit : null,
+    items: page.map(taskItem),
+  };
+  if (!rows.length) return { text: `No tasks in ${shown}${project || context || q ? " with those filters" : ""}.`, structured };
   const head = `${rows.length} task${rows.length === 1 ? "" : "s"} in ${shown}${rows.length > limit ? `, the first ${limit} (narrow with project, context or query, or raise limit)` : ""}:`;
-  return [head, ...rows.slice(0, limit).map((t) => taskLineOut(t, a.detail === true))].join("\n");
+  return { text: [head, ...page.map((t) => taskLineOut(t, a.detail === true))].join("\n"), structured };
 }
+
+/** A task as list_tasks' data gives it. */
+const taskItem = (t: TaskRow) => ({
+  id: taskId(t),
+  text: shownText(t.text),
+  path: t.path,
+  due: t.due,
+  scheduled: t.scheduled,
+  start: t.start,
+  done: t.done,
+  doneOn: t.doneOn,
+  project: t.project ? projectName(t.project) : null,
+  contexts: t.contexts ?? [],
+  effort: t.effort ?? null,
+  heading: t.heading,
+});
 
 const DATE_KEYS: [string, TaskDateKind][] = [
   ["due", "due"],
@@ -339,13 +409,18 @@ async function projectPath(name: string): Promise<string> {
 
 const inboxKey = (i: InboxItem) => `${i.kind}:${i.line + 1}`;
 
-async function listInbox(a: Args): Promise<string> {
+async function listInbox(a: Args): Promise<Listing> {
   const items = (await api.inboxList()).filter(unclarified);
-  if (!items.length) return "The Inbox is empty.";
   const where = (i: InboxItem) =>
     i.kind === "capture" ? `capture ${i.path}` : i.kind === "thought" ? `Scratchpad ${i.stamp ?? ""}` : "To Do list › Other";
-  const lines = items.map((i) => `- ${i.text.replace(/\n/g, " ").slice(0, 200)} — ${where(i)}  (${inboxKey(i)})`);
-  return paged(a, lines, ["item to clarify", "items to clarify"]);
+  const line = (i: InboxItem) => `- ${i.text.replace(/\n/g, " ").slice(0, 200)} — ${where(i)}  (${inboxKey(i)})`;
+  return listed(a, items, {
+    text: line,
+    noun: ["item to clarify", "items to clarify"],
+    line,
+    item: (i) => ({ id: inboxKey(i), kind: i.kind, text: i.text, path: i.path, stamp: i.stamp }),
+    empty: "The Inbox is empty.",
+  });
 }
 
 async function clarify(a: Args, r: McpRequest): Promise<string> {
@@ -540,8 +615,11 @@ export async function clarifyItem(i: InboxItem, a: Args): Promise<string> {
 
 // ---- projects
 
-const projectOut = (p: ProjectRow) =>
-  `- ${p.name} · ${p.status}${p.area ? ` · ${p.area}` : ""} · ${p.next} next, ${p.waiting} waiting, ${p.someday} someday, ${p.done} done${p.outcome ? ` · outcome: ${p.outcome}` : ""}  (${p.path})`;
+/** A project's line: its name, status and next actions; with detail its area, outcome and every count. */
+const projectOut = (p: ProjectRow, detail = true) =>
+  detail
+    ? `- ${p.name} · ${p.status}${p.area ? ` · ${p.area}` : ""} · ${p.next} next, ${p.waiting} waiting, ${p.someday} someday, ${p.done} done${p.outcome ? ` · outcome: ${p.outcome}` : ""}  (${p.path})`
+    : `- ${p.name} · ${p.status} · ${p.next} next  (${p.path})`;
 
 async function updateProject(a: Args, r: McpRequest): Promise<string> {
   const path = await projectPath(str(a, "project") ?? "");
@@ -652,15 +730,33 @@ async function submitChange(a: Args): Promise<string> {
 }
 
 /** The changes tool: the feed and the held changes, one change, accept, reject, revert. */
-async function changesTool(a: Args): Promise<string> {
+async function changesTool(a: Args): Promise<string | Listing> {
   const action = str(a, "action") ?? "list";
   const id = str(a, "id");
   if (action === "list") {
     const rows = await api.changesList(str(a, "page"));
-    if (!rows.length) return "No changes yet.";
+    const empty = { total: 0, matching: 0, offset: 0, next_offset: null, items: [] };
+    if (!rows.length) return { text: "No changes yet.", structured: { held: empty, made: empty } };
     const text = (c: (typeof rows)[number]) => `${c.title} ${c.page} ${originLabel(c)}`;
+    // Short: what, where, its state and flags; detail adds its kind, who made it and why.
     const line = (c: (typeof rows)[number]) =>
-      `- ${c.title} · ${c.page} · ${c.kind} · ${c.status}${c.flags.length ? ` · ${c.flags.join(" ")}` : ""} · ${originLabel(c)}  (id ${c.id})`;
+      a.detail === true
+        ? `- ${c.title} · ${c.page} · ${c.kind} · ${c.status}${c.flags.length ? ` · ${c.flags.join(" ")}` : ""} · ${originLabel(c)}${c.reason ? ` · why: ${c.reason}` : ""}  (id ${c.id})`
+        : `- ${c.title} · ${c.page} · ${c.status}${c.flags.length ? ` · ${c.flags.join(" ")}` : ""}  (id ${c.id})`;
+    const groupOf = new Map<string, string>();
+    for (const g of byRun(rows)) for (const c of g.rows) groupOf.set(c.id, g.group);
+    const item = (c: (typeof rows)[number]) => ({
+      id: c.id,
+      title: c.title,
+      page: c.page,
+      kind: c.kind,
+      status: c.status,
+      flags: c.flags,
+      origin: originLabel(c),
+      group: groupOf.get(c.id) ?? "",
+      reason: c.reason,
+      created: c.created,
+    });
     // Held ones a page at a time; made ones, the latest 30 (limit and query narrow both).
     const held = pagedRows(
       a,
@@ -675,16 +771,20 @@ async function changesTool(a: Args): Promise<string> {
       ["change made", "changes made"],
       30,
     );
-    return [
+    const text_ = [
       rows.some((c) => c.status === "held") ? `${held.head}:` : "Nothing held.",
       ...byRun(held.shown).flatMap((g) => [`Run “${g.label}” (group ${g.group}):`, ...g.rows.map(line)]),
       ...(made.shown.length
         ? [
-            `Made lately, newest first (revert undoes one, revert_run a whole run by its group): ${made.head}:`,
+            `Made lately, newest first (changes revert undoes one, revert_run a whole run by its group): ${made.head}:`,
             ...byRun(made.shown).flatMap((g) => [`Run “${g.label}” (group ${g.group}):`, ...g.rows.map(line)]),
           ]
         : []),
     ].join("\n");
+    return {
+      text: text_,
+      structured: { held: { ...held.page, items: held.shown.map(item) }, made: { ...made.page, items: made.shown.map(item) } },
+    };
   }
   if (action === "history") {
     const cur = settings.get();
@@ -694,7 +794,10 @@ async function changesTool(a: Args): Promise<string> {
     if (mb !== undefined && ![100, 250, 500, 1000, 2000].includes(mb)) throw new Error("mb is 100, 250, 500, 1000 or 2000.");
     const size = (m: number) => (m >= 1000 ? `${m / 1000} GB` : `${m} MB`);
     if (days === undefined && mb === undefined)
-      return `Changes keeps its history for ${cur.changesKeepDays ?? 90} days or up to ${size(cur.changesKeepMb ?? 500)}, whichever comes first (Settings › AI assistants › Keep the history of agent changes). Held changes are kept however old.`;
+      return {
+        text: `Changes keeps its history for ${cur.changesKeepDays ?? 90} days or up to ${size(cur.changesKeepMb ?? 500)}, whichever comes first (Settings › AI assistants › Keep the history of agent changes). Held changes are kept however old.`,
+        structured: { history: { days: cur.changesKeepDays ?? 90, mb: cur.changesKeepMb ?? 500 } },
+      };
     settings.update({ ...(days !== undefined ? { changesKeepDays: days } : {}), ...(mb !== undefined ? { changesKeepMb: mb } : {}) });
     const now = settings.get();
     noted(`set Changes to keep ${now.changesKeepDays ?? 90} days or ${size(now.changesKeepMb ?? 500)} of history`);
@@ -707,19 +810,19 @@ async function changesTool(a: Args): Promise<string> {
     );
   if (action === "accept_run" || action === "reject_run") {
     const group = str(a, "group");
-    if (!group) throw new Error("Which run? Give its group from list.");
+    if (!group) throw new Error("Which run? Give its group from list_changes.");
     const m = action === "accept_run" ? await api.changesAcceptAll(group, true) : await api.changesRejectAll(group);
     noted(`${action === "accept_run" ? "accepted" : "rejected"} ${m.done} held change${m.done === 1 ? "" : "s"}`);
     return `${action === "accept_run" ? "Accepted" : "Rejected"} ${m.done}.${m.failed.length ? ` Couldn't: ${m.failed.join("; ")}` : ""}`;
   }
   if (action === "revert_run") {
     const group = str(a, "group");
-    if (!group) throw new Error("Which run? Give its group from list.");
+    if (!group) throw new Error("Which run? Give its group from list_changes.");
     const m = await api.changesRevertAll(group);
     noted(`reverted ${m.done} change${m.done === 1 ? "" : "s"} from a run`);
     return `Reverted ${m.done}.${m.failed.length ? ` Left as they are (edited since): ${m.failed.join("; ")}` : ""}`;
   }
-  if (!id) throw new Error("Which change? Give its id from the list.");
+  if (!id) throw new Error("Which change? Give its id from list_changes.");
   if (action === "show") {
     const v = await api.changeGet(id);
     const changes = v.changes.map(
@@ -729,7 +832,7 @@ async function changesTool(a: Args): Promise<string> {
       (q) =>
         `- “${q.text}” from ${q.source}${q.checked === false ? " (not found in the source)" : q.checked === null ? " (not checked)" : ""}`,
     );
-    return [
+    const shown = [
       `${v.title} · ${v.to ?? v.page} · ${v.kind} · ${v.status}`,
       v.reason && `Why: ${v.reason}`,
       v.flags.length ? `${v.status === "held" ? "Held because" : "Flagged"}: ${v.flags.join(" ")}` : "",
@@ -739,6 +842,23 @@ async function changesTool(a: Args): Promise<string> {
     ]
       .filter(Boolean)
       .join("\n\n");
+    return {
+      text: shown,
+      structured: {
+        change: {
+          id,
+          title: v.title,
+          page: v.to ?? v.page,
+          kind: v.kind,
+          status: v.status,
+          reason: v.reason,
+          flags: v.flags,
+          problem: v.problem ?? null,
+          hunks: v.changes.map((h) => ({ section: h.section, old: h.old, new: h.new })),
+          quotes: v.quotes.map((q) => ({ text: q.text, source: q.source, checked: q.checked })),
+        },
+      },
+    };
   }
   if (action === "accept") {
     const o = await api.changeAccept(id, true);
@@ -1130,29 +1250,34 @@ async function fixName(a: Args): Promise<string> {
 
 // ---- the rest
 
-async function trash(a: Args): Promise<string> {
+async function trash(a: Args): Promise<string | Listing> {
   const action = str(a, "action") ?? "list";
   if (action === "list") {
     const all = (await api.trashList()).sort((x, y) => y.deletedAt.localeCompare(x.deletedAt));
-    if (!all.length) return "The Trash is empty.";
-    const mb = (all.reduce((n, t) => n + t.sizeBytes, 0) / 1e6).toFixed(1);
-    const { shown, head } = pagedRows(a, all, (t) => t.originalRel, ["item", "items"]);
-    return [
-      `The Trash (${mb} MB), newest first: ${head}:`,
-      ...shown.map((t) => `- ${t.originalRel} · deleted ${t.deletedAt.slice(0, 10)}  (id ${t.id})`),
-    ].join("\n");
+    const bytes = all.reduce((n, t) => n + t.sizeBytes, 0);
+    // As the Trash screen says it (fmtBytes counts in 1024s).
+    const size = fmtBytes(bytes);
+    const { shown, head, page } = pagedRows(a, all, (t) => t.originalRel, ["item", "items"]);
+    const text = all.length
+      ? [
+          `The Trash (${size}), newest first: ${head}:`,
+          ...shown.map((t) => `- ${t.originalRel} · deleted ${t.deletedAt.slice(0, 10)}  (id ${t.id})`),
+        ].join("\n")
+      : "The Trash is empty.";
+    const items = shown.map((t) => ({ id: t.id, path: t.originalRel, layer: t.layer, deleted: t.deletedAt, bytes: t.sizeBytes }));
+    return { text, structured: { ...page, bytes, size, items } };
   }
   if (action === "restore") {
     const id = str(a, "id");
-    if (!id) throw new Error("Give id: the Trash entry to restore, from the list.");
+    if (!id) throw new Error("Give id: the Trash entry to restore, from list_trash.");
     const to = await api.trashRestore(id, str(a, "to")?.trim() || null);
     told(`restored ${to} from the Trash`);
     return `Restored to ${to}.`;
   }
-  throw new Error("action is list or restore. Moving a note to the Trash is trash_note, which asks the user first.");
+  throw new Error("action is list or restore. Moving a note to the Trash is trash_note.");
 }
 
-async function bookmarks(a: Args): Promise<string> {
+async function bookmarks(a: Args): Promise<string | Listing> {
   const page = str(a, "page");
   const keep = str(a, "keep");
   if (keep) {
@@ -1161,14 +1286,14 @@ async function bookmarks(a: Args): Promise<string> {
     return `Kept the bookmark ${keep}: it won't need triage for two weeks.`;
   }
   if (!page) {
-    const rows = await api.bookmarks();
-    return rows.length
-      ? paged(
-          a,
-          rows.map((b) => `- ${b.title}${b.path ? ` (${b.path})` : " (missing)"}`),
-          ["bookmark", "bookmarks"],
-        )
-      : "No bookmarks.";
+    const line = (b: Bookmark) => `- ${b.title}${b.path ? ` (${b.path})` : " (missing)"}`;
+    return listed(a, await api.bookmarks(), {
+      text: line,
+      noun: ["bookmark", "bookmarks"],
+      line,
+      item: (b) => ({ title: b.title, target: b.target, path: b.path }),
+      empty: "No bookmarks.",
+    });
   }
   const on = await api.bookmarkToggle(page);
   told(on ? `bookmarked ${page}` : `took the bookmark off ${page}`);
@@ -1186,7 +1311,13 @@ async function savedSearches(a: Args): Promise<string> {
   }
   if (!name || !query) {
     const rows = await api.smartLists();
-    return rows.length ? rows.map((s) => `- ${s.name}: ${s.query}`).join("\n") : "No saved searches.";
+    return rows.length
+      ? paged(
+          a,
+          rows.map((s) => `- ${s.name}: ${s.query}`),
+          ["saved search", "saved searches"],
+        )
+      : "No saved searches.";
   }
   // search's layer names (notes, sources…) or the app's (note, source…).
   const layers = (Array.isArray(a.layers) ? a.layers : []).map((l) => String(l).replace(/s$/, ""));
@@ -1195,31 +1326,44 @@ async function savedSearches(a: Args): Promise<string> {
   return `Saved the search “${name}”.`;
 }
 
-async function activity(a: Args): Promise<string> {
+async function activity(a: Args): Promise<Listing> {
   const date = str(a, "date");
   if (date) {
-    const files = await api.activityDay(date);
-    return files.length
-      ? paged(
-          a,
-          files.map((f) => `- ${f.path}`),
-          [`file changed on ${date}`, `files changed on ${date}`],
-          80,
-        )
-      : `Nothing changed on ${date}.`;
+    const line = (f: { path: string }) => `- ${f.path}`;
+    return listed(a, await api.activityDay(date), {
+      text: line,
+      noun: [`file changed on ${date}`, `files changed on ${date}`],
+      def: 80,
+      line,
+      item: (f) => ({ date, path: f.path }),
+      empty: `Nothing changed on ${date}.`,
+    });
   }
   const { log } = await api.activity();
-  const lines = log.map(
-    (e) => `- ${e.date}${e.time ? ` ${e.time}` : ""} ${e.action} ${e.title}${e.description ? ` — ${e.description}` : ""}`,
-  );
-  return lines.length ? paged(a, lines, ["entry in log.md, newest first", "entries in log.md, newest first"], 30) : "log.md is empty.";
+  const full = (e: LogEntry) =>
+    `- ${e.date}${e.time ? ` ${e.time}` : ""} ${e.action} ${e.title}${e.description ? ` — ${e.description}` : ""}`;
+  return listed(a, log, {
+    text: full,
+    noun: ["entry in log.md, newest first", "entries in log.md, newest first"],
+    def: 30,
+    // Short: the day, what and which; detail adds the time and the description.
+    line: (e) => (a.detail === true ? full(e) : `- ${e.date} ${e.action} ${e.title}`),
+    item: (e) => ({ date: e.date, time: e.time, action: e.action, title: e.title, description: e.description }),
+    empty: "log.md is empty.",
+  });
 }
 
 async function graph(a: Args): Promise<string> {
   const g = await api.graph(str(a, "page") ?? null, Math.min(Math.max(Number(a.depth) || 1, 1), 3));
   const name = new Map(g.nodes.map((n) => [n.id, n.title ?? n.id]));
   const lines = g.edges.map(([s, t]) => `- ${name.get(s)} → ${name.get(t)}`);
-  return `${g.nodes.length} pages; ${paged(a, lines, ["link", "links"], 200)}`;
+  const links = `${g.nodes.length} pages; ${paged(a, lines, ["link", "links"], 200)}`;
+  if (a.detail !== true) return links;
+  // detail: the pages too, nearest first, each with its type, steps from the page and links.
+  const pages = [...g.nodes]
+    .sort((x, y) => x.depth - y.depth || y.degree - x.degree)
+    .map((n) => `- ${n.title ?? n.id}${n.type ? ` · ${n.type}` : ""} · ${n.layer} · ${n.depth} away · ${n.degree} links`);
+  return [links, "", "Pages:", ...pages.slice(0, 200), ...(pages.length > 200 ? [`…and ${pages.length - 200} more`] : [])].join("\n");
 }
 
 async function status(): Promise<string> {
@@ -1252,8 +1396,7 @@ async function automated(a: Args): Promise<string> {
     const line = (t: (typeof list)[number]) =>
       `- ${t.label}${t.cwd_contains ? ` · folder contains ${t.cwd_contains}` : ""}${t.opening ? ` · opens with “${t.opening}”` : ""}`;
     return [
-      list.length ? `${list.length} listed:` : "No tools listed.",
-      ...list.map(line),
+      list.length ? paged(a, list.map(line), ["tool listed", "tools listed"]) : "No tools listed.",
       ...(sugg.length
         ? [
             "Folders whose sessions in the last two weeks were nearly all one prompt and done, as a tool's (not listed):",
@@ -1298,7 +1441,7 @@ async function suggestions(a: Args): Promise<string> {
     ].join("\n");
   }
   const id = str(a, "id");
-  if (!id) throw new Error("Which suggestion? Give its id from the list.");
+  if (!id) throw new Error("Which suggestion? Give its id from list_suggestions.");
   if (action === "accept") {
     const edit: Record<string, unknown> = {};
     if (str(a, "text")) edit.text = str(a, "text");
@@ -1322,10 +1465,24 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   "task.move": moveTask,
   "inbox.list": (a) => listInbox(a),
   "inbox.clarify": clarify,
-  "projects.list": async (a) => {
-    const rows = await api.projectsList();
-    return rows.length ? paged(a, rows.map(projectOut), ["project", "projects"]) : "No projects.";
-  },
+  "projects.list": async (a) =>
+    listed(a, await api.projectsList(), {
+      text: (p) => projectOut(p),
+      noun: ["project", "projects"],
+      line: (p) => projectOut(p, a.detail === true),
+      item: (p) => ({
+        name: p.name,
+        path: p.path,
+        status: p.status,
+        area: p.area,
+        outcome: p.outcome,
+        next: p.next,
+        waiting: p.waiting,
+        someday: p.someday,
+        done: p.done,
+      }),
+      empty: "No projects.",
+    }),
   "project.create": createProject,
   "project.update": updateProject,
   "note.from_template": (a, r) => noteFromTemplate(a, r.chat ?? null),
@@ -1385,13 +1542,22 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
     return `Saved “${c.title}” to the vault as ${f}; it keeps up to date there as the chat goes on.`;
   },
   "meeting.transcripts": async (a) => {
-    const lines = (await api.meetingTranscripts())
-      .filter((t) => !t.done)
-      .map(
-        (t) =>
-          `- ${t.path} · looks like ${t.inferred.type ?? "a meeting"} ${t.inferred.name ?? t.inferred.topic ?? ""} ${t.inferred.date ?? ""}${t.inferred.dateCheck ? " (the capture day: check the meeting date)" : ""}`,
-      );
-    return lines.length ? paged(a, lines, ["transcript to write up", "transcripts to write up"]) : "No transcripts still to write up.";
+    const rows = (await api.meetingTranscripts()).filter((t) => !t.done);
+    const line = (t: (typeof rows)[number]) =>
+      `- ${t.path} · looks like ${t.inferred.type ?? "a meeting"} ${t.inferred.name ?? t.inferred.topic ?? ""} ${t.inferred.date ?? ""}${t.inferred.dateCheck ? " (the capture day: check the meeting date)" : ""}`;
+    return listed(a, rows, {
+      text: line,
+      noun: ["transcript to write up", "transcripts to write up"],
+      line,
+      item: (t) => ({
+        path: t.path,
+        type: t.inferred.type ?? null,
+        name: t.inferred.name ?? t.inferred.topic ?? null,
+        date: t.inferred.date ?? null,
+        dateCheck: !!t.inferred.dateCheck,
+      }),
+      empty: "No transcripts still to write up.",
+    });
   },
 };
 
@@ -1485,7 +1651,7 @@ async function healthIssue(a: Args): Promise<string> {
   if (!i.page) return "That image can't be found.";
   await api.healthTrashImage(i.page);
   told(`moved ${i.page} to the Trash`);
-  return `Moved ${i.page} to the Trash; trash restores it.`;
+  return `Moved ${i.page} to the Trash; restore_from_trash restores it.`;
 }
 
 /** contradictions: the Contradictions screen's findings, its Mark resolved and Ignore, and Save report as note. */
@@ -1510,7 +1676,7 @@ async function contradictionsTool(a: Args, r: McpRequest): Promise<string> {
   if (action === "mark") {
     const id = str(a, "id");
     const as = str(a, "as");
-    if (!id || !rep.items.some((i) => i.id === id)) throw new Error("Give id: a finding's id from list.");
+    if (!id || !rep.items.some((i) => i.id === id)) throw new Error("Give id: a finding's id from list_contradictions.");
     if (as !== "resolved" && as !== "ignored") throw new Error("as is resolved (Mark resolved) or ignored (Ignore).");
     await api.contradictionsMark(id, as);
     noted(`marked a contradiction ${as}`);
@@ -1600,32 +1766,39 @@ async function weeklyStep(a: Args): Promise<string> {
 
 // ---- Ask's chats
 
-async function chatsTool(a: Args): Promise<string> {
+async function chatsTool(a: Args): Promise<string | Listing> {
   const action = str(a, "action") ?? "list";
   const all = await api.chatsList();
-  if (action === "list")
-    return all.length
-      ? paged(
-          a,
-          [...all]
-            .sort((x, y) => y.updatedAt.localeCompare(x.updatedAt))
-            .map(
-              (c) =>
-                `- ${c.title} · ${c.updatedAt.slice(0, 16).replace("T", " ")} · ${c.filename.startsWith("local:") ? "not saved" : `saved as ${c.filename}`}  (${c.filename})`,
-            ),
-          ["chat, newest first", "chats, newest first"],
-        )
-      : "No chats.";
+  const saved = (c: ChatSummary) => !c.filename.startsWith("local:");
+  if (action === "list") {
+    const line = (c: ChatSummary) =>
+      `- ${c.title} · ${c.updatedAt.slice(0, 16).replace("T", " ")} · ${saved(c) ? `saved as ${c.filename}` : "not saved"}  (${c.filename})`;
+    return listed(
+      a,
+      [...all].sort((x, y) => y.updatedAt.localeCompare(x.updatedAt)),
+      {
+        text: line,
+        noun: ["chat, newest first", "chats, newest first"],
+        line,
+        item: (c) => ({ file: c.filename, title: c.title, updated: c.updatedAt, saved: saved(c) }),
+        empty: "No chats.",
+      },
+    );
+  }
   const want = str(a, "chat")?.trim();
-  if (!want) throw new Error("Give chat: its file or title, from list.");
+  if (!want) throw new Error("Give chat: its file or title, from list_chats.");
   const c = all.find((x) => x.filename === want) ?? all.find((x) => x.title.toLowerCase() === want.toLowerCase());
-  if (!c) throw new Error(`No chat “${want}”: list gives them.`);
+  if (!c) throw new Error(`No chat “${want}”: list_chats gives them.`);
   if (action === "read") {
     const full = await api.chatRead(c.filename);
     const turns = full.transcript.filter((t) => t.role === "user" || t.role === "assistant");
-    return [`${c.title} (${turns.length} messages):`, ...turns.map((t) => `\n${t.role === "user" ? "User" : "Assistant"}: ${t.text}`)].join(
-      "\n",
-    );
+    return {
+      text: [
+        `${c.title} (${turns.length} messages):`,
+        ...turns.map((t) => `\n${t.role === "user" ? "User" : "Assistant"}: ${t.text}`),
+      ].join("\n"),
+      structured: { chat: { file: c.filename, title: c.title, messages: turns.map((t) => ({ role: t.role, text: t.text })) } },
+    };
   }
   if (action === "rename") {
     const title = str(a, "title")?.trim();
@@ -1650,12 +1823,14 @@ async function taskLists(a: Args): Promise<string> {
   const effortName = (e: string) => EFFORT_LIMITS.find(([v]) => v === e)?.[1].toLowerCase() ?? "";
   if (action === "list")
     return saved.length
-      ? saved
-          .map(
+      ? paged(
+          a,
+          saved.map(
             (l) =>
               `- ${l.name}: ${viewName(l.view)}${l.context ? `, @${l.context}` : ""}${l.effort ? `, ${effortName(l.effort)}` : ""}${l.group !== "none" ? `, by ${l.group}` : ""}`,
-          )
-          .join("\n")
+          ),
+          ["saved list", "saved lists"],
+        )
       : "No saved lists.";
   const name = str(a, "name")?.trim();
   if (!name) throw new Error("Give name: the list's name.");
@@ -1727,15 +1902,18 @@ async function settingsTool(a: Args): Promise<string> {
   };
   const action = str(a, "action") ?? "get";
   if (action === "get")
-    return SETTINGS.map(([k, pane, label, , def]) => `- ${k} · Settings › ${pane} › ${label}: ${JSON.stringify(valueOf(k, def))}`).join(
-      "\n",
+    return paged(
+      a,
+      SETTINGS.map(([k, pane, label, , def]) => `- ${k} · Settings › ${pane} › ${label}: ${JSON.stringify(valueOf(k, def))}`),
+      ["setting", "settings"],
+      100,
     );
   if (action !== "set") throw new Error("action is get or set.");
   const key = str(a, "key");
   const row = SETTINGS.find(([k]) => k === key);
   if (!row)
     throw new Error(
-      `Not a setting this tool changes: ${key}. get lists them; the vault, Read-only and the folders left out are the user's, in the app.`,
+      `Not a setting this tool changes: ${key}. list_settings lists them; the vault, Read-only and the folders left out are the user's, in the app.`,
     );
   const [, pane, label, kind] = row;
   let v: unknown = a.value;
