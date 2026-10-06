@@ -450,6 +450,7 @@ function Row({ check, i, on }: { check: string; i: LintItem; on: Handlers }) {
               `ignore:${check}:${i.text}`,
               () => api.healthIgnore(check, i.text),
               () => {},
+              false,
             )
           }
         >

@@ -362,7 +362,25 @@ fn health_ignore_now(app: AppHandle, check: String, text: String) -> Res<()> {
     let mut k = kept();
     k.ignored.insert(lint::ignore_key(&check, &text), version);
     save_kept(&k);
-    relint(&app);
+    // Taken out of the last report at once: running every check again takes seconds.
+    let h = app.state::<Health>();
+    let counts = {
+        let mut report = h.report.lock().unwrap();
+        report.as_mut().map(|r| {
+            if let Some(c) = r.checks.iter_mut().find(|c| c.id == check) {
+                let n = c.items.len();
+                c.items.retain(|i| i.text != text);
+                c.ignored += n - c.items.len();
+            }
+            Counts { decisions: r.needs_decision(), total: r.total() }
+        })
+    };
+    match counts {
+        Some(c) => {
+            let _ = app.emit("health-changed", c);
+        }
+        None => relint(&app),
+    }
     Ok(())
 }
 
