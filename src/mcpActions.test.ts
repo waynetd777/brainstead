@@ -611,6 +611,25 @@ describe("MCP actions", () => {
       );
     });
 
+    it("lists the Trash with its count, newest first, a page at a time", async () => {
+      answers.trash_list = () =>
+        Array.from({ length: 60 }, (_, i) => ({
+          id: `t${i}`,
+          originalRel: `Idea. ${i}.md`,
+          layer: "note",
+          basename: `Idea. ${i}.md`,
+          deletedAt: `2026-09-${String((i % 28) + 1).padStart(2, "0")}T10:00`,
+          sizeBytes: 100000,
+        }));
+      const out = (await run("trash")) as string;
+      expect(out.split("\n")[0]).toBe("The Trash holds 60 items (6.0 MB). The newest 50; raise limit or give query for others:");
+      expect(out.split("\n")).toHaveLength(51);
+      expect(out.split("\n")[1]).toMatch(/deleted 2026-09-28/);
+      expect(await run("trash", { query: "idea. 5", limit: 5 })).toMatch(
+        /^The Trash holds 60 items \(6\.0 MB\); 11 match “idea\. 5”\. The newest 5/,
+      );
+    });
+
     it("restores from the Trash under another path, and stops every run", async () => {
       answers.trash_restore = (a) => a!.as ?? "x.md";
       expect(await run("trash", { action: "restore", id: "t1", to: "Idea. Other.md" })).toBe("Restored to Idea. Other.md.");

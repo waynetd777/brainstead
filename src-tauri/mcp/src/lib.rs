@@ -378,11 +378,13 @@ pub fn tools() -> Vec<Value> {
             "Moves a note or page to Brainstead's Trash (needs the app), only when the user asks; it can be restored from the Trash or reverted in Changes.",
             schema(json!({"page": page, "reason": {"type": "string"}}), &["page"])),
         tool("trash", "The Trash", Change,
-            "Lists what's in Brainstead's Trash, or restores an entry to where it was, or with to under another path when something is there already, as the Trash's Restore as… does (needs the app). Moving something to the Trash is trash_note.",
+            "Lists what's in Brainstead's Trash, with how many items it holds, newest first (the latest 50 unless limit says; query keeps those whose path has those words), or restores an entry to where it was, or with to under another path when something is there already, as the Trash's Restore as… does (needs the app). Moving something to the Trash is trash_note.",
             schema(json!({
                 "action": {"type": "string", "enum": ["list", "restore"]},
                 "id": {"type": "string", "description": "For restore: the entry's id from the list."},
-                "to": {"type": "string", "description": "For restore: the vault path to put it back under, instead of where it was."}
+                "to": {"type": "string", "description": "For restore: the vault path to put it back under, instead of where it was."},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 500, "description": "For list: how many, default 50."},
+                "query": {"type": "string", "description": "For list: only entries whose path contains this."}
             }), &[])),
         tool("bookmarks", "Bookmarks", Change,
             "Lists the bookmarks, or with page, bookmarks it or takes its bookmark off, or with keep, keeps a bookmark as triage's Keep does (needs the app).",

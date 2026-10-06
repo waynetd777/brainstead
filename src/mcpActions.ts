@@ -1097,10 +1097,14 @@ async function fixName(a: Args): Promise<string> {
 async function trash(a: Args): Promise<string> {
   const action = str(a, "action") ?? "list";
   if (action === "list") {
-    const rows = await api.trashList();
-    return rows.length
-      ? rows.map((t) => `- ${t.originalRel} · deleted ${t.deletedAt.slice(0, 10)}  (id ${t.id})`).join("\n")
-      : "The Trash is empty.";
+    const all = (await api.trashList()).sort((x, y) => y.deletedAt.localeCompare(x.deletedAt));
+    if (!all.length) return "The Trash is empty.";
+    const q = str(a, "query")?.trim().toLowerCase();
+    const rows = q ? all.filter((t) => t.originalRel.toLowerCase().includes(q)) : all;
+    const limit = Math.min(Math.max(Math.floor(Number(a.limit)) || 50, 1), 500);
+    const mb = (all.reduce((n, t) => n + t.sizeBytes, 0) / 1e6).toFixed(1);
+    const head = `The Trash holds ${all.length} item${all.length === 1 ? "" : "s"} (${mb} MB)${q ? `; ${rows.length} match “${q}”` : ""}${rows.length > limit ? `. The newest ${limit}; raise limit or give query for others` : ""}:`;
+    return [head, ...rows.slice(0, limit).map((t) => `- ${t.originalRel} · deleted ${t.deletedAt.slice(0, 10)}  (id ${t.id})`)].join("\n");
   }
   if (action === "restore") {
     const id = str(a, "id");
