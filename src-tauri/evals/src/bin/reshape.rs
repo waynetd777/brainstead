@@ -14,28 +14,13 @@
 
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Instant;
 
-use brainstead_core::pageshape::{self, Report, Sources};
-use serde::Serialize;
-
-#[derive(Serialize)]
-struct PageResult {
-    path: String,
-    /// Already in the shape: nothing to do.
-    in_shape: bool,
-    auto: bool,
-    #[serde(flatten)]
-    report: Report,
-}
+use brainstead_core::pageshape;
 
 fn arg(args: &[String], name: &str) -> Option<PathBuf> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(PathBuf::from)
-}
-
-fn rel(root: &Path, p: &Path) -> String {
-    p.strip_prefix(root).unwrap_or(p).to_string_lossy().replace('\\', "/")
 }
 
 /// A fixed sample: the pages whose paths hash lowest.
@@ -70,35 +55,23 @@ fn main() {
         std::process::exit(2);
     }
     let started = Instant::now();
-    let files: Vec<String> =
-        walkdir::WalkDir::new(&vault).into_iter().flatten().filter(|e| e.file_type().is_file()).map(|e| rel(&vault, e.path())).collect();
-    let sources = Sources::from_paths(files.iter().map(String::as_str));
-    let is_source = |t: &str| sources.is_source(t);
-    let mut pages: Vec<&String> = files.iter().filter(|f| pageshape::shaped(f)).collect();
-    pages.sort();
-
     let mut results = Vec::new();
     let mut diffs: BTreeMap<String, (String, String)> = BTreeMap::new();
-    for p in &pages {
-        let Ok(text) = std::fs::read_to_string(vault.join(p)) else {
-            eprintln!("can't read {p}");
-            continue;
-        };
-        let (new, report) = pageshape::reshape(&text, &is_source);
-        let in_shape = new == text && report.broken.is_empty();
-        if let (false, Some(dir)) = (in_shape, &pages_out) {
-            let to = dir.join(p.as_str());
-            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
-            std::fs::write(to, &new).unwrap();
+    for (r, new) in pageshape::survey(&vault) {
+        if let Some(new) = new {
+            if let Some(dir) = &pages_out {
+                let to = dir.join(&r.path);
+                std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+                std::fs::write(to, &new).unwrap();
+            }
+            let old = std::fs::read_to_string(vault.join(&r.path)).unwrap_or_default();
+            diffs.insert(r.path.clone(), (old, new));
         }
-        if !in_shape {
-            diffs.insert(p.to_string(), (text, new));
-        }
-        results.push(PageResult { path: p.to_string(), in_shape, auto: report.auto(), report });
+        results.push(r);
     }
     let took = started.elapsed();
 
-    let count = |f: &dyn Fn(&PageResult) -> bool| results.iter().filter(|r| f(r)).count();
+    let count = |f: &dyn Fn(&pageshape::PageResult) -> bool| results.iter().filter(|r| f(r)).count();
     let (shaped, auto, review, broken) = (
         count(&|r| r.in_shape),
         count(&|r| !r.in_shape && r.auto),

@@ -36,6 +36,8 @@ On the right, the change is shown as a diff under its section: removed lines, th
 ## Revert a change
 **Revert** undoes a change on the page as it is now, keeping any edits made since. It works on any change in the history, not just the last one, and is off while it's going. If the lines the change made have been edited since, or now appear in more than one place so it can't tell which to undo, it says so and shows the page as it was before the change, to copy from. A reverted change is marked **Reverted**; `⌘Z` straight after undoes the revert.
 
+A run that made more than one change has **Revert all**, after asking: each of its changes is reverted, newest first, and any page edited since keeps those edits and is listed.
+
 A page's side pane also lists the agent changes to it, under **Agent changes**, each with **Revert**.
 
 ## Decide held changes

@@ -878,6 +878,78 @@ pub fn shaped(rel: &str) -> bool {
     (rel.starts_with("wiki/entities/") || rel.starts_with("wiki/concepts/")) && rel.ends_with(".md")
 }
 
+/// One page's dry run: what reshaping it would do.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageResult {
+    pub path: String,
+    /// Already in the shape: nothing to do.
+    pub in_shape: bool,
+    pub auto: bool,
+    #[serde(flatten)]
+    pub report: Report,
+}
+
+/// Every entity and concept page of the vault at `root`, reshaped in memory: the result for
+/// each, and the reshaped text of those it would change. Nothing is written.
+pub fn survey(root: &std::path::Path) -> Vec<(PageResult, Option<String>)> {
+    let files = vault_files(root);
+    let sources = Sources::from_paths(files.iter().map(String::as_str));
+    let mut pages: Vec<&String> = files.iter().filter(|f| shaped(f)).collect();
+    pages.sort();
+    pages
+        .into_iter()
+        .filter_map(|p| {
+            let text = std::fs::read(root.join(p)).ok().map(|b| String::from_utf8_lossy(&b).into_owned())?;
+            let (result, new) = one(p, &text, &sources);
+            Some((result, new))
+        })
+        .collect()
+}
+
+/// The vault's files, vault-relative, outside dot folders.
+pub fn vault_files(root: &std::path::Path) -> Vec<String> {
+    walkdir::WalkDir::new(root)
+        .into_iter()
+        .filter_entry(|e| e.depth() == 0 || !e.file_name().to_string_lossy().starts_with('.'))
+        .flatten()
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| crate::vault::rel_of(root, e.path()))
+        .collect()
+}
+
+/// One page reshaped: its result, and its new text when it changes.
+pub fn one(path: &str, text: &str, sources: &Sources) -> (PageResult, Option<String>) {
+    let (new, report) = reshape(text, &|t| sources.is_source(t));
+    let in_shape = new == text && report.broken.is_empty();
+    let auto = report.auto();
+    (PageResult { path: path.to_string(), in_shape, auto, report }, (new != text).then_some(new))
+}
+
+/// The Knowledge health item for a page not in the shape: safe when Reshape pages can do it by
+/// itself; else why it needs the user.
+pub fn item(path: &str, text: &str, sources: &Sources) -> Option<crate::lint::Item> {
+    let (r, _) = one(path, text, sources);
+    if r.in_shape {
+        return None;
+    }
+    let detail = if !r.report.broken.is_empty() {
+        format!("Can't be reshaped: {}", r.report.broken.join("; "))
+    } else if r.auto {
+        "Reshapes by itself".to_string()
+    } else {
+        r.report.reasons.join("; ")
+    };
+    Some(crate::lint::Item {
+        text: format!("{path}: {detail}"),
+        page: Some(path.to_string()),
+        count: Some(r.report.entries as i64),
+        detail: Some(detail),
+        safe: r.auto,
+        ..Default::default()
+    })
+}
+
 /// Which link targets are vault notes or sources rather than wiki pages, from the vault's file
 /// paths (vault-relative, `/`-separated; anything in a dot folder is left out).
 pub struct Sources(HashMap<String, bool>);
@@ -1097,6 +1169,49 @@ mod tests {
         let swapped =
             format!("{}{}{}{}", &new[..a], &new[b..new.find("### 2025").unwrap()], &new[a..b], &new[new.find("### 2025").unwrap()..]);
         assert!(check(&page, &swapped, &r, is).iter().any(|x| x.contains("again")));
+    }
+
+    /// Reshape pages as the app makes it: each page's change from the survey, applied as Changes
+    /// applies one (its instruction run on the page), then the run reverted as Revert does.
+    #[test]
+    fn a_reshape_run_reverts_byte_for_byte_and_leaves_review_pages_alone() {
+        let d = tempfile::tempdir().unwrap();
+        let wiki = d.path().join("wiki/entities");
+        std::fs::create_dir_all(&wiki).unwrap();
+        for (name, page) in fixtures() {
+            std::fs::write(wiki.join(format!("{name}.md")), page).unwrap();
+        }
+        for src in ["Meeting. Orbit App Steerco - 2026-10-02", "Meeting. Comms - 2026-09-01", "1-1. Maya - 2026-06-10"] {
+            std::fs::write(d.path().join(format!("{src}.md")), "x\n").unwrap();
+        }
+        let before: Vec<(String, Vec<u8>)> =
+            vault_files(d.path()).into_iter().map(|p| (p.clone(), std::fs::read(d.path().join(&p)).unwrap())).collect();
+        let mut made = Vec::new();
+        for (r, new) in survey(d.path()) {
+            let (Some(new), true) = (new, r.auto) else { continue };
+            let old = std::fs::read_to_string(d.path().join(&r.path)).unwrap();
+            let ins = crate::changes::from_texts(Some(&old), &new);
+            let after = ins.text(&r.path, Some(&old)).unwrap();
+            assert_eq!(after, new, "{}", r.path);
+            std::fs::write(d.path().join(&r.path), &after).unwrap();
+            made.push((r.path, old, after));
+        }
+        assert!(made.len() >= 6, "{}", made.len());
+        // Every page that needs the user is as it was.
+        for (r, _) in survey(d.path()) {
+            if !r.in_shape {
+                assert!(!r.auto, "{} left out", r.path);
+                let was = &before.iter().find(|b| b.0 == r.path).unwrap().1;
+                assert_eq!(&std::fs::read(d.path().join(&r.path)).unwrap(), was, "{}", r.path);
+            }
+        }
+        for (path, old, after) in made.iter().rev() {
+            let now = std::fs::read_to_string(d.path().join(path)).unwrap();
+            std::fs::write(d.path().join(path), crate::changes::revert_text(old, after, &now).unwrap()).unwrap();
+        }
+        for (p, bytes) in &before {
+            assert_eq!(&std::fs::read(d.path().join(p)).unwrap(), bytes, "{p}");
+        }
     }
 
     #[test]

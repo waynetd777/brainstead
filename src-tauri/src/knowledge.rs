@@ -257,6 +257,88 @@ fn health_fix_now(app: AppHandle, fixes: Vec<Fix>) -> Res<String> {
     Ok(label)
 }
 
+/// What Reshape pages did.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reshaped {
+    /// The run's group in Changes, to revert it all.
+    run: String,
+    applied: usize,
+    /// Pages it couldn't change, and why.
+    failed: Vec<String>,
+    /// Pages left for the user: they need a decision first.
+    left: usize,
+}
+
+/// Reshape pages (D-20261006-06): every page not in the shape that can be reshaped by itself,
+/// or the pages named (by path or name, reshaped as proposed even when they'd need the user), each
+/// one change in Changes in one run, revertable alone or together. One `log.md` line for the run.
+fn health_reshape_now(app: AppHandle, pages: Option<Vec<String>>) -> Res<Reshaped> {
+    use brainstead_core::pageshape;
+    writable(&app.state::<AppState>())?;
+    let root = root(&app)?;
+    let named = |path: &str| {
+        pages.as_ref().map(|ps| {
+            ps.iter().any(|p| {
+                let p = p.trim().trim_start_matches("[[").trim_end_matches("]]");
+                p == path || brainstead_core::filename::stem(path).eq_ignore_ascii_case(p)
+            })
+        })
+    };
+    let run = format!("{}{}", crate::changes::RESHAPE_RUN, proposals::new_id());
+    let origin = Origin { kind: "lint".into(), label: Some("Reshape pages".into()), run: Some(run.clone()), ..Default::default() };
+    let mut done = Reshaped { run, applied: 0, failed: vec![], left: 0 };
+    let mut found = 0;
+    for (r, new) in pageshape::survey(&root) {
+        let want = named(&r.path);
+        found += usize::from(want == Some(true));
+        let (Some(new), true) = (new, want.unwrap_or(r.auto) && r.report.broken.is_empty()) else {
+            done.left += usize::from(want.is_none() && !r.in_shape);
+            continue;
+        };
+        let Some(before) = read_opt(&root.join(&r.path)) else { continue };
+        let rp = &r.report;
+        let mut reason = format!(
+            "Put in the page shape: {} Timeline entries, {} headings rewritten, {} Source lines added.",
+            rp.entries,
+            rp.headings.len(),
+            rp.added.iter().filter(|a| a.starts_with("Source:")).count()
+        );
+        if !rp.reasons.is_empty() {
+            reason.push_str(&format!(" Reshaped as proposed although {}.", rp.reasons.join("; ")));
+        }
+        let s = crate::changes::Submit::new(
+            &r.path,
+            Kind::Edit,
+            "Reshaped to the page shape",
+            &reason,
+            origin.clone(),
+            brainstead_core::changes::from_texts(Some(&before), &new),
+        );
+        match crate::changes::submit(&app, s) {
+            Ok(o) if o.applied => done.applied += 1,
+            Ok(o) => done.failed.push(format!("{}: {}", r.path, o.message)),
+            Err(e) => done.failed.push(format!("{}: {}", r.path, e.message())),
+        }
+    }
+    if let Some(ps) = &pages {
+        if found < ps.len() {
+            return Err(invalid(format!("Only {found} of the {} pages named are wiki entity or concept pages.", ps.len())));
+        }
+    }
+    if done.applied > 0 {
+        let n = done.applied;
+        let detail = format!("reshaped {n} page{}", if n == 1 { "" } else { "s" });
+        let entry = reviews::log_entry("lint-fix", "Knowledge health", Some(&detail), chrono::Local::now().naive_local());
+        if let Err(e) = crate::edits::add_log(&root, &entry) {
+            crate::applog!("reshape log line: {e}");
+        }
+        written(&app, &[root.join(LOG)]);
+    }
+    relint(&app);
+    Ok(done)
+}
+
 /// Marks two pages as not duplicates.
 fn health_dismiss_now(app: AppHandle, a: String, b: String) -> Res<()> {
     let mut k = kept();
@@ -377,6 +459,11 @@ fn relint(app: &AppHandle) {
 #[tauri::command]
 pub async fn health_fix(app: AppHandle, fixes: Vec<Fix>) -> Res<String> {
     blocking(move || health_fix_now(app, fixes)).await
+}
+
+#[tauri::command]
+pub async fn health_reshape(app: AppHandle, pages: Option<Vec<String>>) -> Res<Reshaped> {
+    blocking(move || health_reshape_now(app, pages)).await
 }
 
 #[tauri::command]

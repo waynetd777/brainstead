@@ -11,7 +11,7 @@ Knowledge health checks the wiki and its sources whenever the vault changes. The
 The checks come in two groups.
 
 - **Wiki checks**: missing pages (linked but never written), broken sources, orphan pages (nothing links them), missing cross-links, stale `updated:` dates, unlogged writes (pages changed after `log.md` was last written), sources not yet ingested, and images nothing uses.
-- **More checks**: possible duplicates, stale pages others rely on, sources changed since they were cited, claims with no citation, and system notes missing their header.
+- **More checks**: possible duplicates, stale pages others rely on, sources changed since they were cited, claims with no citation, system notes missing their header, and pages not in the page shape.
 
 A system note's header is the "This is a system note" callout at the top of the To Do list, the summaries' notes and the rest, which other parts of Brainstead look for. **Fix** puts it back as Brainstead last saw it.
 
@@ -27,6 +27,18 @@ Some issues have one right answer, and Brainstead can fix them without asking: a
 - **Possible duplicates**: **Open the other** compares them; **Not duplicates** stops the pair being flagged.
 - **Images nothing uses**: **Move to the Trash**, after asking. You can restore them from the Trash.
 - **Sources not yet ingested**: ingest them from [Sources](app:sources). **Ingest** here starts the same ingest; its page changes are listed in [Changes](app:review). A source ingest can't read, such as an SVG or a zip file, shows **Can't ingest** instead.
+
+## Put pages in the page shape
+Every entity and concept page has the same layout: the opening text, **Current state**, its topics (such as Architecture), a **Timeline**, then **See also**. Each Timeline entry is a heading starting with its date, newest first, with a line under it naming the note it came from:
+
+```
+### 2026-10-02 — Steerco: launch moves to 28 November
+Source: [[Meeting. Orbit App Steerco - 2026-10-02]]
+```
+
+**Pages not in the page shape** lists the pages laid out some other way. **Reshape pages** puts every page it can in the shape by itself, after asking: sections move whole, a dated heading such as "2 Oct 2026 — Steerco" becomes "2026-10-02 — Steerco", a summing-up section such as Status (Apr 2026) becomes Current state with "As of Apr 2026." under it, and two See also lists become one. No text is lost, and the result is checked before anything is written. Each page is one change in [Changes](app:review), in one run you can revert page by page or with **Revert all**.
+
+A page that needs you says why: a heading whose year it can't tell, two summing-up sections, two entries citing the same note, or text in the Timeline that isn't an entry. Fix what it says (usually a heading) and the page reshapes by itself; or **Reshape anyway** to take the proposed result as it is, which you can check and revert in Changes.
 
 ## Fix with Ask
 **Fix with Ask** starts a chat that lists the issues needing judgement and asks the assistant to fix them. Prose fixes are made and listed in [Changes](app:review), where you can revert them; safe fixes are made at once and `⌘Z` undoes them. The button is greyed out when nothing needs a decision.

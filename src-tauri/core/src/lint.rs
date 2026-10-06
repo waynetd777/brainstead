@@ -453,6 +453,15 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
     sort(&mut items);
     checks.push(Check { id: "changed-sources", title: "Sources changed since they were cited", classic: false, items });
 
+    // Wiki pages not in the page shape (D-20261006-06): those Reshape pages can do by itself are safe.
+    let shape = crate::pageshape::Sources::from_paths(files.iter().map(|f| f.rel.as_str()));
+    let items = md
+        .iter()
+        .filter(|(f, _)| crate::pageshape::shaped(&f.rel))
+        .filter_map(|(f, t)| crate::pageshape::item(&f.rel, t, &shape))
+        .collect();
+    checks.push(Check { id: "page-shape", title: "Pages not in the page shape", classic: false, items });
+
     Report {
         checks,
         wiki_pages: wiki.len(),

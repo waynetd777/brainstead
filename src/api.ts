@@ -954,11 +954,15 @@ export const api = {
     invoke<{ done: number; failed: string[] }>("changes_accept_all", { group, assistant }),
   changesRejectAll: (group: string | null) => invoke<{ done: number; failed: string[] }>("changes_reject_all", { group }),
   /** Undoes an applied change on the page as it is now; when its lines were edited since, says so with the page as it was before. */
+  changesRevertAll: (group: string) => invoke<{ done: number; failed: string[] }>("changes_revert_all", { group }),
   changeRevert: (id: string) => invoke<{ ok: boolean; message: string; before: string | null }>("change_revert", { id }),
   /** The page with the held change made, as its draft for the editor; returns the page. */
   changeForEditing: (id: string) => invoke<string>("change_for_editing", { id }),
   healthReport: (fresh = false) => invoke<HealthView>("health_report", { fresh }),
   healthFix: (fixes: HealthFix[]) => invoke<string>("health_fix", { fixes }),
+  /** Reshape pages: every page that can be reshaped by itself, or those named. */
+  healthReshape: (pages: string[] | null) =>
+    invoke<{ run: string; applied: number; failed: string[]; left: number }>("health_reshape", { pages }),
   healthDismiss: (a: string, b: string) => invoke<void>("health_dismiss", { a, b }),
   healthTrashImage: (path: string) => invoke<string>("health_trash_image", { path }),
   healthCreatePage: (name: string, folder: "entities" | "concepts") => invoke<string>("health_create_page", { name, folder }),

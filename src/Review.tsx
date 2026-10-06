@@ -188,12 +188,26 @@ export function ReviewScreen() {
     if (next) setSel(next.id);
   };
   const readOnly = useStore(settings).readOnly;
-  const [confirm, setConfirm] = useState<{ group: string; label: string; n: number } | null>(null);
+  const [confirm, setConfirm] = useState<{ group: string; label: string; n: number; revert?: boolean } | null>(null);
   const accepting = useStore(acceptingRun);
   const rejectRun = (group: string) =>
     api
       .changesRejectAll(group)
       .then((m) => toast(`Rejected ${plural(m.done, "change")}`))
+      .then(reloadChanges)
+      .catch(reportEditError);
+  const revertRun = (group: string) =>
+    api
+      .changesRevertAll(group)
+      .then((m) =>
+        m.failed.length
+          ? toast(
+              `Reverted ${plural(m.done, "change")}; ${plural(m.failed.length, "page")} edited since, left as they are`,
+              undefined,
+              "bad",
+            )
+          : toast(`Reverted ${plural(m.done, "change")}`, undefined, "ok"),
+      )
       .then(reloadChanges)
       .catch(reportEditError);
 
@@ -212,7 +226,34 @@ export function ReviewScreen() {
       >
         <span className="faint small">What assistants and runs changed; a scheduled change that fails a check waits here</span>
       </TopBar>
-      {confirm && (
+      {confirm?.revert && (
+        <Dialog onClose={() => setConfirm(null)} width={440} label="Revert the run's changes">
+          <div className="confirm">
+            <h2 className="h2">Revert {plural(confirm.n, "change")}?</h2>
+            <p className="muted">
+              From {confirm.label}. Each page goes back as it was before; a page edited since keeps those edits and is listed.
+            </p>
+            <div className="row">
+              <span className="grow" />
+              <button type="button" className="btn lg" title="Keep the changes" onClick={() => setConfirm(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn lg danger-pri"
+                title="Revert every change this run made"
+                onClick={() => {
+                  setConfirm(null);
+                  void revertRun(confirm.group);
+                }}
+              >
+                Revert all
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+      {confirm && !confirm.revert && (
         <Dialog onClose={() => setConfirm(null)} width={440} label="Reject the run's changes">
           <div className="confirm">
             <h2 className="h2">Reject {plural(confirm.n, "held change")}?</h2>
@@ -295,6 +336,23 @@ export function ReviewScreen() {
                 n={g.rows.length}
                 tip={`${plural(g.rows.length, "change")} in this run`}
               />
+              {g.rows.filter((c) => c.status === "applied").length > 1 && (
+                <div className="qrunhead">
+                  <span className="grow" />
+                  <span title={readOnly ? "Read-only is on (Settings › Vault)" : "Put back every page this run changed"}>
+                    <button
+                      type="button"
+                      className="btn sm ghost"
+                      disabled={readOnly}
+                      onClick={() =>
+                        setConfirm({ group: g.group, label: g.label, n: g.rows.filter((c) => c.status === "applied").length, revert: true })
+                      }
+                    >
+                      Revert all
+                    </button>
+                  </span>
+                </div>
+              )}
               {g.rows.map((c) => (
                 <Row key={c.id} c={c} sel={cur?.id === c.id} gone={gone(c.to ?? c.page)} onSel={() => setSel(c.id)} />
               ))}

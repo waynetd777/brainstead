@@ -291,6 +291,13 @@
     "docs": true
   },
   {
+    "name": "health-page-shape",
+    "screen": "health",
+    "view": {
+      "health:open": "page-shape"
+    }
+  },
+  {
     "name": "settings-notes",
     "screen": "settings",
     "pane": "notes"

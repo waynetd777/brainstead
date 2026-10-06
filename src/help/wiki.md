@@ -29,6 +29,8 @@ Each page has a health chip, taken from Knowledge health and Changes; hover one 
 Click **New wiki page**, type a name, choose **Concept** or **Entity** and press `↩`. The page is created in `wiki/concepts/` or `wiki/entities/` with its properties filled in, and opens for you to write. It is your own page, so it isn't listed in Changes.
 
 ## Read a wiki page
+Entity and concept pages share one layout: the opening text, **Current state**, the page's topics, a **Timeline** of dated entries (newest first, each naming the note it came from on a **Source** line), then **See also**. [Knowledge health](app:health) lists pages laid out another way, and **Reshape pages** there puts them in the shape.
+
 Under the title a line gives the page's aliases, its `updated:` date and how many sources it has. A link in the text to one of its sources, or to any file in `sources/`, is drawn as a small number: click it to open the source at the passage cited. The **Sources** card beside **Linked from** lists the sources in the same numbered order.
 
 If another wiki page says something different about the same thing, a banner at the top says what disagrees. **See it** opens [Contradictions](app:contradictions).

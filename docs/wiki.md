@@ -43,12 +43,14 @@ Assistants and runs change the vault themselves, and Changes (⌥⌘5) lists eve
 - A scheduled run's change (the nightly check, its ingests and contradiction check, the scheduled summaries) is made when it passes every check, and held otherwise: a quote not found or resting on text read from an image, text rewritten or taken out of one of your own notes (anything outside `wiki/`, `sources/`, `index.md`, `log.md` and the summaries' notes), unsaved edits to the page, an open contradiction on it (one whose fix is applied in Changes no longer counts), or properties that wouldn't read.
 - A change to a template, one that adds code that runs when a note is shown, or one that changes a [system note's header](notes.md#system-notes), is always held. Renames and moves to the Trash are made at once, unless they move a template or rewrite links in one. An assistant accepts a held change only while you're there, and only one held for a failed check.
 - **Held for you** is at the top, each with why: **Accept** (`A`), **Reject** (`R`), **Edit before accepting**, and **Accept all** or **Reject all** for a run (`⌘↩` accepts the run). A held change keeps what was asked for, so it applies to the page as it is when you accept it. Only held changes are counted in the sidebar.
-- **Revert** undoes a change on the page as it is now, keeping later edits. If its lines have been edited since, it says so and offers the page as it was before, to copy. A page's side pane lists its agent changes, with Revert.
+- **Revert** undoes a change on the page as it is now, keeping later edits. If its lines have been edited since, it says so and offers the page as it was before, to copy. **Revert all** does it for every change a run made. A page's side pane lists its agent changes, with Revert.
 - History is kept 90 days or 500 MB, whichever comes first (Settings › AI assistants).
 
 ## Wiki pages
 
 <a href="images/index.md#the-wiki-and-sources"><picture><source media="(prefers-color-scheme: dark)" srcset="images/wiki-page-dark.png"><img alt="A wiki page: its current state with numbered citations, and the Sources and Linked from cards" src="images/wiki-page-light.png"></picture></a>
+
+Every entity and concept page has one layout: the opening text, **Current state**, topical sections, a **Timeline** of `### YYYY-MM-DD — title` entries (or `YYYY-MM`, `YYYY-Q3`, `YYYY-H1`) newest first, each with a `Source: [[…]]` line naming the note or source it came from, and **See also**. Summaries are left as they are.
 
 The Wiki (⌥⌘9) lists the pages by type and tag with their health: **Held**, **Stale**, **Check** or **Healthy**. On a page, a link to a source shows as a small number that opens the source at the passage cited, listed in the **Sources** card. A banner says when another page disagrees. **New wiki page** makes an entity or concept page you write yourself.
 
@@ -61,6 +63,7 @@ Knowledge health checks the wiki whenever the vault changes: missing pages and l
 - Pie charts on the right show the wiki's pages by type and by tag; a slice opens the Wiki filtered to it.
 - **Fix safe issues** fixes the ones with one right answer (a missing link, a date, a `log.md` line), undoably.
 - Missing pages can be created or linked to an existing page; duplicates compared or dismissed.
+- **Pages not in the page shape** lists entity and concept pages laid out another way. **Reshape pages** reshapes those it can by itself, by script with no model: sections move whole, dated headings are rewritten to the ISO form, a dated summing-up heading becomes Current state with an "As of" line, See also lists merge, and every result is checked (no line lost, the frontmatter untouched, reshaping it again changes nothing) before it's written. Each page is one change in Changes, in one run with Revert all. A page that needs you says why (a year it can't tell, two summing-up sections, two entries citing the same note); fix the heading, or **Reshape anyway**. Assistants use `page_shape` and `reshape_pages`.
 - **Fix with Ask** hands the issues that need judgement to an assistant, whose fixes are made and listed in Changes.
 
 ## Contradictions

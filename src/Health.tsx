@@ -16,7 +16,7 @@ import { Icon } from "./icons";
 import { ingestable } from "./Lists";
 import { useGlance, WikiGlance } from "./Glance";
 import { decisions, fixOf, fixWithAskPrompt, health, pageName, reloadHealth, safeFixes, startKnowledge, trendPoints } from "./knowledge";
-import { nav, openDoc } from "./nav";
+import { nav, openDoc, useViewState } from "./nav";
 import { reportEditError, undoLast } from "./taskModel";
 import { toast } from "./Toast";
 import { TopBar } from "./TopBar";
@@ -90,13 +90,22 @@ function BusyButton({
 
 const fixed = (label: string) => toast(label, undo, "ok");
 
+/** After Reshape pages: how many, and the way to Changes, where they can be reverted. */
+const reshaped = (r: { applied: number; failed: string[] }) =>
+  toast(
+    `Reshaped ${r.applied === 1 ? "1 page" : `${r.applied} pages`}${r.failed.length ? `; ${r.failed.length} couldn't be: ${r.failed[0]}` : ""}`,
+    { label: "Changes", run: () => nav.go("review") },
+    r.failed.length ? "bad" : "ok",
+  );
+
 export function HealthScreen() {
   useEffect(startKnowledge, []);
   const h = useStore(health);
   const r = h?.report ?? null;
-  const [open, setOpen] = useState<string | null>("missing-pages");
+  const [open, setOpen] = useViewState<string | null>("health:open", "missing-pages", false);
   const [trash, setTrash] = useState<string | null>(null);
   const [linking, setLinking] = useState<LintItem | null>(null);
+  const [reshaping, setReshaping] = useState<number | null>(null);
   const fixes = safeFixes(r);
   const need = decisions(r);
 
@@ -178,8 +187,8 @@ export function HealthScreen() {
               <span className="faint small">The trend shows after a second day.</span>
             )}
           </div>
-          {r && <Group title="Wiki checks" checks={classic} open={open} setOpen={setOpen} on={{ setTrash, setLinking }} />}
-          {r && <Group title="More checks" checks={ours} open={open} setOpen={setOpen} on={{ setTrash, setLinking }} />}
+          {r && <Group title="Wiki checks" checks={classic} open={open} setOpen={setOpen} on={{ setTrash, setLinking, setReshaping }} />}
+          {r && <Group title="More checks" checks={ours} open={open} setOpen={setOpen} on={{ setTrash, setLinking, setReshaping }} />}
         </div>
         <aside className="hside">{r && <SideCards r={r} />}</aside>
       </div>
@@ -214,6 +223,35 @@ export function HealthScreen() {
         </Dialog>
       )}
       {linking && <LinkGhost item={linking} onClose={() => setLinking(null)} />}
+      {reshaping !== null && (
+        <Dialog onClose={() => setReshaping(null)} width={460} label="Reshape pages">
+          <div className="confirm">
+            <h2 className="h2">Reshape {reshaping === 1 ? "1 page" : `${reshaping} pages`}?</h2>
+            <p className="muted">
+              Each page gets the page shape: opening text, Current state, its topics, a Timeline newest first, See also. Sections move whole
+              and dated headings are rewritten; no text is lost. Each page is one change in Changes, revertable alone or all together. Pages
+              that need you are left as they are.
+            </p>
+            <div className="row">
+              <span className="grow" />
+              <button type="button" className="btn lg" title="Leave the pages as they are" onClick={() => setReshaping(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn lg pri"
+                title="Reshape them now; revertable in Changes"
+                onClick={() => {
+                  setReshaping(null);
+                  act("reshape-all", () => api.healthReshape(null), reshaped);
+                }}
+              >
+                Reshape pages
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
     </main>
   );
 }
@@ -231,10 +269,12 @@ export const CHECK_TIPS: Record<string, string> = {
   duplicates: "Pages so alike in name or text that they may be about the same thing",
   "stale-pages": "Pages many others link to that haven't changed in 90 days or more",
   "changed-sources": "Sources that changed after the pages citing them were written",
+  "page-shape":
+    "Entity and concept pages not laid out as opening text, Current state, topics, Timeline (newest first) and See also; Reshape pages moves their sections",
   "system-callouts": 'System notes whose "This is a system note" header has gone; Fix puts it back as Brainstead last saw it',
 };
 
-type Handlers = { setTrash: (p: string) => void; setLinking: (i: LintItem) => void };
+type Handlers = { setTrash: (p: string) => void; setLinking: (i: LintItem) => void; setReshaping: (n: number) => void };
 
 function Group({
   title,
@@ -273,6 +313,7 @@ function Group({
             </button>
             {isOpen && (
               <div className="ckitems">
+                {c.id === "page-shape" && <ReshapeAll items={c.items} on={on} />}
                 {c.items.slice(0, 200).map((i) => (
                   <Row key={i.text} check={c.id} i={i} on={on} />
                 ))}
@@ -302,6 +343,8 @@ function Row({ check, i, on }: { check: string; i: LintItem; on: Handlers }) {
         return `${pageName(page ?? "")}: updated says older than the file (${i.detail})`;
       case "stale-pages":
         return `${pageName(page ?? "")} · ${i.count} backlinks · ${i.detail}`;
+      case "page-shape":
+        return pageName(page ?? "");
       default:
         return page ? (check === "uningested-sources" || check === "unreferenced-images" ? page : pageName(page)) : i.text;
     }
@@ -317,7 +360,8 @@ function Row({ check, i, on }: { check: string; i: LintItem; on: Handlers }) {
       )}
       {check === "missing-pages" && <span className="faint small">{i.pages?.length === 1 ? "1 page" : `${i.pages?.length} pages`}</span>}
       {check === "duplicates" && i.detail && <span className="faint small">{i.detail}</span>}
-      {i.safe && page && (
+      {check === "page-shape" && page && <ReshapeOne page={page} i={i} />}
+      {i.safe && page && check !== "page-shape" && (
         <BusyButton id={`fix:${i.text}`} onClick={() => act(`fix:${i.text}`, () => api.healthFix([fixOf(check, i)]), fixed)}>
           Fix
         </BusyButton>
@@ -377,6 +421,55 @@ function Row({ check, i, on }: { check: string; i: LintItem; on: Handlers }) {
       )}
       {check === "uningested-sources" && page && <IngestButton path={page} />}
     </div>
+  );
+}
+
+/** The check's own action: every page that reshapes by itself, asked first. */
+function ReshapeAll({ items, on }: { items: LintItem[]; on: Handlers }) {
+  const n = items.filter((i) => i.safe).length;
+  const review = items.length - n;
+  return (
+    <div className="ckitem">
+      <span className="grow faint small">
+        {n === 1 ? "1 reshapes by itself" : n ? `${n} reshape by themselves` : "None reshape by themselves"}
+        {review ? ` · ${review} need you first: fix what's listed, or reshape them as proposed` : ""}
+      </span>
+      <BusyButton
+        id="reshape-all"
+        icon="check"
+        disabled={!n}
+        title={n ? "Reshape every page that doesn't need you; each is a change in Changes" : "Every page left needs you first"}
+        onClick={() => on.setReshaping(n)}
+      >
+        Reshape pages
+      </BusyButton>
+    </div>
+  );
+}
+
+/** One page: why it isn't in the shape, and Reshape (as proposed, when it needs you). */
+function ReshapeOne({ page, i }: { page: string; i: LintItem }) {
+  const broken = i.detail?.startsWith("Can't be reshaped");
+  return (
+    <>
+      <span className={`small ${i.safe ? "faint" : "why"}`} title={i.detail}>
+        {i.safe ? (i.count === 1 ? "1 timeline entry" : `${i.count ?? 0} timeline entries`) : i.detail}
+      </span>
+      {!broken && (
+        <BusyButton
+          id={`reshape:${page}`}
+          className={i.safe ? "btn sm" : "btn sm ghost"}
+          title={
+            i.safe
+              ? "Reshape this page; a change in Changes you can revert"
+              : "Reshape it as proposed anyway; open Changes to see the result and revert it if it's not right"
+          }
+          onClick={() => act(`reshape:${page}`, () => api.healthReshape([page]), reshaped)}
+        >
+          {i.safe ? "Reshape" : "Reshape anyway"}
+        </BusyButton>
+      )}
+    </>
   );
 }
 

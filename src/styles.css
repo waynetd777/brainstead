@@ -6575,6 +6575,12 @@ select.sel {
   text-align: left;
   overflow-wrap: anywhere;
 }
+.ckitem .why {
+  color: var(--amber);
+  max-width: 55%;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
 .hq {
   padding: 14px 16px;
   display: flex;

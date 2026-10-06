@@ -299,12 +299,17 @@ fn apply(app: &AppHandle, root: &Path, mut c: Change, base: Option<String>) -> R
     Ok(Outcome { id: c.id.clone(), applied: true, page: c.to.clone().unwrap_or(c.page.clone()), flags: c.flags.clone(), message })
 }
 
+/// The start of a Reshape pages run's group.
+pub const RESHAPE_RUN: &str = "reshape-";
+
 /// The log line for an applied change: one per ingest run (with its first page), else one each.
 fn log_line(c: &Change) -> Option<String> {
     let now = chrono::Local::now().naive_local();
     Some(match c.origin.kind.as_str() {
         "ingest" => return c.origin.run.as_deref().or(c.origin.chat.as_deref()).and_then(crate::ingest::take_log),
         "review" => reviews::log_entry("review", c.origin.label.as_deref().unwrap_or(&c.title), None, now),
+        // Reshape pages writes one line for its run.
+        "lint" if c.origin.run.as_deref().is_some_and(|r| r.starts_with(RESHAPE_RUN)) => return None,
         "lint" => reviews::log_entry("lint-fix", "Knowledge health", Some(&c.title), now),
         _ => reviews::log_entry(
             if c.kind == Kind::New { "create" } else { "update" },
@@ -714,6 +719,29 @@ pub async fn changes_reject_all(app: AppHandle, group: Option<String>) -> Res<Ma
         Ok(m)
     })
     .await
+}
+
+/// Reverts every change a run made, newest first; those whose lines have been edited since are
+/// listed in `failed`, the rest still reverted.
+pub fn revert_run(app: &AppHandle, group: &str) -> Res<Many> {
+    let todo: Vec<Change> = store().list().into_iter().filter(|c| c.status == Status::Applied && c.group() == group).collect();
+    if todo.is_empty() {
+        return Err(invalid("Nothing that run made is left to revert."));
+    }
+    let mut m = Many { done: 0, failed: vec![] };
+    for c in todo {
+        match revert_one(app, &c.id) {
+            Ok(r) if r.ok => m.done += 1,
+            Ok(r) => m.failed.push(format!("{}: {}", c.title, r.message)),
+            Err(e) => m.failed.push(format!("{}: {}", c.title, e.message())),
+        }
+    }
+    Ok(m)
+}
+
+#[tauri::command]
+pub async fn changes_revert_all(app: AppHandle, group: String) -> Res<Many> {
+    blocking(move || revert_run(&app, &group)).await
 }
 
 #[tauri::command]

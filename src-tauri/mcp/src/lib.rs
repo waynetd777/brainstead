@@ -384,11 +384,11 @@ pub fn tools() -> Vec<Value> {
             schema(json!({"name": {"type": "string"}, "query": {"type": "string"}, "layers": {"type": "array", "items": {"type": "string", "enum": ["note", "wiki", "source", "template"]}}}), &[])),
         // What agents changed.
         tool("changes", "Changes", Destroy,
-            "What assistants and Brainstead's runs changed, and the changes held for the user (needs the app). list shows the held changes and the latest made, by run; show gives one change's diff, quotes and flags; accept makes a held change (on the page as it is now) and reject turns it down; accept_run and reject_run do every held change in a run (group from list); revert undoes a change that was made, also after later edits, and says when its lines have been edited since. accept and accept_run work only while the user is there (never with unattended) and only for a change held because a check failed: one held because it changes a template, adds code that runs, changes a system note's header, renames or trashes a template (or rewrites links in one), or comes from a job set to hold its changes is the user's to accept, in the app. history reads how long Changes keeps its history (Settings › AI assistants › Keep the history of agent changes), and with days or mb sets it. Accept, reject, revert or change the history only as the user asked.",
+            "What assistants and Brainstead's runs changed, and the changes held for the user (needs the app). list shows the held changes and the latest made, by run; show gives one change's diff, quotes and flags; accept makes a held change (on the page as it is now) and reject turns it down; accept_run and reject_run do every held change in a run (group from list); revert undoes a change that was made, also after later edits, and says when its lines have been edited since; revert_run reverts every change a run made (Changes' Revert all). accept and accept_run work only while the user is there (never with unattended) and only for a change held because a check failed: one held because it changes a template, adds code that runs, changes a system note's header, renames or trashes a template (or rewrites links in one), or comes from a job set to hold its changes is the user's to accept, in the app. history reads how long Changes keeps its history (Settings › AI assistants › Keep the history of agent changes), and with days or mb sets it. Accept, reject, revert or change the history only as the user asked.",
             schema(json!({
-                "action": {"type": "string", "enum": ["list", "show", "accept", "reject", "accept_run", "reject_run", "revert", "history"]},
+                "action": {"type": "string", "enum": ["list", "show", "accept", "reject", "accept_run", "reject_run", "revert", "revert_run", "history"]},
                 "id": {"type": "string", "description": "The change's id from list."},
-                "group": {"type": "string", "description": "For accept_run and reject_run: the run's group from list."},
+                "group": {"type": "string", "description": "For accept_run, reject_run and revert_run: the run's group from list."},
                 "page": {"type": "string", "description": "For list: only this page's changes, by its path."},
                 "days": {"type": "integer", "enum": [30, 90, 180, 365], "description": "For history: keep this many days."},
                 "mb": {"type": "integer", "enum": [100, 250, 500, 1000, 2000], "description": "For history: keep at most this many MB."}
@@ -436,6 +436,12 @@ pub fn tools() -> Vec<Value> {
         tool("fix_health", "Fix Knowledge health issues", Change,
             "Applies Knowledge health's safe fixes (needs the app): all of them, or the items named (their text as lint gives it). Undoable. Issues that need judgement aren't safe fixes: make those with edit_page.",
             schema(json!({"items": {"type": "array", "items": {"type": "string"}}}), &[])),
+        tool("page_shape", "Page shape", Read,
+            "Knowledge health's Page shape check: which wiki entity and concept pages aren't in the page shape (opening text, Current state, topical sections, a Timeline of `### YYYY-MM-DD — title` entries newest first, each with a Source: [[…]] line, then See also), which of them Reshape pages can do by itself and why the rest need the user. With page, that page's report: the headings it would rewrite and the lines it would add.",
+            schema(json!({"page": page}), &[])),
+        tool("reshape_pages", "Reshape pages", Change,
+            "Reshape pages, as Knowledge health's Page shape check does it (needs the app): every page that can be reshaped by itself, or the pages named (as proposed, even those that need the user; only when the user asked). Sections move whole and dated headings are rewritten; no text is lost. Each page is one change in Changes, in one run the user can revert alone or all together (changes revert_run).",
+            schema(json!({"pages": {"type": "array", "items": page, "description": "Only these pages, by name or path."}}), &[])),
         tool("fix_name", "Fix a name everywhere", Change,
             "Corrects a misspelt name across the notes and wiki, as Fix name does (needs the app); sources are left alone. Without apply it only says what would change; with apply true it changes the files (undoable).",
             schema(json!({
@@ -591,6 +597,8 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<String, CallError> {
         "weekly_suggestion" => act("weekly.suggestion", obj),
         "save_chat" => act("chat.save", obj),
         "fix_health" => act("health.fix", obj),
+        "page_shape" => Ok(page_shape_tool(ctx, obj.get("page").and_then(Value::as_str))?),
+        "reshape_pages" => act("health.reshape", obj),
         "fix_name" => act("fix_name", obj),
         "triage_bookmarks" => {
             let has_items = obj.get("items").and_then(Value::as_array).is_some_and(|a| !a.is_empty());
@@ -1164,6 +1172,74 @@ fn pending_sources(ctx: &Ctx) -> String {
 #[derive(Deserialize)]
 struct LintArgs {
     page: Option<String>,
+}
+
+/// The page shape dry run, for the vault or one page.
+fn page_shape_tool(ctx: &Ctx, page: Option<&str>) -> Result<String, String> {
+    use brainstead_core::pageshape;
+    if let Some(p) = page.filter(|p| !p.trim().is_empty()) {
+        let rel = existing(ctx, &ctx.index()?, p)?;
+        if !pageshape::shaped(&rel) {
+            return Ok(format!("{rel} isn't a wiki entity or concept page: only those have the page shape."));
+        }
+        let text = read_text(ctx, &rel)?;
+        let files = pageshape::vault_files(&ctx.vault);
+        let (r, _) = pageshape::one(&rel, &text, &pageshape::Sources::from_paths(files.iter().map(String::as_str)));
+        if r.in_shape {
+            return Ok(format!("{rel} is in the page shape ({} Timeline entries).", r.report.entries));
+        }
+        let rp = &r.report;
+        let mut out = vec![if !rp.broken.is_empty() {
+            format!("{rel} can't be reshaped by script: {}.", rp.broken.join("; "))
+        } else if r.auto {
+            format!("{rel} isn't in the page shape; reshape_pages can reshape it by itself ({} Timeline entries).", rp.entries)
+        } else {
+            format!("{rel} isn't in the page shape and needs the user first: {}.", rp.reasons.join("; "))
+        }];
+        if !rp.headings.is_empty() {
+            out.push("Headings it would rewrite:".into());
+            out.extend(rp.headings.iter().take(40).map(|(o, n)| format!("- {o}  →  {n}")));
+        }
+        if !rp.added.is_empty() {
+            out.push("Lines it would add:".into());
+            out.extend(rp.added.iter().take(40).map(|l| format!("- {l}")));
+        }
+        if !rp.removed.is_empty() {
+            out.push("Lines it would drop (repeated in a merged See also):".into());
+            out.extend(rp.removed.iter().map(|l| format!("- {l}")));
+        }
+        out.extend(rp.notes.iter().map(|n| format!("Note: {n}")));
+        return Ok(out.join("\n"));
+    }
+    let all = pageshape::survey(&ctx.vault);
+    let out_of: Vec<_> = all.iter().map(|x| &x.0).filter(|r| !r.in_shape).collect();
+    if out_of.is_empty() {
+        return Ok(format!("All {} wiki entity and concept pages are in the page shape.", all.len()));
+    }
+    let auto: Vec<&str> = out_of.iter().filter(|r| r.auto).map(|r| r.path.as_str()).collect();
+    let mut out = vec![format!(
+        "{} of {} pages aren't in the page shape: {} can be reshaped by itself (reshape_pages), {} need the user first.",
+        out_of.len(),
+        all.len(),
+        auto.len(),
+        out_of.len() - auto.len()
+    )];
+    for r in out_of.iter().filter(|r| !r.auto) {
+        let why = if r.report.broken.is_empty() {
+            r.report.reasons.join("; ")
+        } else {
+            format!("can't be reshaped: {}", r.report.broken.join("; "))
+        };
+        out.push(format!("- {}: {why}", r.path));
+    }
+    if !auto.is_empty() {
+        out.push(format!(
+            "By itself: {}{}",
+            auto.iter().take(30).copied().collect::<Vec<_>>().join(", "),
+            if auto.len() > 30 { ", …" } else { "" }
+        ));
+    }
+    Ok(out.join("\n"))
 }
 
 fn lint_tool(ctx: &Ctx, a: LintArgs) -> Result<String, String> {

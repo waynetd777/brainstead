@@ -92,7 +92,8 @@ export function decisions(r: LintReport | null | undefined): number {
 /** Every safe fix in the report, as health_fix takes them. */
 export function safeFixes(r: LintReport | null | undefined): HealthFix[] {
   if (!r) return [];
-  return r.checks.flatMap((c) => c.items.filter((i) => i.safe && i.page).map((i) => fixOf(c.id, i)));
+  // Reshaping pages is its own action (Reshape pages), recorded in Changes rather than undone with ⌘Z.
+  return r.checks.filter((c) => c.id !== "page-shape").flatMap((c) => c.items.filter((i) => i.safe && i.page).map((i) => fixOf(c.id, i)));
 }
 
 export const fixOf = (check: string, i: LintItem): HealthFix => ({ check, page: i.page!, name: i.name, detail: i.detail });

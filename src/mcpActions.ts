@@ -627,7 +627,12 @@ async function changesTool(a: Args): Promise<string> {
     return [
       heldRows.length ? `${heldRows.length} held for the user:` : "Nothing held.",
       ...byRun(heldRows).flatMap((g) => [`Run “${g.label}” (group ${g.group}):`, ...g.rows.map(line)]),
-      ...(made.length ? ["Made lately (newest first; revert undoes one):", ...made.map(line)] : []),
+      ...(made.length
+        ? [
+            "Made lately (newest first; revert undoes one, revert_run a whole run by its group):",
+            ...byRun(made).flatMap((g) => [`Run “${g.label}” (group ${g.group}):`, ...g.rows.map(line)]),
+          ]
+        : []),
     ].join("\n");
   }
   if (action === "history") {
@@ -655,6 +660,13 @@ async function changesTool(a: Args): Promise<string> {
     const m = action === "accept_run" ? await api.changesAcceptAll(group, true) : await api.changesRejectAll(group);
     noted(`${action === "accept_run" ? "accepted" : "rejected"} ${m.done} held change${m.done === 1 ? "" : "s"}`);
     return `${action === "accept_run" ? "Accepted" : "Rejected"} ${m.done}.${m.failed.length ? ` Couldn't: ${m.failed.join("; ")}` : ""}`;
+  }
+  if (action === "revert_run") {
+    const group = str(a, "group");
+    if (!group) throw new Error("Which run? Give its group from list.");
+    const m = await api.changesRevertAll(group);
+    noted(`reverted ${m.done} change${m.done === 1 ? "" : "s"} from a run`);
+    return `Reverted ${m.done}.${m.failed.length ? ` Left as they are (edited since): ${m.failed.join("; ")}` : ""}`;
   }
   if (!id) throw new Error("Which change? Give its id from the list.");
   if (action === "show") {
@@ -944,7 +956,11 @@ async function healthFix(a: Args): Promise<string> {
   if (!r) throw new Error("Knowledge health has no report yet; try again in a moment.");
   const all = safeFixes(r);
   const wanted = Array.isArray(a.items) ? (a.items as unknown[]).map(String) : null;
-  const fixes = wanted ? r.checks.flatMap((c) => c.items.filter((i) => i.safe && wanted.includes(i.text)).map((i) => fixOf(c.id, i))) : all;
+  const fixes = wanted
+    ? r.checks
+        .filter((c) => c.id !== "page-shape")
+        .flatMap((c) => c.items.filter((i) => i.safe && wanted.includes(i.text)).map((i) => fixOf(c.id, i)))
+    : all;
   if (!fixes.length)
     return wanted
       ? "None of those items has a safe fix. lint lists the issues; the ones marked safe can be fixed here."
@@ -952,6 +968,20 @@ async function healthFix(a: Args): Promise<string> {
   const said = await api.healthFix(fixes);
   told(`fixed ${fixes.length} Knowledge health issue${fixes.length === 1 ? "" : "s"}`);
   return `${said} ⌘Z in the app undoes it.`;
+}
+
+/** reshape_pages: Reshape pages, as Knowledge health's Page shape check does it. */
+async function reshapePages(a: Args): Promise<string> {
+  const pages = Array.isArray(a.pages) ? (a.pages as unknown[]).map(String).filter((p) => p.trim()) : null;
+  const r = await api.healthReshape(pages?.length ? pages : null);
+  told(`reshaped ${r.applied} wiki page${r.applied === 1 ? "" : "s"}`);
+  return [
+    `Reshaped ${r.applied} page${r.applied === 1 ? "" : "s"}, each a change in Changes (run group ${r.run}; changes revert_run undoes them all).`,
+    r.failed.length ? `Couldn't: ${r.failed.join("; ")}` : "",
+    r.left ? `${r.left} page${r.left === 1 ? "" : "s"} need the user first; page_shape says why.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 async function fixName(a: Args): Promise<string> {
@@ -1163,6 +1193,7 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   "run.status": runStatus,
   "run.stop": stopRun,
   "health.fix": healthFix,
+  "health.reshape": reshapePages,
   fix_name: fixName,
   trash: trash,
   bookmarks: bookmarks,
