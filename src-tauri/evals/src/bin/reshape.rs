@@ -9,7 +9,8 @@
 //!     cargo run -q -p brainstead-evals --bin reshape -- --vault <copy> --report <dir>
 //!
 //! Writes `<dir>/report.md` (counts, every page that needs the user with why, 20 pages it
-//! would reshape by itself as diffs to check) and `<dir>/report.json` (every page).
+//! would reshape by itself as diffs to check) and `<dir>/report.json` (every page). With
+//! `--pages <dir>`, also writes each page it would change, reshaped, under that folder.
 
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
@@ -63,6 +64,11 @@ fn main() {
         eprintln!("usage: reshape --vault <copy of a vault> --report <dir>");
         std::process::exit(2);
     };
+    let pages_out = arg(&args, "--pages");
+    if pages_out.as_deref().is_some_and(|p| p.starts_with(&vault)) {
+        eprintln!("--pages must be outside the vault");
+        std::process::exit(2);
+    }
     let started = Instant::now();
     let files: Vec<String> =
         walkdir::WalkDir::new(&vault).into_iter().flatten().filter(|e| e.file_type().is_file()).map(|e| rel(&vault, e.path())).collect();
@@ -80,6 +86,11 @@ fn main() {
         };
         let (new, report) = pageshape::reshape(&text, &is_source);
         let in_shape = new == text && report.broken.is_empty();
+        if let (false, Some(dir)) = (in_shape, &pages_out) {
+            let to = dir.join(p.as_str());
+            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+            std::fs::write(to, &new).unwrap();
+        }
         if !in_shape {
             diffs.insert(p.to_string(), (text, new));
         }

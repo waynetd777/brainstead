@@ -238,3 +238,4 @@
 {"commit": "1d32de56", "detail": "D-20261006-09 - No archive split for long wiki pages", "id": "j-20261006-165348-e472", "kind": "decision-ref", "ts": "2026-10-06T16:53:48Z", "who": "waynetd777@users.noreply.github.com"}
 {"commit": "1d32de56", "detail": "D-20261006-10 - Missing Current state sections written now with Haiku", "id": "j-20261006-165349-957d", "kind": "decision-ref", "ts": "2026-10-06T16:53:49Z", "who": "waynetd777@users.noreply.github.com"}
 {"commit": "1d32de56", "detail": "D-20261006-11 - Timeline entry source is a visible Source line", "id": "j-20261006-165349-60ce", "kind": "decision-ref", "ts": "2026-10-06T16:53:49Z", "who": "waynetd777@users.noreply.github.com"}
+{"commit": "763de0df", "detail": "D-20261006-12 - Dated summing headings become Current state with an As of line", "id": "j-20261006-172226-e241", "kind": "decision-ref", "ts": "2026-10-06T17:22:26Z", "who": "waynetd777@users.noreply.github.com"}

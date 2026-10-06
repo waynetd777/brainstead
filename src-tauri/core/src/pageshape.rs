@@ -197,14 +197,25 @@ fn name(heading: &str) -> String {
     heading.trim().trim_end_matches([':', '.']).trim().to_lowercase()
 }
 
-/// Whether the heading is one of `names`, or starts with one followed by more words (`Current
-/// state (as of 3 Oct)`): Some(true) for exactly, Some(false) for with more.
+/// Whether the heading is one of `names`, or starts with one and then a bracket or separator
+/// (`Status (Apr 2026)`, `Status — Apr 2026`; not `Status of teams`): Some(true) for exactly,
+/// Some(false) for with more.
 fn named(heading: &str, names: &[&str]) -> Option<bool> {
     let n = name(heading);
     if names.contains(&n.as_str()) {
         return Some(true);
     }
-    names.iter().any(|s| n.strip_prefix(s).is_some_and(|r| r.starts_with([' ', '(', '—', '–', '-', ':', ',']))).then_some(false)
+    names.iter().any(|s| n.strip_prefix(s).is_some_and(|r| r.trim_start().starts_with(['(', '—', '–', '-', ':', ',']))).then_some(false)
+}
+
+/// A summing-up heading's words after its name, as an "As of …" line (`Status (Apr 2026)`:
+/// `As of Apr 2026.`), when they say when.
+fn as_of(heading: &str) -> Option<String> {
+    let h = heading.trim();
+    let n = SUMMING.iter().filter(|s| h.to_lowercase().starts_with(*s)).map(|s| s.len()).max()?;
+    let rest = tidy(&h[n..].replace(['(', ')'], " "));
+    let rest = rest.strip_prefix("as of ").or_else(|| rest.strip_prefix("As of ")).unwrap_or(&rest);
+    (!rest.is_empty() && !dates_in(rest).is_empty()).then(|| format!("As of {}.", rest.trim_end_matches('.')))
 }
 
 pub fn classify(heading: &str) -> Kind {
@@ -600,7 +611,16 @@ fn reshape_unchecked(page: &str, is_source: &dyn Fn(&str) -> bool) -> (String, R
         let (h, u) = &mut summing[0];
         let old = u.text.lines().next().unwrap_or("").to_string();
         if named(h, SUMMING) == Some(false) {
-            r.reasons.push(format!("the summing-up heading has more words than its name: {old}"));
+            // Status (Apr 2026): Current state, its date the first line under it.
+            match as_of(h) {
+                Some(line) => {
+                    let new = format!("## {CURRENT_STATE}");
+                    u.text = format!("{new}\n\n{line}\n{}", u.text[old.len()..].strip_prefix('\n').unwrap_or(&u.text[old.len()..]));
+                    r.headings.push((old, new));
+                    r.added.push(line);
+                }
+                None => r.reasons.push(format!("the summing-up heading has more words than its name: {old}")),
+            }
         } else if old != format!("## {CURRENT_STATE}") {
             let new = format!("## {CURRENT_STATE}");
             u.text = format!("{new}{}", &u.text[old.len()..]);
@@ -1009,6 +1029,18 @@ mod tests {
     }
 
     #[test]
+    fn a_dated_summing_heading_becomes_current_state_with_its_date_under_it() {
+        let page = "# Acme\n\nA supplier.\n\n## Status (May 2026) — Hard blocker\n\nWaiting on legal.\n\n## Architecture\n\nx\n";
+        let (new, r) = reshape(page, &is_source);
+        assert!(r.auto(), "{r:?}");
+        assert!(new.contains("## Current state\n\nAs of May 2026 — Hard blocker.\n\nWaiting on legal.\n"), "{new}");
+        assert_eq!(as_of("Current state (w/e 18 Sep 2026)").as_deref(), Some("As of w/e 18 Sep 2026."));
+        assert_eq!(as_of("Current state (as of 3 Oct 2026)").as_deref(), Some("As of 3 Oct 2026."));
+        assert_eq!(as_of("Status — needs work"), None);
+        assert!(!reshape("# A\n\n## Status — needs work\n\nx\n", &is_source).1.auto());
+    }
+
+    #[test]
     fn a_missing_year_comes_from_the_sections_around_it_when_they_agree() {
         let (new, r) = reshape(&fixture("no-year"), &is_source);
         assert!(r.auto(), "{r:?}");
@@ -1169,6 +1201,7 @@ mod tests {
         assert_eq!(classify("Timeline"), Kind::Timeline);
         assert!(matches!(classify("2 Oct 2026 — Steerco"), Kind::Dated(_)));
         assert_eq!(classify("Statuses of teams"), Kind::Topical);
+        assert_eq!(classify("Status of teams"), Kind::Topical);
     }
 
     #[test]
