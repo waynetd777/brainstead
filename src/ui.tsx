@@ -101,19 +101,27 @@ export function useDebounced<T>(value: T, ms = SEARCH_DEBOUNCE_MS): T {
 /** Tooltips everywhere, styled like the app's popovers in place of macOS's plain ones. Any element
  *  with a title (or data-tip, or an icon-only button's aria-label) gets one: the title moves to
  *  data-tip so the native tooltip doesn't show as well. Shown after a short pause, below the
- *  element (above it near the bottom of the window), or beside it in the sidebar; gone on leaving,
+ *  element (above it near the bottom of the window; under the pointer on a wide one, such as a row), or beside it in the sidebar; gone on leaving,
  *  clicking or scrolling. */
+/** Wider than this, a tooltip is placed under the pointer rather than at the element's middle. */
+const WIDE = 240;
+
 export function Tooltips() {
   const [tip, setTip] = useState<{ text: string; x: number; y: number; side: "below" | "above" | "right" } | null>(null);
   useEffect(() => {
     let timer: number | undefined;
     let el: HTMLElement | null = null;
+    let pointer = 0;
+    const move = (e: MouseEvent) => {
+      pointer = e.clientX;
+    };
     const hide = () => {
       window.clearTimeout(timer);
       el = null;
       setTip(null);
     };
     const over = (e: MouseEvent) => {
+      pointer = e.clientX;
       const target = e.target as HTMLElement;
       const t = (target.closest?.("[title], [data-tip]") ??
         target.closest?.("button[aria-label], [role=button][aria-label]")) as HTMLElement | null;
@@ -130,19 +138,23 @@ export function Tooltips() {
       timer = window.setTimeout(() => {
         if (el !== t || !t.isConnected || document.documentElement.dataset.scene) return; // none in screenshots
         const r = t.getBoundingClientRect();
-        const x = Math.max(150, Math.min(r.left + r.width / 2, window.innerWidth - 150));
+        // A wide element (a row) gets its tip where the pointer is, not at its middle.
+        const at = r.width > WIDE ? pointer : r.left + r.width / 2;
+        const x = Math.max(150, Math.min(at, window.innerWidth - 150));
         if (t.closest(".side")) setTip({ text, side: "right", x: r.right + 8, y: r.top + r.height / 2 });
         else if (r.bottom + 44 > window.innerHeight) setTip({ text, side: "above", x, y: r.top - 6 });
         else setTip({ text, side: "below", x, y: r.bottom + 6 });
       }, 450);
     };
     document.addEventListener("mouseover", over);
+    document.addEventListener("mousemove", move, { passive: true });
     document.addEventListener("mousedown", hide, true);
     document.addEventListener("scroll", hide, true);
     window.addEventListener("blur", hide);
     return () => {
       hide();
       document.removeEventListener("mouseover", over);
+      document.removeEventListener("mousemove", move);
       document.removeEventListener("mousedown", hide, true);
       document.removeEventListener("scroll", hide, true);
       window.removeEventListener("blur", hide);
