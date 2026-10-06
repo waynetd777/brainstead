@@ -257,6 +257,12 @@ static FORMS: LazyLock<Vec<(Regex, Reader)>> = LazyLock::new(|| {
             let y = c[1].parse().ok()?;
             (1..=12).contains(&m).then_some(When::Month(Some(y), m))
         }),
+        // Sep–Oct 2026: the first month, a year earlier when the range crosses one
+        (r(format!(r"\b{MON}{DASH}{MON},?\s+(\d{{4}})\b")), |c| {
+            let (m1, m2) = (month_no(&c[1]), month_no(&c[2]));
+            let y: i32 = c[3].parse().ok()?;
+            Some(When::Month(Some(if m1 > m2 { y - 1 } else { y }), m1))
+        }),
         // Week of 29 Sep – 3 Oct 2026: the first day, a year earlier when the range crosses one
         (r(format!(r"{PRE}{DAY}\s+{MON}{DASH}{DAY}\s+{MON},?\s+(\d{{4}})\b")), |c| {
             let (m1, m2): (u32, u32) = (month_no(&c[2]), month_no(&c[4]));
@@ -327,10 +333,14 @@ pub fn read_date(heading: &str) -> Option<HeadingDate> {
     let h = heading.trim();
     let found = dates_in(h);
     let at_start = found.iter().copied().find(|f| f.start == 0);
+    // A parenthesis that ends the heading and holds the date alone, or first before a comma:
+    // `(3 Oct)`, `(3 Oct, via Lena)`; not `(25 Sep workstream update)`.
     let in_paren = found.iter().copied().find(|f| {
-        let before = &h[..f.start];
-        let open = before.rfind('(');
-        open.is_some_and(|o| !before[o..].contains(')')) && h[f.end..].trim_end().ends_with(')') && !h[f.end..].contains('(')
+        let after = h[f.end..].trim_start();
+        h[..f.start].trim_end().ends_with('(')
+            && (after.starts_with(')') || after.starts_with([',', ';']))
+            && after.trim_end().ends_with(')')
+            && !after.contains('(')
     });
     let at_end =
         found.iter().copied().find(|f| h[f.end..].trim().is_empty() && f.start > 0 && h[..f.start].ends_with(|c: char| SEP.contains(&c)));
@@ -843,6 +853,29 @@ pub fn check(old: &str, new: &str, report: &Report, is_source: &dyn Fn(&str) -> 
     out
 }
 
+/// The wiki pages that have the shape: entities and concepts (summaries are left as they are).
+pub fn shaped(rel: &str) -> bool {
+    (rel.starts_with("wiki/entities/") || rel.starts_with("wiki/concepts/")) && rel.ends_with(".md")
+}
+
+/// Which link targets are vault notes or sources rather than wiki pages, from the vault's file
+/// paths (vault-relative, `/`-separated; anything in a dot folder is left out).
+pub struct Sources(HashMap<String, bool>);
+
+impl Sources {
+    pub fn from_paths<'a>(rels: impl IntoIterator<Item = &'a str>) -> Self {
+        let mut m: HashMap<String, bool> = HashMap::new();
+        for rel in rels.into_iter().filter(|r| !r.split('/').any(|c| c.starts_with('.'))) {
+            *m.entry(crate::links::key(rel)).or_default() |= !rel.starts_with("wiki/");
+        }
+        Sources(m)
+    }
+
+    pub fn is_source(&self, target: &str) -> bool {
+        self.0.get(&crate::links::key(target)).copied().unwrap_or(false)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1035,6 +1068,22 @@ mod tests {
     }
 
     #[test]
+    fn sources_are_files_outside_the_wiki() {
+        let s = Sources::from_paths([
+            "wiki/entities/Lena.md",
+            "Meeting. Steerco - 2026-10-02.md",
+            "sources/Plan.pdf",
+            ".trash/Old.md",
+            "wiki/summaries/Plan.pdf.md",
+        ]);
+        assert!(s.is_source("Meeting. Steerco - 2026-10-02"));
+        assert!(s.is_source("Plan.pdf"));
+        assert!(!s.is_source("Lena"));
+        assert!(!s.is_source("Old"));
+        assert!(!s.is_source("Missing"));
+    }
+
+    #[test]
     fn dates_in_every_heading_form() {
         let cases = [
             ("2026-10-02 — Steerco", "2026-10-02", "Steerco"),
@@ -1063,6 +1112,10 @@ mod tests {
             ("Jan 2027 — Planning (30 Dec)", "2026-12-30", "Planning"),
             ("2026-10-02", "2026-10-02", ""),
             ("May 2026 — Kick-off", "2026-05", "Kick-off"),
+            ("Sep–Oct 2026 — Landing zone", "2026-09", "Landing zone"),
+            ("Dec 2025 – Jan 2026 — Planning", "2025-12", "Jan 2026 — Planning"),
+            ("Oct 2026 — Status in the 2 Oct dashboard (25 Sep update)", "2026-10", "Status in the 2 Oct dashboard (25 Sep update)"),
+            ("May 2026 — RFC (superseded 2026-09-08, see below)", "2026-05", "RFC (superseded 2026-09-08, see below)"),
         ];
         for (h, iso, title) in cases {
             assert_eq!(date(h), (Some(iso.to_string()), title.to_string()), "{h}");

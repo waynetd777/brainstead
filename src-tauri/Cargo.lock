@@ -416,6 +416,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "similar",
  "tempfile",
  "walkdir",
 ]
