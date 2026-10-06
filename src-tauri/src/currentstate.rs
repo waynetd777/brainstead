@@ -5,7 +5,7 @@
 //! Write Current state (D-20261006-10): for wiki pages with a Timeline but no Current state, the
 //! cheap model writes one from the page's opening and newest entries only (core pageshape), each
 //! checked and made as a change in one Changes run, with one `log.md` line for the run. A sample
-//! of a few pages first, then the rest; it runs in the background and can be stopped.
+//! of a few pages first, then the rest; it runs in the background, four pages at once, and can be stopped.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -22,6 +22,8 @@ use crate::AppState;
 pub const RUN: &str = "current-state-";
 /// What the model sees of a page.
 const BUDGET: usize = 6_000;
+/// Pages written at once: each is its own short model call.
+const AT_ONCE: usize = 4;
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
 static STOP: AtomicBool = AtomicBool::new(false);
@@ -92,23 +94,41 @@ pub fn start(app: &AppHandle, pages: Option<Vec<String>>, limit: Option<usize>) 
     if let Some(n) = limit {
         todo.truncate(n);
     }
-    let mut l =
+    let l =
         Last { running: true, run: format!("{RUN}{}", proposals::new_id()), total: todo.len(), model: model(app), ..Default::default() };
     save(app, &l);
+    let (run, model) = (l.run.clone(), l.model.clone());
+    let last = std::sync::Arc::new(std::sync::Mutex::new(l));
+    let queue = std::sync::Arc::new(std::sync::Mutex::new(todo.into_iter().rev().collect::<Vec<_>>()));
     let app = app.clone();
     std::thread::spawn(move || {
-        for page in &todo {
-            if STOP.load(Ordering::SeqCst) {
-                l.error = Some("Stopped.".into());
-                break;
-            }
-            match one(&app, &root, page, &l.run, &l.model) {
-                Ok(true) => l.written += 1,
-                Ok(false) => l.nothing += 1,
-                Err(e) => l.failed.push(format!("{page}: {e}")),
-            }
-            l.done += 1;
-            save(&app, &l);
+        let workers: Vec<_> = (0..AT_ONCE)
+            .map(|w| {
+                let (app, root, run, model, last, queue) =
+                    (app.clone(), root.clone(), run.clone(), model.clone(), last.clone(), queue.clone());
+                std::thread::spawn(move || loop {
+                    if STOP.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    let Some(page) = queue.lock().unwrap().pop() else { break };
+                    let got = one(&app, &root, &page, &run, &model, w);
+                    let mut l = last.lock().unwrap();
+                    match got {
+                        Ok(true) => l.written += 1,
+                        Ok(false) => l.nothing += 1,
+                        Err(e) => l.failed.push(format!("{page}: {e}")),
+                    }
+                    l.done += 1;
+                    save(&app, &l);
+                })
+            })
+            .collect();
+        for w in workers {
+            let _ = w.join();
+        }
+        let mut l = last.lock().unwrap();
+        if STOP.load(Ordering::SeqCst) && l.done < l.total {
+            l.error = Some("Stopped.".into());
         }
         if l.written > 0 {
             let n = l.written;
@@ -129,14 +149,14 @@ pub fn start(app: &AppHandle, pages: Option<Vec<String>>, limit: Option<usize>) 
 
 /// One page: asks the model, checks its answer and makes the change. False when the model had
 /// nothing to say about how things stand now.
-fn one(app: &AppHandle, root: &std::path::Path, page: &str, run: &str, model: &str) -> Result<bool, String> {
+fn one(app: &AppHandle, root: &std::path::Path, page: &str, run: &str, model: &str, worker: usize) -> Result<bool, String> {
     let before = std::fs::read_to_string(root.join(page)).map_err(|e| e.to_string())?;
     if !pageshape::wants_current_state(&before) {
         return Ok(false);
     }
     let out = crate::ask::run(
         app,
-        "current-state",
+        &format!("current-state-{worker}"),
         &pageshape::current_state_prompt(page, &before, BUDGET),
         model,
         None,
@@ -171,7 +191,9 @@ fn one(app: &AppHandle, root: &std::path::Path, page: &str, run: &str, model: &s
 pub fn stop(app: &AppHandle) {
     if RUNNING.load(Ordering::SeqCst) {
         STOP.store(true, Ordering::SeqCst);
-        app.state::<std::sync::Arc<crate::ask::Running>>().cancel("current-state");
+        for w in 0..AT_ONCE {
+            app.state::<std::sync::Arc<crate::ask::Running>>().cancel(&format!("current-state-{w}"));
+        }
     }
 }
 
