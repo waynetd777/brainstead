@@ -130,6 +130,7 @@ describe("help topics", () => {
       "A note",
       "⌘K",
       "Quick capture",
+      "Menu bar window",
       "Lists",
       "Task lists",
       "Inbox",

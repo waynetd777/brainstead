@@ -277,7 +277,7 @@ pub struct Reshaped {
 /// Reshape pages (D-20261006-06): every page not in the shape that can be reshaped by itself,
 /// or the pages named (by path or name, reshaped as proposed even when they'd need the user), each
 /// one change in Changes in one run, revertable alone or together. One `log.md` line for the run.
-fn health_reshape_now(app: AppHandle, pages: Option<Vec<String>>) -> Res<Reshaped> {
+fn health_reshape_now(app: AppHandle, pages: Option<Vec<String>>, unattended: bool) -> Res<Reshaped> {
     use brainstead_core::pageshape;
     writable(&app.state::<AppState>())?;
     let root = root(&app)?;
@@ -290,7 +290,13 @@ fn health_reshape_now(app: AppHandle, pages: Option<Vec<String>>) -> Res<Reshape
         })
     };
     let run = format!("{}{}", crate::changes::RESHAPE_RUN, proposals::new_id());
-    let origin = Origin { kind: "lint".into(), label: Some("Reshape pages".into()), run: Some(run.clone()), ..Default::default() };
+    let origin = Origin {
+        kind: "lint".into(),
+        label: Some("Reshape pages".into()),
+        run: Some(run.clone()),
+        trigger: unattended.then(|| "scheduled".into()),
+        ..Default::default()
+    };
     let mut done = Reshaped { run, applied: 0, failed: vec![], left: 0 };
     let mut found = 0;
     for (r, new) in pageshape::survey(&root) {
@@ -521,8 +527,8 @@ pub async fn health_fix(app: AppHandle, fixes: Vec<Fix>) -> Res<String> {
 }
 
 #[tauri::command]
-pub async fn health_reshape(app: AppHandle, pages: Option<Vec<String>>) -> Res<Reshaped> {
-    blocking(move || health_reshape_now(app, pages)).await
+pub async fn health_reshape(app: AppHandle, pages: Option<Vec<String>>, unattended: Option<bool>) -> Res<Reshaped> {
+    blocking(move || health_reshape_now(app, pages, unattended.unwrap_or(false))).await
 }
 
 #[tauri::command]

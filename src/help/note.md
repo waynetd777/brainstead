@@ -28,10 +28,10 @@ Press `⌘S`, or click **Save** or the **Unsaved · ⌘S** pill. Brainstead keep
 
 Leaving a note with unsaved changes asks first: **Stay**, **Keep as draft**, **Discard changes** or **Save**.
 
+If the file changes in another app, a change on other lines is merged in, and saving keeps both. A change on the same lines shows a banner with **Reload**, **Keep mine** (keeps your text as a draft, the file untouched) and **Compare**, which marks the lines that differ on each side. **Reload** asks before dropping your unsaved changes. Nothing is overwritten.
+
 ## System notes
 Some notes are system notes that other parts of Brainstead rely on, such as the To Do list and the Scratchpad; [Trash](help:trash) lists them. Their header, the "This is a system note" callout at the top, can't be changed in Brainstead's editor. It shows a lock, and the rest of the note edits as usual. Other apps can still change it; [Knowledge health](app:health) then offers to put it back.
-
-If the file changes in another app, a change on other lines is merged in, and saving keeps both. A change on the same lines shows a banner with **Reload**, **Keep mine** (keeps your text as a draft, the file untouched) and **Compare**, which marks the lines that differ on each side. **Reload** asks before dropping your unsaved changes. Nothing is overwritten.
 
 ## Find and replace
 Press `⌘F` to open the find bar under the top bar. Type to find in the note; the bar shows which match you're on. `↩` goes to the next match, `⇧↩` to the previous one, and `Esc` closes the bar.
@@ -75,6 +75,7 @@ Click the speaker on the top bar, or press `⇧⌘P`, to hear the note read alou
 Beside the note:
 
 - **Linked from**: the notes and pages that link here, with the line that links.
+- **Agent changes**, when an assistant or a run changed the note: the latest changes, each with **Revert**; click one to see it in [Changes](help:review).
 - **Open tasks in this note**, to tick from the side.
 - **Outline**: the note's headings; click one to jump to it.
 - On a 1-1 note named like `1-1. Maya - 2026-10-02.md`, **Last time with Maya**: the previous 1-1 and the follow-ups still open with them (tasks tagged `#followup/maya`).

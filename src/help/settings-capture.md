@@ -14,12 +14,12 @@ Two browser extensions send what's open in Outlook on the web or Teams into the 
 Captures are refused while the vault is read-only; turn that off in [Settings › Vault](app:settings/vault).
 
 ## Install the extensions
-1. In Chrome, Edge or Brave, open `chrome://extensions` and switch on Developer mode.
+1. In Chrome, Edge, Brave, Vivaldi or Chromium, open `chrome://extensions` and switch on Developer mode.
 2. Click Load unpacked and choose an extension's folder. **Show in Finder** on its row shows the folder.
 3. Pin the extension to the toolbar.
 4. Open an email thread or a Teams chat and click the extension's button.
 
-After Brainstead is updated, open this page (it refreshes the extensions' folder) and click the reload button on the extension's card in `chrome://extensions`. There's nothing to copy or paste. The line under the steps lists the browsers that can reach Brainstead; if none is listed, install Chrome, Edge or Brave and open this page again.
+After Brainstead is updated, open this page (it refreshes the extensions' folder) and click the reload button on the extension's card in `chrome://extensions`. There's nothing to copy or paste. The line under the steps lists the browsers that can reach Brainstead; if none is listed, install one of them and open this page again.
 
 ## Check recent captures
 **Recent captures** lists what arrived, or what was refused and why. **Open** opens a captured source. To ingest each one as it arrives, switch on **Ingest new sources as they arrive** in [Settings › AI assistants](app:settings/assistants).

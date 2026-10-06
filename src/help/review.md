@@ -46,7 +46,7 @@ Held changes are at the top, under **Held for you**, by run, each with why it wa
 - **Reject** (`R`) turns it down and leaves the page as it is.
 - **Edit before accepting** opens the page with the change as an unsaved draft; click **Restore**, edit, then save. If the page already has unsaved edits in Brainstead, it says so and leaves them alone: save or discard them first. Revert can still take the change's lines out once you've saved.
 
-**Accept all** and **Reject all** on a run do every held change in it; `⌘↩` accepts the run of the change you're on. While a run is being accepted, its buttons are off until it's done. The keys do nothing while a dialog is open or you're typing in a field.
+**Accept all** and **Reject all** (after asking) on a run do every held change in it; `⌘↩` accepts the run of the change you're on. While a run is being accepted, its buttons are off until it's done. The keys do nothing while a dialog is open or you're typing in a field.
 
 A held change keeps what the assistant asked for (a section's new text, a find and replace, a task to add), not a copy of the page. So it still applies after other changes to the page. If what it changes isn't on the page any more, it says so, and you can reject it or edit the page yourself.
 

@@ -39,7 +39,7 @@ Click the speaker on the top bar, or press ⇧⌘P, and Brainstead reads the not
 - **Callouts** (`> [!tip] Title`) are drawn as tinted boxes with an icon, folding with `[!tip]-` or `[!tip]+`.
 - **Mermaid** diagrams (with pan and zoom), **KaTeX** maths (`$…$` and `$$…$$`; an amount like $5 isn't taken for maths), highlighted code and `==highlights==` in colours.
 
-Plain queries work in every note. Scripts in queries (`dataviewjs` blocks, inline `$=` and Tasks' `filter by function`) run only in your own notes: not in sources, wiki pages, saved chats, the summary notes or notes an assistant wrote. A note an assistant wrote carries `created-by: assistant`; delete that property to trust it.
+Plain queries work in every note. Scripts in queries (`dataviewjs` blocks, inline `$=` and Tasks' `filter by function`) run only in your own notes: not in sources, wiki pages, templates, saved chats, the summary notes or notes an assistant wrote. A note an assistant wrote carries `created-by: assistant`; delete that property to trust it.
 
 ## Templates
 

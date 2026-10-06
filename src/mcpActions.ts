@@ -995,7 +995,7 @@ async function healthIgnore(a: Args): Promise<string> {
 /** reshape_pages: Reshape pages, as Knowledge health's Page shape check does it. */
 async function reshapePages(a: Args): Promise<string> {
   const pages = Array.isArray(a.pages) ? (a.pages as unknown[]).map(String).filter((p) => p.trim()) : null;
-  const r = await api.healthReshape(pages?.length ? pages : null);
+  const r = await api.healthReshape(pages?.length ? pages : null, a.unattended === true);
   told(`reshaped ${r.applied} wiki page${r.applied === 1 ? "" : "s"}`);
   return [
     `Reshaped ${r.applied} page${r.applied === 1 ? "" : "s"}, each a change in Changes (run group ${r.run}; changes revert_run undoes them all).`,
@@ -1017,7 +1017,7 @@ async function writeCurrentState(a: Args): Promise<string> {
   if (a.status === true) return said(await api.currentStateStatus());
   const pages = Array.isArray(a.pages) ? (a.pages as unknown[]).map(String).filter((p) => p.trim()) : null;
   const limit = typeof a.limit === "number" && a.limit > 0 ? Math.floor(a.limit) : null;
-  const ok = await api.currentStateStart(pages?.length ? pages : null, limit);
+  const ok = await api.currentStateStart(pages?.length ? pages : null, limit, a.unattended === true);
   if (!ok) return `Write Current state is running already. ${said(await api.currentStateStatus())}`;
   told("started Write Current state");
   const r = await api.currentStateStatus();

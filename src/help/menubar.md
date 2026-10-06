@@ -18,6 +18,7 @@ The icon is plain when there's nothing to see. Three dots at its foot mean a run
 - Changes held for you and items in the Inbox, each opening its screen.
 - **Open at login**, the same switch as in [Settings › General](app:settings/general), shown when macOS can manage it for this copy of the app. If macOS asks you to approve it, System Settings opens at Login Items.
 - **Run the nightly check now**, which starts the check; the window stays open and says **Nightly check started**, or what went wrong.
+- At its foot, when the next daily or weekly summary is due, if they're scheduled.
 
 ## Its keys
 While the window is open: `⌘O` opens Brainstead, `⌘T` Today, `⌘J` Ask, `⌘,` Settings and `⌘Q` quits. They don't work while you're typing in the capture box.

@@ -15,7 +15,7 @@ Today (⌥⌘1) is what needs you now:
 - A capture box, the same as Quick capture.
 - **To process**: the Inbox to clarify, bookmarks to triage, wiki issues to decide, and the weekly review on its day.
 - **Weekly summary** and **Daily summary**: the most recent of each, folded to a line with its date and the next run until you open it. **Open note** goes to its heading.
-- **Changes held for you**, from the scheduled runs, and **Continue where you left off**: unsaved drafts first, then notes opened and changed lately.
+- **Changes held for you**, waiting in Changes for you to accept or reject, and **Continue where you left off**: unsaved drafts first, then notes opened and changed lately.
 
 A waiting-for row has **Draft nudge**, which drafts a short follow-up with Ask to copy into Outlook or Teams. Nothing is sent.
 

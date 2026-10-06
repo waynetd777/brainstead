@@ -11,7 +11,7 @@ Knowledge health checks the wiki and its sources whenever the vault changes. The
 The checks come in two groups.
 
 - **Wiki checks**: missing pages (linked but never written), broken sources, orphan pages (nothing links them), missing cross-links, stale `updated:` dates, unlogged writes (pages changed after `log.md` was last written), sources not yet ingested, and images nothing uses.
-- **More checks**: possible duplicates, stale pages others rely on, sources changed since they were cited, claims with no citation, system notes missing their header, and pages not in the page shape.
+- **More checks**: possible duplicates, stale pages others rely on, sources changed since they were cited, pages not in the page shape, pages with no Current state, claims with no citation (found by the [contradictions](app:contradictions) check), and system notes missing their header.
 
 A system note's header is the "This is a system note" callout at the top of the To Do list, the summaries' notes and the rest, which other parts of Brainstead look for. **Fix** puts it back as Brainstead last saw it.
 
@@ -37,7 +37,7 @@ Every entity and concept page has the same layout: the opening text, **Current s
 Source: [[Meeting. Orbit App Steerco - 2026-10-02]]
 ```
 
-**Pages not in the page shape** lists the pages laid out some other way. **Reshape pages** puts every page it can in the shape by itself, after asking: sections move whole, a dated heading such as "2 Oct 2026 — Steerco" becomes "2026-10-02 — Steerco", a summing-up section such as Status (Apr 2026) becomes Current state with "As of Apr 2026." under it, two entries from the same note on the same date become one, the dated summing-up sections of a page leave the newest as Current state and the rest in the Timeline, and two See also lists become one. No text is lost, and the result is checked before anything is written. Each page is one change in [Changes](app:review), in one run you can revert page by page or with **Revert all**.
+**Pages not in the page shape** lists the pages laid out some other way. **Reshape pages** puts every page it can in the shape by itself, after asking: sections move whole, a dated heading such as "2 Oct 2026 — Steerco" becomes "2026-10-02 — Steerco", a summing-up section such as Status (Apr 2026) becomes Current state with "As of Apr 2026." under it, two entries from the same note on the same date become one, the dated summing-up sections of a page leave the newest as Current state and the rest in the Timeline, and two See also lists become one. **Reshape** on a page's row does that page alone. No text is lost, and the result is checked before anything is written. Each page is one change in [Changes](app:review), in one run you can revert page by page or with **Revert all**.
 
 A page that needs you says why: a heading whose year it can't tell, two summing-up sections, two entries citing the same note on different dates, or text in the Timeline that isn't an entry. Fix what it says (usually a heading) and the page reshapes by itself; or **Reshape anyway** to take the proposed result as it is, which you can check and revert in Changes.
 

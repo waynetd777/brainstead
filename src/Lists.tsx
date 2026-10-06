@@ -551,7 +551,7 @@ async function importToSources(paths: string[]) {
     const bad = r.filter((x) => !x.path);
     if (ok.length === 1) toast(`Added “${ok[0].name}” to Sources`, { label: "Open", run: () => openDoc(ok[0].path!) });
     else if (ok.length > 1) toast(`Added ${ok.length} files to Sources`);
-    // Settings › Jobs & schedule: new sources are ingested as they arrive.
+    // Settings › AI assistants: new sources are ingested as they arrive.
     const added = ok.map((x) => x.path!).filter(ingestable);
     const toIngest = added.filter((p) => !isTranscriptPath(p));
     if (settings.get().ingestOnArrival && toIngest.length) ingest(toIngest);

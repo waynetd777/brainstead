@@ -49,4 +49,4 @@ In Edit and Source, **Page details** sits above the text:
 Each change goes into the page's text like any other edit. While it is unsaved a banner offers **Save** (`⌘S`) and **Discard**.
 
 ## Changes from the assistants
-Ingest, Ask and Knowledge health make their changes at once; each is listed in [Changes](app:review), where you can revert it. A few are held there for you instead: a scheduled run's change that fails a check, and any change that adds code that runs.
+Ingest, Ask and Knowledge health make their changes at once; each is listed in [Changes](app:review), where you can revert it. A few are held there for you instead: a scheduled run's change that fails a check, and any change to a template, to a system note's header or that adds code that runs.

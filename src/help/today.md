@@ -29,7 +29,7 @@ The box under the counts is the same as Quick capture. Type a task and press `â†
 The To process card on the right shows what your routine needs:
 
 - **Inbox to clarify** with its count and **Clarify**, which opens the [Inbox](app:inbox). It says the Inbox is clear when it is.
-- **Bookmarks to triage** when bookmarks are stale or missing, and **Wiki issues to decide** when Knowledge health has decisions for you.
+- **Bookmarks to triage** with their count and **Triage** when bookmarks are stale or missing, and **Wiki issues to decide** with their count and **Check**, which opens [Knowledge health](app:health), when it has issues only you can decide (not ones a safe fix mends, and not those in the checks it doesn't count).
 - **Weekly review day** with **Start** from the weekly review's time on its day until the end of the next day (Friday 16:00 unless you change it in [Settings â€º Jobs & schedule](app:settings/jobs)), or **Weekly review, paused** with **Carry on** while a review is paused. Either goes straight into the [Weekly review](app:weekly), past its start page.
 
 ## Read the daily and weekly summaries

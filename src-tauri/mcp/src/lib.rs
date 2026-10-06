@@ -28,10 +28,10 @@ const MAX_CHARS: usize = 30_000;
 const TODO_LIST: &str = "Me. To Do List.md";
 
 const INSTRUCTIONS: &str = "Brainstead's tools over the user's vault (notes, a wiki in wiki/, sources in sources/), covering what the app's screens do. \
-Read with search, read_section, backlinks, resolve_entity, list_tasks, list_inbox, list_projects, summary (the daily and weekly summaries: what the user did) and weekly_review; help answers questions about the app itself. \
+Read with search, read_section, backlinks, resolve_entity, list_tasks, list_inbox, list_projects, summary (the daily and weekly summaries: what the user did), weekly_review, lint, page_shape, facts, pending_sources, graph and activity; help answers questions about the app itself. \
 Changes to the vault's notes happen straight away, each recorded in Brainstead's Changes screen where the user can revert it: tasks (edit_task, move_task, create_task, delete_task), Inbox clarifying, projects (create_project, update_project), and prose, renames and deletes (edit_page, create_note, rename_note, trash_note). \
 A change to Templates/ (a rename or trash of a template too, or a rename whose link rewrites touch one), one that adds code that runs (a script, a Tasks function, a Templater tag), or one that changes a system note's header is always held for the user. \
-Other tools (bookmarks, saved searches, the weekly review's suggestions, Knowledge health fixes, fix_name) change things at once, undoable with ⌘Z in the app; runs record their own changes in Changes. \
+Other tools (bookmarks, saved searches, the weekly review's suggestions, fix_health, fix_name) change things at once, undoable with ⌘Z in the app; ignore_issue is undone with its show_again; runs, reshape_pages and write_current_state record their own changes in Changes. While the vault is read-only (app_status says) every change is refused until the user turns it off. \
 Change only what the user asked for. In a session nobody is watching (a loop, a scheduled agent), pass unattended: true on every call (every tool takes it): a change that fails a check is then held for the user instead, and for the rest of the session nothing held can be accepted and weekly_start_over and moving_over's retire are refused. \
 changes lists what was changed and what's held, and reverts one; it accepts a held change only when the user is there and only one held because a check failed: the user accepts the rest in the app. \
 Quote sources word for word in edit_page's quotes; a quote that isn't in its source is flagged. Tools marked as needing the app open Brainstead when it isn't running.";
@@ -263,7 +263,7 @@ pub fn tools() -> Vec<Value> {
             schema(json!({"page": page, "subject": {"type": "string"}, "attribute": {"type": "string"}}), &[])),
         tool("pending_sources", "Sources not yet in the wiki", Read, "Files in sources/ that no wiki page cites yet in its sources: property: notes, PDFs, Office files and images (whose text is read from the picture), each ready for start_run's ingest.", schema(json!({}), &[])),
         tool("lint", "Knowledge health report", Read,
-            "Knowledge health's checks on the wiki. Wiki checks: missing pages, broken sources, orphan pages, missing cross-links, stale updated: dates, unlogged writes, sources not yet ingested and images nothing uses. More checks: possible duplicates, stale pages others rely on, and sources changed since they were cited (claims with no citation show only in the app, after a contradictions check). For one page when given. Items with a safe fix can be fixed with fix_health.",
+            "Knowledge health's checks on the wiki. Wiki checks: missing pages, broken sources, orphan pages, missing cross-links, stale updated: dates, unlogged writes, sources not yet ingested and images nothing uses. More checks: possible duplicates, stale pages others rely on, sources changed since they were cited, pages not in the page shape (reshape_pages) and pages with no Current state (write_current_state); claims with no citation and system notes missing their header show only in the app. For one page when given. Items with a safe fix can be fixed with fix_health.",
             schema(json!({"page": page}), &[])),
         tool("help", "Brainstead's help", Read,
             "Brainstead's own help: how the app works and how to use it (screens, settings, shortcuts, getting-started guides). For questions about the app itself, not the vault. No arguments lists the topics; `topic` reads one (and `section` one part of it); `query` finds the best matching sections.",
@@ -437,7 +437,7 @@ pub fn tools() -> Vec<Value> {
             }), &[])),
         tool("list_transcripts", "Transcripts to write up", Read, "Teams meeting transcripts in Sources still without a meeting note, with what Brainstead guesses about each (needs the app).", schema(json!({}), &[])),
         tool("fix_health", "Fix Knowledge health issues", Change,
-            "Applies Knowledge health's safe fixes (needs the app): all of them, or the items named (their text as lint gives it). Undoable. Issues that need judgement aren't safe fixes: make those with edit_page.",
+            "Applies Knowledge health's safe fixes (needs the app): missing cross-links, stale updated: dates, unlogged writes' log lines and system notes' lost headers; all of them, or the items named (their text as lint gives it). Undoable. Page shape items are reshape_pages'. Issues that need judgement aren't safe fixes: make those with edit_page.",
             schema(json!({"items": {"type": "array", "items": {"type": "string"}}}), &[])),
         tool("ignore_issue", "Ignore a Knowledge health issue", Change,
             "Knowledge health's Ignore (needs the app): stops listing an issue that has no fix (its text as lint gives it) until its page changes; only when the user asked. With show_again, Show again: the ignored issues listed again, of one check (its id) or all. Ignored issues are left out of the app's count but lint still lists them.",

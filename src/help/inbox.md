@@ -12,7 +12,7 @@ The list has a band per source, in this order:
 
 - **Captures**: emails and Teams chats or transcripts captured from the browser with the capture extensions. They stay until you clarify them here.
 - **Scratchpad**: each thought captured to the Scratchpad (a `## 2026-10-03 09:15` block). It leaves when you clarify it, and its block is removed.
-- **To Do list › Other**: tasks under `#### Other` on the To Do list, where Quick capture puts them. A task leaves the Inbox once it has a project, a context or one of `#waiting-for`, `#someday-maybe` or `#followup`, or is done. Until then it stays off Next actions in [Tasks](app:tasks).
+- **To Do list › Other**: tasks under `#### Other` on the To Do list, where Quick capture puts them. A task leaves the Inbox once it has a project, a context or one of `#waiting-for`, `#someday-maybe` or `#followup`, or its box isn't empty any more (done, cancelled or in progress). Until then it stays off Next actions in [Tasks](app:tasks).
 
 The sidebar shows how many items are waiting.
 
@@ -22,7 +22,7 @@ Click an item, or move with `J` and `K` (or `↑` and `↓`), to open it on the 
 - `N` **Next action**: opens a form for the text, project, context, effort and due date. A next action needs a project or a context, so it lands on a list: on the To Do list with neither, it would be back in the Inbox. Until it has one, the form says so and **Save** stays off.
 - `P` **New project**: opens New project with the item as its name.
 - `W` **Waiting for**: the same form; the task gets `#waiting-for`.
-- `2` **Done now (under 2 min)**: you did it now; a task is ticked, a thought removed.
+- `2` **Done now (under 2 min)**: you did it now; a task is ticked, a thought removed, a capture taken out of the Inbox.
 - `S` **Someday / maybe**: becomes a task tagged `#someday-maybe`.
 - `R` **File as reference**: adds the text as a bullet at the end of a note you find, or makes a new note.
 - `⌫` **Delete**.

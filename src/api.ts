@@ -997,8 +997,8 @@ export const api = {
   healthReport: (fresh = false) => invoke<HealthView>("health_report", { fresh }),
   healthFix: (fixes: HealthFix[]) => invoke<string>("health_fix", { fixes }),
   /** Reshape pages: every page that can be reshaped by itself, or those named. */
-  healthReshape: (pages: string[] | null) =>
-    invoke<{ run: string; applied: number; failed: string[]; left: number }>("health_reshape", { pages }),
+  healthReshape: (pages: string[] | null, unattended = false) =>
+    invoke<{ run: string; applied: number; failed: string[]; left: number }>("health_reshape", { pages, unattended }),
   healthDismiss: (a: string, b: string) => invoke<void>("health_dismiss", { a, b }),
   /** Ignores an issue (its check and its line) until its page changes. */
   healthIgnore: (check: string, text: string) => invoke<void>("health_ignore", { check, text }),
@@ -1009,7 +1009,8 @@ export const api = {
   healthLinkGhost: (target: string, to: string, pages: string[]) => invoke<number>("health_link_ghost", { target, to, pages }),
   onChangesChanged: (f: () => void): Promise<UnlistenFn> => listen("changes-changed", () => f()),
   /** Write Current state: a run in the background on the pages named, or every page that wants one, at most `limit`. False when one is going. */
-  currentStateStart: (pages: string[] | null, limit: number | null) => invoke<boolean>("current_state_start", { pages, limit }),
+  currentStateStart: (pages: string[] | null, limit: number | null, unattended = false) =>
+    invoke<boolean>("current_state_start", { pages, limit, unattended }),
   currentStateStatus: () => invoke<CurrentStateRun>("current_state_status"),
   currentStateStop: () => invoke<void>("current_state_stop"),
   onCurrentStateChanged: (f: (r: CurrentStateRun) => void): Promise<UnlistenFn> =>

@@ -50,7 +50,7 @@ These pages are the user guide; the in-app help goes deeper on each screen. Keep
 | The index (SQLite, FTS5) | `index.db` there, rebuilt from the vault when its schema changes |
 | Drafts, undo, extracted PDF and Office text | `drafts/`, `undo.json`, `text/` |
 | Agent changes | `changes/<id>.json`, with the pages' texts before and after compressed in `changes/text/`, kept 90 days or 500 MB (Settings › AI assistants). `proposals-backup/` is the old review queue, moved in once and kept for one release |
-| Runs (ingest, reviews, nightly, contradictions) | `runs/`, `reviews/`, `nightly.json`, `contradictions/` |
+| Runs (ingest, reviews, nightly, contradictions, Write Current state) | `runs/`, `reviews/`, `nightly.json`, `contradictions/`, `current-state.json` |
 | Knowledge health's not-duplicates and daily counts | `health.json` |
 | Weekly review in progress | `weekly.json` |
 | The weekly review's prepared suggestions, by week, and its runs | `weekly-prep/` |
@@ -78,7 +78,7 @@ claude mcp add -s user brainstead -- "/Applications/Brainstead.app/Contents/MacO
 - Every other action (ticking a task, clarifying the Inbox, starting a run, reverting a change) is a request file in the app data folder's `bridge/`. The running app takes it up and hands it to the window, which runs it with the same functions its screens call (`src/mcpActions.ts`), so undo, `log.md`, the read-only switch and Templater behave as on screen.
 - The server opens the app when it isn't running.
 - Tools have titles and the four MCP hints, bad calls are JSON-RPC errors, and calls are limited to 120 a minute.
-- A new screen action gets an action in `src/mcpActions.ts`, a tool in `src-tauri/mcp/src/lib.rs` and its name in `ask::MCP_TOOLS`. A test in `src-tauri/mcp`, run by `make check`, keeps them in step.
+- A new screen action gets an action in `src/mcpActions.ts`, a tool in `src-tauri/mcp/src/lib.rs` and its name in `ask::MCP_TOOLS` (`src-tauri/core/src/ask.rs`). A test in `src-tauri/mcp`, run by `make check`, keeps the server's tools and that list in step.
 
 ## Read aloud
 

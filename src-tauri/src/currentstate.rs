@@ -74,8 +74,8 @@ fn model(app: &AppHandle) -> String {
 }
 
 /// Starts a run on `pages` (by path or name), or on every page that wants one, at most `limit`
-/// of them; false when one is going already.
-pub fn start(app: &AppHandle, pages: Option<Vec<String>>, limit: Option<usize>) -> Res<bool> {
+/// of them; false when one is going already. Unattended, a change that fails a check is held.
+pub fn start(app: &AppHandle, pages: Option<Vec<String>>, limit: Option<usize>, unattended: bool) -> Res<bool> {
     writable(&app.state::<AppState>())?;
     let root = app.state::<VaultService>().root().ok_or("No vault is open.".to_string())?;
     if RUNNING.swap(true, Ordering::SeqCst) {
@@ -111,7 +111,7 @@ pub fn start(app: &AppHandle, pages: Option<Vec<String>>, limit: Option<usize>) 
                         break;
                     }
                     let Some(page) = queue.lock().unwrap().pop() else { break };
-                    let got = one(&app, &root, &page, &run, &model, w);
+                    let got = one(&app, &root, &page, &run, &model, w, unattended);
                     let mut l = last.lock().unwrap();
                     match got {
                         Ok(true) => l.written += 1,
@@ -149,7 +149,15 @@ pub fn start(app: &AppHandle, pages: Option<Vec<String>>, limit: Option<usize>) 
 
 /// One page: asks the model, checks its answer and makes the change. False when the model had
 /// nothing to say about how things stand now.
-fn one(app: &AppHandle, root: &std::path::Path, page: &str, run: &str, model: &str, worker: usize) -> Result<bool, String> {
+fn one(
+    app: &AppHandle,
+    root: &std::path::Path,
+    page: &str,
+    run: &str,
+    model: &str,
+    worker: usize,
+    unattended: bool,
+) -> Result<bool, String> {
     let before = std::fs::read_to_string(root.join(page)).map_err(|e| e.to_string())?;
     if !pageshape::wants_current_state(&before) {
         return Ok(false);
@@ -176,7 +184,13 @@ fn one(app: &AppHandle, root: &std::path::Path, page: &str, run: &str, model: &s
         Err(why) => return Err(why),
     };
     let after = pageshape::with_current_state(&before, &text);
-    let origin = Origin { kind: "lint".into(), label: Some("Write Current state".into()), run: Some(run.into()), ..Default::default() };
+    let origin = Origin {
+        kind: "lint".into(),
+        label: Some("Write Current state".into()),
+        run: Some(run.into()),
+        trigger: unattended.then(|| "scheduled".into()),
+        ..Default::default()
+    };
     let mut s = crate::changes::Submit::new(
         page,
         Kind::Edit,
@@ -201,8 +215,8 @@ pub fn stop(app: &AppHandle) {
 }
 
 #[tauri::command]
-pub fn current_state_start(app: AppHandle, pages: Option<Vec<String>>, limit: Option<usize>) -> Res<bool> {
-    start(&app, pages, limit)
+pub fn current_state_start(app: AppHandle, pages: Option<Vec<String>>, limit: Option<usize>, unattended: Option<bool>) -> Res<bool> {
+    start(&app, pages, limit, unattended.unwrap_or(false))
 }
 
 #[tauri::command]

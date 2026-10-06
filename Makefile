@@ -43,7 +43,7 @@ fmt:
 	ruff check --fix && ruff format
 	python3 tools/license_headers.py
 
-## The workflow evals (ingest, meeting notes, contradictions, wiki questions, fix name) with real models, on a copy of the fixture vault: target/evals/report.md. Not part of check.
+## The workflow evals (ingest, meeting notes, contradictions, wiki questions, help questions, preparing the weekly review, fix name) with real models, on a copy of the fixture vault: target/evals/report.md. Not part of check.
 evals:
 	cd src-tauri && cargo run -q -p brainstead-evals -- $(EVALS)
 

@@ -14,7 +14,7 @@ The keys below work where their heading says. The quick capture shortcut is the 
 - `⌘N` — New note; `⌘↩` creates it
 - `⌘Z` — Undo the last change
 - `⌘[` `⌘]` — Back, forward
-- `⌥⌘1 … ⌥⌘9`, `⌥⌘0` — Today, Inbox, Tasks, Projects, Changes, Search, Ask, Notes, Wiki, Sources
+- `⌥⌘1 … ⌥⌘9` `⌥⌘0` — Today, Inbox, Tasks, Projects, Changes, Search, Ask, Notes, Wiki, Sources
 - `⌘,` — Settings
 - `?` — Help for this screen
 - `Esc` — Clears the screen's search box, wherever the cursor is
@@ -39,7 +39,7 @@ The keys below work where their heading says. The quick capture shortcut is the 
 - `⌃Space` — Suggestions, in a template's `<% %>` tag
 - `↩` `Tab` — Take the chosen suggestion
 - `due:` `defer:` `start:` `created:` — A date, then a word: tomorrow, fri, +3d
-- `@calls` `effort:15m` — A context and an effort (in Capture)
+- `@calls` `effort:15m` — A context and an effort, in a task (and in Quick capture)
 
 ## ⌘K
 - `↑` `↓` — Move through the results
@@ -55,6 +55,14 @@ The keys below work where their heading says. The quick capture shortcut is the 
 - `⇧↩` — New line, in a thought
 - `↑` `↓` `↩` `Tab` — Choose and take a suggestion
 - `Esc` — Close the suggestions, then the window
+
+## Menu bar window
+- `⌘O` — Open Brainstead
+- `⌘T` — Open Today
+- `⌘J` — Open Ask
+- `⌘,` — Open Settings
+- `⌘Q` — Quit Brainstead
+- `Esc` — Close the window
 
 ## Lists
 - `↑` `↓` — Move between rows

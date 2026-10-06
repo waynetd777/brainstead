@@ -14,7 +14,7 @@ Brainstead doesn't have a model of its own. It runs the AI assistants' command-l
 What assistants and runs change is made at once and listed in [Changes](app:review), where any of it can be reverted. **Keep the history of agent changes** sets how long: 90 days or 500 MB unless you change them, whichever comes first. An assistant can read or set it too, when you ask. If your vault is in a OneDrive folder, older versions of a page are also in OneDrive's version history.
 
 ## Ingest
-The **Ingest** group holds every switch about ingesting.
+The **Meeting notes** and **Ingest** groups hold the switches about ingesting.
 
 With **Ingest new sources as they arrive** on, an email or chat captured from the browser, or a file dropped or imported into Sources, is ingested straight away, as [Sources](app:sources) would. A Teams transcript isn't: it waits for its meeting note.
 

@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Knowledge health (stage 7a): the previous app's eight wiki checks, ported to Rust, and
-// "More checks", Brainstead's own three (possible duplicates, stale pages others rely on, sources changed since
-// they were cited). They rerun in the background whenever the index changes. Safe fixes
-// (cross-links, `updated:` dates, log lines) apply straight away and can be undone; anything that
+// "More checks", Brainstead's own (possible duplicates, stale pages others rely on, sources changed since
+// they were cited, page shape, system notes' headers and the rest). They rerun in the background whenever the index changes. Safe fixes
+// (cross-links, `updated:` dates, log lines, system notes' headers) apply straight away and can be undone; anything that
 // needs judgement goes to Ask, whose changes are listed in Changes.
 
 import { useEffect, useState } from "react";
