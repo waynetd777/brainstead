@@ -1078,7 +1078,8 @@ pub fn current_state_prompt(path: &str, page: &str, budget: usize) -> String {
 }
 
 /// A model's Current state, checked against the page: its text, or why it can't be used. A link
-/// must be one the page has, or to a page `exists` knows (the vault's notes and pages).
+/// to a page neither the page links nor `exists` knows (the vault's notes and pages) is made
+/// plain text, its words kept, so the run makes no links to pages that don't exist.
 pub fn current_state_answer(page: &str, answer: &str, exists: &dyn Fn(&str) -> bool) -> Result<String, String> {
     let mut t = answer.trim();
     if let Some(inner) = t.strip_prefix("```").and_then(|x| x.rsplit_once("```")).map(|x| x.0) {
@@ -1096,13 +1097,16 @@ pub fn current_state_answer(page: &str, answer: &str, exists: &dyn Fn(&str) -> b
     }
     let have: std::collections::HashSet<String> =
         crate::links::parse_links(&markdown::lines(page, 0)).into_iter().map(|l| crate::links::key(&l.target)).collect();
-    if let Some(l) = crate::links::parse_links(&markdown::lines(t, 0))
-        .into_iter()
-        .find(|l| !have.contains(&crate::links::key(&l.target)) && !exists(&l.target))
-    {
-        return Err(format!("the answer links [[{}]], which isn't in the vault", l.target));
-    }
-    Ok(t.to_string())
+    static LINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[\[([^\[\]\n|#]+)(#[^\[\]\n|]*)?(?:\|([^\[\]\n]+))?\]\]").unwrap());
+    let t = LINK.replace_all(t, |c: &regex::Captures| {
+        let target = c[1].trim();
+        if target.is_empty() || have.contains(&crate::links::key(target)) || exists(target) {
+            c[0].to_string()
+        } else {
+            c.get(3).map_or(target, |a| a.as_str().trim()).to_string()
+        }
+    });
+    Ok(t.into_owned())
 }
 
 /// The page with a Current state section of `text` where the shape puts it: after the opening.
@@ -1552,7 +1556,7 @@ mod tests {
         assert_eq!(current_state_answer(page, "```\nLive with [[Lena]].\n```", &no).unwrap(), "Live with [[Lena]].");
         assert_eq!(current_state_answer(page, "## Current state\n\nLive.", &no).unwrap(), "Live.");
         assert!(current_state_answer(page, "NONE", &no).is_err());
-        assert!(current_state_answer(page, "Live with [[Maya]].", &no).unwrap_err().contains("Maya"));
+        assert_eq!(current_state_answer(page, "Live with [[Maya]] and [[Theo|the PM]].", &no).unwrap(), "Live with Maya and the PM.");
         assert!(current_state_answer(page, "Live with [[Maya]].", &|t| t == "Maya").is_ok());
         assert!(current_state_answer(page, "Live.\n\n### More", &no).is_err());
         assert!(current_state_answer(page, &"word ".repeat(400), &no).is_err());
