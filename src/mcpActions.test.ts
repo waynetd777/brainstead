@@ -587,6 +587,15 @@ describe("MCP actions", () => {
       await expect(run("settings", { action: "set", key: "spellCheck", value: "maybe" })).rejects.toThrow(/true or false/);
     });
 
+    it("opens the window on a screen or a note", async () => {
+      expect(await run("open", { screen: "knowledge_health" })).toBe("Brainstead is open on knowledge health.");
+      expect(calls.find(([c]) => c === "main_show")![1]).toEqual({ screen: null });
+      answers.links_resolve = () => ["wiki/entities/Orbit App.md"];
+      expect(await run("open", { page: "[[Orbit App]]" })).toBe("Brainstead is open on Orbit App.");
+      answers.links_resolve = () => [null];
+      await expect(run("open", { page: "Nowhere" })).rejects.toThrow(/no page called Nowhere/);
+    });
+
     it("deletes a saved search", async () => {
       expect(await run("saved_searches", { name: "Launch", delete: true })).toBe("Deleted the saved search “Launch”.");
       expect(calls.find(([c]) => c === "smart_list_delete")![1]).toEqual({ name: "Launch" });

@@ -47,6 +47,7 @@ import { toast } from "./Toast";
 import { fresh, keepsPaused, reviewBody, reviewWeek, scheduleLabel, STEPS } from "./Weekly";
 import { ask, isSaved, keepChat, renameSaved, trashSaved } from "./askState";
 import { applyTheme, settings } from "./store";
+import { nav, Screen, SettingsPane } from "./nav";
 import { DEFAULT_SCHEDULE } from "./Jobs";
 import { choice, prepStep, WEEKLY_STATE_CHANGED } from "./weeklyPrep";
 import { draftNotes, followThrough, isTranscriptPath } from "./meetingFlow";
@@ -1299,6 +1300,7 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   task_lists: taskLists,
   settings: settingsTool,
   "sources.import": importSources,
+  open: openApp,
   fix_name: fixName,
   trash: trash,
   bookmarks: bookmarks,
@@ -1723,4 +1725,27 @@ async function importSources(a: Args): Promise<string> {
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+// ---- the window
+
+/** The sidebar's names for the screens open takes, where they differ from the app's. */
+const SCREEN_IDS: Record<string, Screen> = { weekly_review: "weekly", changes: "review", knowledge_health: "health" };
+
+/** open: the window to the front, on a screen, a Settings pane, a note or a search. */
+async function openApp(a: Args): Promise<string> {
+  const page = str(a, "page")?.trim();
+  const name = str(a, "screen");
+  const screen = name ? (SCREEN_IDS[name] ?? (name as Screen)) : null;
+  let path: string | null = null;
+  if (page) {
+    [path] = await api.linksResolve([page.replace(/^\[\[|\]\]$/g, "")]);
+    if (!path) throw new Error(`There's no page called ${page}.`);
+  }
+  await invoke("main_show", { screen: null });
+  if (path) nav.go({ screen: "doc", path });
+  else if (screen === "settings") nav.go({ screen, pane: (str(a, "pane") as SettingsPane | undefined) ?? "general" });
+  else if (screen === "search") nav.go({ screen, q: str(a, "query") ?? "" });
+  else if (screen) nav.go(screen);
+  return path ? `Brainstead is open on ${pageName(path)}.` : `Brainstead is open${name ? ` on ${name.replace(/_/g, " ")}` : ""}.`;
 }

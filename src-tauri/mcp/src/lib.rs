@@ -566,6 +566,14 @@ pub fn tools() -> Vec<Value> {
                 "content": {"type": "string", "description": "The whole template: properties, headings and Templater tags as the vault's other templates have them."},
                 "reason": {"type": "string"}
             }), &["name", "content"])),
+        tool("open", "Open Brainstead", Read,
+            "Opens Brainstead (starting it when it isn't running) and brings its window to the front, on a screen, a Settings pane, a note or a search when given; it changes nothing. Only when the user asks to see something.",
+            schema(json!({
+                "screen": {"type": "string", "enum": ["today", "inbox", "tasks", "projects", "weekly_review", "changes", "ask", "search", "notes", "wiki", "sources", "templates", "graph", "knowledge_health", "contradictions", "activity", "triage", "trash", "settings"], "description": "The screen, as the sidebar names it; the one showing when left out."},
+                "pane": {"type": "string", "enum": ["general", "notes", "vault", "assistants", "jobs", "capture", "permissions", "about"], "description": "With screen settings: the pane."},
+                "page": page,
+                "query": {"type": "string", "description": "With screen search: what to search for."}
+            }), &[])),
         tool("app_status", "Brainstead's state", Read,
             "The vault, whether it's read-only (then nothing can be changed until the user switches it off in Settings › Vault), the index, whether Brainstead runs the daily and weekly summaries, and what ⌘Z would undo (needs the app).",
             schema(json!({}), &[])),
@@ -705,6 +713,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<String, CallError> {
         }
         "activity" => act("activity", obj),
         "graph" => act("graph", obj),
+        "open" => act("open", obj),
         "app_status" => act("status", obj),
         "automated_tools" => act("automated", obj),
         "suggestions" => act("suggestions", obj),
