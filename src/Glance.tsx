@@ -7,7 +7,7 @@
 // Knowledge health the wiki's, in its side column.
 // A slice, or its row in the legend, opens the list it counts: Notes or the Wiki filtered to that
 // type, the Wiki at that tag, or a search for a note tag. Five slices at most, then Other, so the
-// colours (--pie-1…5, checked for colour blindness in both themes) stay telling apart.
+// colours (--pie-1…4 and the graph's purple, --pie-6) stay telling apart.
 
 import { useEffect, useState } from "react";
 import { api, Count, Glance } from "./api";
