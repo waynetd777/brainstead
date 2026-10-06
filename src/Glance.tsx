@@ -157,9 +157,8 @@ export function VaultGlance({ g }: { g: Glance }) {
         title="Notes by type"
         unit={["note", "notes"]}
         slices={[
-          ...wikiTones(types.top).map((c) => ({
+          ...types.top.map((c) => ({
             key: c.name,
-            tone: c.tone,
             label: c.name,
             n: c.n,
             tip: `${fmtCount(c.n)} ${c.n === 1 ? "note" : "notes"} of type ${c.name}: show them`,
@@ -226,8 +225,9 @@ export function WikiGlance({ g }: { g: Glance }) {
         title="Wiki pages by type"
         unit={["page", "pages"]}
         slices={[
-          ...types.top.map((c) => ({
+          ...wikiTones(types.top).map((c) => ({
             key: c.name,
+            tone: c.tone,
             label: c.name,
             n: c.n,
             tip: `${fmtCount(c.n)} ${c.n === 1 ? "page" : "pages"} of type ${c.name}: show them`,
