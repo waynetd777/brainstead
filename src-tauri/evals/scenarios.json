@@ -6,7 +6,7 @@
     "source": "sources/emails/Email. Steerco minutes - 2026-09-28.md",
     "expect": [
       "Proposes a summary page in wiki/summaries/ because the source is a document",
-      "Updates the Orbit App page with the new staff launch date (28 November), dated, keeping what is still true",
+      "Gives the Orbit App page a timeline entry for the steerco (dated, titled, citing the source) and updates its Current state with the new staff launch date (28 November), keeping what is still true",
       "Cites the source inline as [[Email. Steerco minutes - 2026-09-28]]"
     ]
   },
@@ -17,8 +17,8 @@
     "source": "sources/emails/Email. Steerco minutes - 2026-09-28.md",
     "pad": "wiki/entities/Orbit App.md",
     "expect": [
-      "Updates the Orbit App page's Current state with the new staff launch date (28 November), dated, keeping what is still true, rather than only adding a section at the end",
-      "Doesn't touch or repeat the page's Weekly sync sections",
+      "Updates the Orbit App page's Current state with the new staff launch date (28 November), dated, keeping what is still true",
+      "Adds one timeline entry for the steerco and doesn't touch or repeat the Weekly sync entries",
       "Cites the source inline as [[Email. Steerco minutes - 2026-09-28]]"
     ]
   },
@@ -30,6 +30,32 @@
     "expect": [
       "Proposes no summary page, since a meeting note is already the summary",
       "Any page change it proposes cites the meeting note"
+    ]
+  },
+  {
+    "name": "re-ingest a source",
+    "kind": "ingest",
+    "model": "claude:sonnet",
+    "source": "sources/emails/Email. Steerco minutes - 2026-09-28.md",
+    "twice": true,
+    "expect": [
+      "The second ingest's change to the Orbit App page keeps one timeline entry from the steerco minutes (replacing the first ingest's), not two",
+      "The Orbit App page still says the staff launch is 28 November"
+    ]
+  },
+  {
+    "name": "a new current state",
+    "kind": "ingest",
+    "model": "claude:sonnet",
+    "source": "Meeting. Hub review - 2026-10-01.md",
+    "plant": {
+      "path": "Meeting. Hub review - 2026-10-01.md",
+      "text": "# Hub review\n\n- Hub Platform version 2 went live on 1 October.\n- The old Hub Platform API is retired from today; every app now calls version 2.\n"
+    },
+    "expect": [
+      "Gives the Hub Platform page a Current state saying version 2 is live and the old API retired, from 1 October, placed after the page's opening text",
+      "Adds a timeline entry dated 2026-10-01 citing [[Meeting. Hub review - 2026-10-01]]",
+      "Proposes no summary page, since a meeting note is already the summary"
     ]
   },
   {

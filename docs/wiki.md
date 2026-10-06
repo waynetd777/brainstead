@@ -27,7 +27,7 @@ Beside a source, its provenance says when it was ingested and by which model, an
 
 Ingests wait in one queue, whoever started them (you, an assistant or the nightly check), and run one at a time, the oldest source first (by the date in its name, else the file's), so a newer source has the last word on a page.
 
-The AI sees a long page as its outline, with its opening, its summing-up sections (such as Current state) and its newest sections in full, and never its `sources:` list. It updates a section it saw all of, or adds a new one: a Current state under the page's opening text, anything else above its See also; a change that would rewrite a section it saw only part of is dropped, so nothing it couldn't see is lost.
+The AI doesn't choose where text goes: for each page it gives a Timeline entry for the source (date, title, text), a new Current state when the source changes what's true now, and a topical section when it changes one. Brainstead files the entry in the page's Timeline by date, newest first, with a `Source:` line naming the source; ingesting the same source again replaces its entry rather than adding another. The Current state goes under the page's opening text, a new topical section above the Timeline. The AI sees a long page as its outline, with its opening, Current state and newest Timeline entries in full, and never its `sources:` list; a change that would rewrite a section it saw only part of is dropped, so nothing it couldn't see is lost.
 
 An image is ingested from the text read from it; Claude Code and Codex also see the picture, Copilot and Antigravity don't (so an image with no text needs one of the first two). Its changes are kept even when a quote isn't in that text, each flagged in Changes to check against the picture.
 

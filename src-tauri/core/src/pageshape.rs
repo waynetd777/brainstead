@@ -1077,8 +1077,9 @@ pub fn current_state_prompt(path: &str, page: &str, budget: usize) -> String {
     )
 }
 
-/// A model's Current state, checked against the page: its text, or why it can't be used.
-pub fn current_state_answer(page: &str, answer: &str) -> Result<String, String> {
+/// A model's Current state, checked against the page: its text, or why it can't be used. A link
+/// must be one the page has, or to a page `exists` knows (the vault's notes and pages).
+pub fn current_state_answer(page: &str, answer: &str, exists: &dyn Fn(&str) -> bool) -> Result<String, String> {
     let mut t = answer.trim();
     if let Some(inner) = t.strip_prefix("```").and_then(|x| x.rsplit_once("```")).map(|x| x.0) {
         t = inner.split_once('\n').map_or("", |x| x.1).trim();
@@ -1095,8 +1096,11 @@ pub fn current_state_answer(page: &str, answer: &str) -> Result<String, String> 
     }
     let have: std::collections::HashSet<String> =
         crate::links::parse_links(&markdown::lines(page, 0)).into_iter().map(|l| crate::links::key(&l.target)).collect();
-    if let Some(l) = crate::links::parse_links(&markdown::lines(t, 0)).into_iter().find(|l| !have.contains(&crate::links::key(&l.target))) {
-        return Err(format!("the answer links [[{}]], which the page doesn't", l.target));
+    if let Some(l) = crate::links::parse_links(&markdown::lines(t, 0))
+        .into_iter()
+        .find(|l| !have.contains(&crate::links::key(&l.target)) && !exists(&l.target))
+    {
+        return Err(format!("the answer links [[{}]], which isn't in the vault", l.target));
     }
     Ok(t.to_string())
 }
@@ -1120,6 +1124,118 @@ pub fn with_current_state(page: &str, text: &str) -> String {
         out.push_str(&page[at..]);
     }
     out
+}
+
+/// A Timeline entry: its heading, its Source line and its text, any headings in the text put
+/// below the entry's (`####` or deeper), and Source lines in the text left out (they're the app's).
+pub fn entry(date: Date, title: &str, source: &str, body: &str) -> String {
+    let title = title.trim();
+    let head = if title.is_empty() { format!("### {}", date.iso()) } else { format!("### {} — {title}", date.iso()) };
+    let lines = markdown::lines(body.trim(), 0);
+    let mut text = Vec::new();
+    for l in lines.iter().filter(|l| l.code || !SOURCE_LINE.is_match(l.text.trim())).skip_while(|l| l.text.trim().is_empty()) {
+        match markdown::heading(l.text).filter(|(n, _)| !l.code && *n < 4) {
+            Some((_, t)) => text.push(format!("#### {t}")),
+            None => text.push(l.text.to_string()),
+        }
+    }
+    let body = text.join("\n");
+    format!("{head}\nSource: [[{source}]]\n\n{}\n", body.trim_end())
+}
+
+/// Where a section's lines end on the page: after its last line that isn't blank.
+fn content_end(page: &str, start: usize, end: usize) -> usize {
+    let t = page[start..end].trim_end();
+    start + t.len() + page[start + t.len()..end].find('\n').map_or(page[start + t.len()..end].len(), |i| i + 1)
+}
+
+/// `text` (whole sections, ending in a newline) put in the page above its first section of the
+/// kinds in `before`, else at the end.
+fn insert_sections(page: &str, text: &str, before: &[Kind]) -> String {
+    let p = parse(page);
+    let at = p.sections.iter().find(|s| before.contains(&classify(s.heading))).map(|s| s.text.as_ptr() as usize - page.as_ptr() as usize);
+    match at {
+        Some(at) => format!("{}{text}\n{}", &page[..at], &page[at..]),
+        None => {
+            let end = content_end(page, 0, page.len());
+            let sep = if page[..end].ends_with('\n') { "\n" } else { "\n\n" };
+            format!("{}{sep}{text}{}", &page[..end], &page[end..])
+        }
+    }
+}
+
+/// The page with a Timeline entry for `source` (D-20261006-06, -11): the entry that cites it
+/// already is taken out and the new one put in by date, newest first, after any of the same date;
+/// a page with no Timeline gets one, above See also. True when it replaced an entry.
+pub fn with_entry(page: &str, date: Date, title: &str, source: &str, body: &str) -> (String, bool) {
+    let new = entry(date, title, source, body);
+    let key = crate::links::key(source);
+    let p = parse(page);
+    let Some(t) = p.sections.iter().find(|s| classify(s.heading) == Kind::Timeline) else {
+        return (insert_sections(page, &format!("## {TIMELINE}\n\n{new}"), &[Kind::Closing]), false);
+    };
+    let (_, entries) = timeline_parts(t.text);
+    let at = |e: &str| e.as_ptr() as usize - page.as_ptr() as usize;
+    let cites = |e: &str| {
+        e.lines()
+            .skip(1)
+            .find(|l| !l.trim().is_empty())
+            .and_then(|l| SOURCE_LINE.captures(l.trim()))
+            .is_some_and(|c| crate::links::key(&c[1]) == key)
+    };
+    // Take out the entry it replaces, lines and the blank lines after it.
+    let (mut page, mut replaced) = (page.to_string(), false);
+    if let Some(old) = entries.iter().find(|e| cites(e)) {
+        let a = at(old);
+        page.replace_range(a..a + old.len(), "");
+        replaced = true;
+    }
+    let p2 = parse(&page);
+    let t2 = p2.sections.iter().find(|s| classify(s.heading) == Kind::Timeline).unwrap();
+    let (_, entries) = timeline_parts(t2.text);
+    let at2 = |e: &str| e.as_ptr() as usize - page.as_ptr() as usize;
+    let place = entries.iter().find(|e| {
+        let h = e.lines().next().and_then(markdown::heading).map_or("", |h| h.1);
+        Date::parse_iso(h).is_some_and(|d| d.key() < date.key())
+    });
+    let out = match place {
+        Some(e) => {
+            let a = at2(e);
+            format!("{}{new}\n{}", &page[..a], &page[a..])
+        }
+        None => {
+            let start = t2.text.as_ptr() as usize - page.as_ptr() as usize;
+            let end = content_end(&page, start, start + t2.text.len());
+            let rest = &page[end..];
+            let after = if rest.is_empty() || rest.starts_with('\n') { "" } else { "\n" };
+            format!("{}\n{new}{after}{rest}", &page[..end])
+        }
+    };
+    (out, replaced)
+}
+
+/// The page with a topical section `heading` of `content`: the section's text replaced when the
+/// page has it, else a new section above the Timeline (or See also). Err for a heading the shape
+/// keeps for itself.
+pub fn with_topic(page: &str, heading: &str, content: &str) -> Result<String, String> {
+    let h = heading.trim().trim_start_matches('#').trim();
+    match classify(h) {
+        Kind::Topical => {}
+        _ => return Err(format!("“{h}” isn't a topical section: use current_state or entry for it.")),
+    }
+    if parse(page).sections.iter().any(|s| name(s.heading) == name(h)) {
+        return crate::proposals::patched(page, &crate::proposals::Patch::Section { section: h.to_string(), content: content.to_string() });
+    }
+    Ok(insert_sections(page, &format!("## {h}\n\n{}\n", content.trim()), &[Kind::Timeline, Kind::Closing]))
+}
+
+/// The page with its Current state's text `text`: replaced when it has one, else put after the opening.
+pub fn with_current_state_text(page: &str, text: &str) -> Result<String, String> {
+    if has_current_state(page) {
+        crate::proposals::patched(page, &crate::proposals::Patch::Section { section: CURRENT_STATE.into(), content: text.to_string() })
+    } else {
+        Ok(with_current_state(page, text))
+    }
 }
 
 /// Which link targets are vault notes or sources rather than wiki pages, from the vault's file
@@ -1419,7 +1535,8 @@ mod tests {
         assert!(!has_current_state(&page));
         let prompt = current_state_prompt("wiki/entities/Orbit App.md", &page, 6000);
         assert!(prompt.contains("\"Orbit App\"") && prompt.contains("### 2026-10-02 — Steerco") && !prompt.contains("## See also"));
-        let ans = current_state_answer(&page, "- Launch moves to 28 November [[Meeting. Orbit App Steerco - 2026-10-02]].").unwrap();
+        let ans =
+            current_state_answer(&page, "- Launch moves to 28 November [[Meeting. Orbit App Steerco - 2026-10-02]].", &|_| false).unwrap();
         let new = with_current_state(&page, &ans);
         assert!(has_current_state(&new));
         assert!(new.contains("on the [[Hub Platform]].\n\n## Current state\n\n- Launch moves to 28 November [[Meeting. Orbit App Steerco - 2026-10-02]].\n\n## Timeline\n"), "{new}");
@@ -1431,12 +1548,84 @@ mod tests {
     #[test]
     fn a_current_state_answer_is_checked() {
         let page = "# Orbit App\n\nSee [[Lena]].\n";
-        assert_eq!(current_state_answer(page, "```\nLive with [[Lena]].\n```").unwrap(), "Live with [[Lena]].");
-        assert_eq!(current_state_answer(page, "## Current state\n\nLive.").unwrap(), "Live.");
-        assert!(current_state_answer(page, "NONE").is_err());
-        assert!(current_state_answer(page, "Live with [[Maya]].").unwrap_err().contains("Maya"));
-        assert!(current_state_answer(page, "Live.\n\n### More").is_err());
-        assert!(current_state_answer(page, &"word ".repeat(400)).is_err());
+        let no = |_: &str| false;
+        assert_eq!(current_state_answer(page, "```\nLive with [[Lena]].\n```", &no).unwrap(), "Live with [[Lena]].");
+        assert_eq!(current_state_answer(page, "## Current state\n\nLive.", &no).unwrap(), "Live.");
+        assert!(current_state_answer(page, "NONE", &no).is_err());
+        assert!(current_state_answer(page, "Live with [[Maya]].", &no).unwrap_err().contains("Maya"));
+        assert!(current_state_answer(page, "Live with [[Maya]].", &|t| t == "Maya").is_ok());
+        assert!(current_state_answer(page, "Live.\n\n### More", &no).is_err());
+        assert!(current_state_answer(page, &"word ".repeat(400), &no).is_err());
+    }
+
+    #[test]
+    fn an_entry_goes_in_by_date_and_replaces_its_sources_entry() {
+        let page = fixture("in-shape");
+        let src = "Meeting. Orbit App Pilot - 2026-09-20";
+        // Between 2026-10-02 and 2026-09.
+        let (new, replaced) = with_entry(
+            &page,
+            Date::Day(2026, 9, 20),
+            "Pilot review",
+            src,
+            "Ten users.\n\n## Actions\n\n- Lena writes up.\n\nSource: [[Meeting. Orbit App Pilot - 2026-09-20]]",
+        );
+        assert!(!replaced);
+        assert!(in_shape(&new, &is_source), "{new}");
+        let hs = headings(&new);
+        let i = hs.iter().position(|h| h == "### 2026-09-20 — Pilot review").unwrap();
+        assert_eq!(
+            &hs[i - 2..i + 3],
+            [
+                "### 2026-10-02 — Steerco: launch moves",
+                "#### Actions",
+                "### 2026-09-20 — Pilot review",
+                "#### Actions",
+                "### 2026-09 — Pilot results"
+            ]
+        );
+        assert!(new.contains("### 2026-09-20 — Pilot review\nSource: [[Meeting. Orbit App Pilot - 2026-09-20]]\n\nTen users.\n"));
+        // Again, from the same source: one entry, replaced.
+        let (again, replaced) = with_entry(&new, Date::Day(2026, 9, 20), "Pilot review: go", src, "Go for launch.");
+        assert!(replaced);
+        assert_eq!(again.matches("Source: [[Meeting. Orbit App Pilot - 2026-09-20]]").count(), 1);
+        assert!(again.contains("### 2026-09-20 — Pilot review: go\nSource: [[Meeting. Orbit App Pilot - 2026-09-20]]\n\nGo for launch.\n\n### 2026-09 — Pilot results"), "{again}");
+        assert!(in_shape(&again, &is_source));
+        // Newest of all goes first; oldest of all last, before See also.
+        let (top, _) = with_entry(&page, Date::Day(2026, 10, 5), "Launch prep", src, "Prep.");
+        assert!(top.contains("## Timeline\n\n### 2026-10-05 — Launch prep\n"));
+        let (low, _) = with_entry(&page, Date::Half(2025, 1), "Idea", src, "First idea.");
+        assert!(
+            low.contains(
+                "Discovery ran.\n\n### 2025-H1 — Idea\nSource: [[Meeting. Orbit App Pilot - 2026-09-20]]\n\nFirst idea.\n\n## See also"
+            ),
+            "{low}"
+        );
+        assert!(in_shape(&top, &is_source) && in_shape(&low, &is_source));
+    }
+
+    #[test]
+    fn a_page_with_no_timeline_gets_one_above_see_also() {
+        let page = "# Lena\n\nLeads the pilot.\n\n## Role\n\nPM.\n\n## See also\n\n- [[Orbit App]]\n";
+        let (new, _) = with_entry(page, Date::Day(2026, 10, 2), "Steerco", "Meeting. Steerco - 2026-10-02", "Spoke.");
+        assert_eq!(new, "# Lena\n\nLeads the pilot.\n\n## Role\n\nPM.\n\n## Timeline\n\n### 2026-10-02 — Steerco\nSource: [[Meeting. Steerco - 2026-10-02]]\n\nSpoke.\n\n## See also\n\n- [[Orbit App]]\n");
+        let (new, _) = with_entry("# Lena\n\nLeads it.", Date::Month(2026, 10), "", "Meeting. Steerco - 2026-10-02", "Spoke.");
+        assert_eq!(new, "# Lena\n\nLeads it.\n\n## Timeline\n\n### 2026-10\nSource: [[Meeting. Steerco - 2026-10-02]]\n\nSpoke.\n");
+    }
+
+    #[test]
+    fn a_topic_goes_above_the_timeline_and_current_state_after_the_opening() {
+        let page = fixture("in-shape");
+        let new = with_topic(&page, "Risks", "- Pen test.").unwrap();
+        assert!(new.contains("Built on the [[Hub Platform]].\n\n## Risks\n\n- Pen test.\n\n## Timeline\n"), "{new}");
+        assert!(in_shape(&new, &is_source));
+        let new = with_topic(&page, "Architecture", "Built on Hub 2.").unwrap();
+        assert!(new.contains("## Architecture\n\nBuilt on Hub 2.\n\n## Timeline"));
+        assert!(with_topic(&page, "See also", "x").is_err() && with_topic(&page, "2 Oct 2026 — x", "x").is_err());
+        let new = with_current_state_text(&page, "Launch on 5 December.").unwrap();
+        assert!(new.contains("## Current state\n\nLaunch on 5 December.\n\n## Architecture"));
+        let (bare, _) = reshape(&fixture("dated-only"), &is_source);
+        assert!(in_shape(&with_current_state_text(&bare, "Live.").unwrap(), &is_source));
     }
 
     #[test]

@@ -35,6 +35,9 @@ struct Scenario {
     /// For ingest: this wiki page made long first (`pad_page`), as real hub pages are.
     #[serde(default)]
     pad: Option<String>,
+    /// For ingest: ingest the source a second time once the first's changes are made.
+    #[serde(default)]
+    twice: bool,
     #[serde(default)]
     question: String,
     #[serde(default)]
@@ -153,23 +156,44 @@ fn wiki_pages(root: &Path) -> Vec<(String, Vec<String>)> {
     c::pages(root).into_iter().map(|(r, _, a)| (r, a)).collect()
 }
 
-/// A page grown long: a long `sources:` list, and forty dated sections of invented history
-/// between its Current state and the rest, so it's shown to the model in part.
+/// A page grown long: a long `sources:` list, and a Timeline of forty weekly syncs of invented
+/// history, newest first, after its topics, so it's shown to the model in part.
 fn pad_page(root: &Path, rel: &str) {
     let path = root.join(rel);
     let page = std::fs::read_to_string(&path).unwrap_or_default();
     let sources: String = (1..=120).map(|i| format!("  - \"[[Weekly sync {i:03} - Orbit App]]\"\n")).collect();
     let page = page.replacen("sources:\n", &format!("sources:\n{sources}"), 1);
-    let history: String = (1..=40)
+    let start = chrono::NaiveDate::from_ymd_opt(2026, 9, 25).unwrap();
+    let timeline: String = (0..40)
         .map(|i| {
+            let d = start - chrono::Duration::days(7 * i);
             format!(
-                "## Weekly sync {i:03}\n\n{}\n\n",
+                "### {d} — Weekly sync {:03}\nSource: [[Weekly sync {:03} - Orbit App]]\n\n{}\n\n",
+                40 - i,
+                40 - i,
                 "The team walked the board, cleared the review queue and noted no change to the plan. ".repeat(14)
             )
         })
         .collect();
-    let page = page.replacen("## History", &format!("{history}## History"), 1);
-    std::fs::write(path, page).unwrap();
+    let page = format!("{}\n\n## Timeline\n\n{}", page.trim_end(), timeline.trim_end());
+    std::fs::write(path, page + "\n").unwrap();
+}
+
+/// What one ingest of the source would change: the model's answer, checked.
+fn ingest_once(s: &Scenario, root: &Path, model: &str) -> Result<(ingest::Source, Vec<ingest::Planned>, Vec<ingest::Dropped>), String> {
+    let text = std::fs::read_to_string(root.join(&s.source)).unwrap_or_default();
+    let src = ingest::Source { rel: s.source.clone(), text: ingest::SourceText::Text(text.clone()) };
+    let m = names::mentions(&text, &wiki_pages(root));
+    let pages: Vec<(String, String)> =
+        m.iter().filter_map(|x| std::fs::read_to_string(root.join(&x.page)).ok().map(|t| (x.page.clone(), t))).collect();
+    let answer =
+        ask_model(model, &ingest::prompt(&src, &pages, &brainstead_core::catalogue::render(root), "Friday 2 October 2026"), root, None)
+            .and_then(|a| ingest::parse_answer(&a))?;
+    let read = |r: &str| std::fs::read_to_string(root.join(r)).ok();
+    let resolve =
+        |n: &str| m.iter().find(|x| brainstead_core::lint::stem(brainstead_core::lint::name_of(&x.page)) == n).map(|x| x.page.clone());
+    let (planned, dropped) = ingest::plan(&src, &answer, read, resolve, "2026-10-02", ingest::page_budget(pages.len()));
+    Ok((src, planned, dropped))
 }
 
 fn run_ingest(s: &Scenario, root: &Path, model: &str) -> Outcome {
@@ -177,29 +201,34 @@ fn run_ingest(s: &Scenario, root: &Path, model: &str) -> Outcome {
     if let Some(p) = &s.pad {
         pad_page(root, p);
     }
-    let text = std::fs::read_to_string(root.join(&s.source)).unwrap_or_default();
-    let src = ingest::Source { rel: s.source.clone(), text: ingest::SourceText::Text(text.clone()) };
-    let m = names::mentions(&text, &wiki_pages(root));
-    let pages: Vec<(String, String)> =
-        m.iter().filter_map(|x| std::fs::read_to_string(root.join(&x.page)).ok().map(|t| (x.page.clone(), t))).collect();
-    let answer = match ask_model(
-        model,
-        &ingest::prompt(&src, &pages, &brainstead_core::catalogue::render(root), "Friday 2 October 2026"),
-        root,
-        None,
-    )
-    .and_then(|a| ingest::parse_answer(&a))
-    {
-        Ok(a) => a,
+    if let Some(p) = &s.plant {
+        std::fs::write(root.join(&p.path), &p.text).unwrap();
+    }
+    let files = brainstead_core::pageshape::vault_files(root);
+    let sources = brainstead_core::pageshape::Sources::from_paths(files.iter().map(String::as_str));
+    let is_source = |t: &str| sources.is_source(t) || t.starts_with("Weekly sync");
+    let (src, mut planned, mut dropped) = match ingest_once(s, root, model) {
+        Ok(x) => x,
         Err(e) => return Outcome { output: e.clone(), failures: vec![e] },
     };
-    let read = |r: &str| std::fs::read_to_string(root.join(r)).ok();
-    let resolve =
-        |n: &str| m.iter().find(|x| brainstead_core::lint::stem(brainstead_core::lint::name_of(&x.page)) == n).map(|x| x.page.clone());
-    let (planned, dropped) = ingest::plan(&src, &answer, read, resolve, "2026-10-02", ingest::page_budget(pages.len()));
+    let mut output = String::new();
+    if s.twice {
+        // The first ingest's changes made, then the same source again.
+        for p in &planned {
+            output.push_str(&format!("## First ingest: {} ({:?})\n\n{}\n\n", p.page, p.kind, p.after));
+            let to = root.join(&p.page);
+            std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+            std::fs::write(to, &p.after).unwrap();
+        }
+        match ingest_once(s, root, model) {
+            Ok((_, p2, d2)) => (planned, dropped) = (p2, d2),
+            Err(e) => return Outcome { output: e.clone(), failures: vec![e] },
+        }
+    }
     if planned.is_empty() {
         failures.push("No page change survived the checks.".into());
     }
+    let cite = format!("Source: [[{}]]", src.link());
     for p in &planned {
         if !p.page.starts_with("wiki/") {
             failures.push(format!("A change outside the wiki: {}", p.page));
@@ -207,17 +236,31 @@ fn run_ingest(s: &Scenario, root: &Path, model: &str) -> Outcome {
         if !p.after.contains(&format!("[[{}]]", src.link())) {
             failures.push(format!("{} doesn't cite the source.", p.page));
         }
+        if brainstead_core::pageshape::shaped(&p.page) {
+            if !brainstead_core::pageshape::in_shape(&p.after, &is_source) {
+                failures.push(format!("{} is left out of the page shape.", p.page));
+            }
+            if p.after.matches(&cite).count() > 1 {
+                let lines: Vec<&str> = p.after.lines().filter(|l| l.starts_with("### ") || l.contains(&cite)).collect();
+                failures.push(format!("{} has more than one timeline entry from the source: {}", p.page, lines.join(" / ")));
+            }
+        }
     }
     let summary = planned.iter().any(|p| p.page.starts_with("wiki/summaries/"));
     if src.is_journal() && summary {
         failures.push("A summary page for a journal note.".into());
     }
-    if !src.is_journal() && !summary {
+    if !src.is_journal() && !summary && !s.twice {
         failures.push("No summary page for a document.".into());
     }
-    let mut output = String::new();
     for p in &planned {
-        output.push_str(&format!("## Proposed: {} ({:?})\n\n{}\n\n", p.page, p.kind, p.after));
+        output.push_str(&format!(
+            "## Proposed{}: {} ({:?})\n\n{}\n\n",
+            if s.twice { " by the second ingest" } else { "" },
+            p.page,
+            p.kind,
+            p.after
+        ));
     }
     for d in &dropped {
         output.push_str(&format!("Dropped {}: {}\n", d.page, d.reason));

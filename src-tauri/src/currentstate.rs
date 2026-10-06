@@ -167,7 +167,10 @@ fn one(app: &AppHandle, root: &std::path::Path, page: &str, run: &str, model: &s
     if let Some(e) = out.error {
         return Err(e);
     }
-    let text = match pageshape::current_state_answer(&before, &out.text) {
+    let files = pageshape::vault_files(root);
+    let names: std::collections::HashSet<String> = files.iter().map(|f| brainstead_core::links::key(f)).collect();
+    let exists = |t: &str| names.contains(&brainstead_core::links::key(t));
+    let text = match pageshape::current_state_answer(&before, &out.text, &exists) {
         Ok(t) => t,
         Err(why) if why.starts_with("the model found nothing") => return Ok(false),
         Err(why) => return Err(why),

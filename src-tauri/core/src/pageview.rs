@@ -6,7 +6,8 @@
 //! (it can run to thousands of characters and says nothing about the subject). A page that then
 //! fits is shown whole. A bigger one is shown as an outline, every heading in order, with these
 //! sections in full: the opening text, the ones that sum the page up (Current state, Summary,
-//! Status…), and then the newest, from the end back, until the budget is spent. The rest show
+//! Status…), and then the newest: on a page in the shape, its Timeline's entries from the top
+//! (newest first) and then its topical sections; else from the end back, until the budget is spent. The rest show
 //! only their heading and how much is left out, so the model knows they're there and doesn't
 //! rewrite what it can't see: `View::full` names the sections shown whole.
 
@@ -124,6 +125,20 @@ pub fn view(page: &str, budget: usize) -> View {
             take(i, &mut shown, &mut left);
         }
     }
+    // A page in the shape (D-20261006-06) has its newest at the top of its Timeline: the
+    // Timeline's heading and its entries from the top, then any topical sections.
+    if let Some(t) = bs.iter().position(|b| b.level == 2 && b.title.as_deref() == Some("timeline")) {
+        take(t, &mut shown, &mut left);
+        let entries = bs[t + 1..].iter().take_while(|b| b.level > 2).count();
+        for i in t + 1..=t + entries {
+            take(i, &mut shown, &mut left);
+        }
+        let topical: Vec<usize> =
+            (0..bs.len()).filter(|&i| bs[i].level == 2 && !bs[i].title.as_deref().is_some_and(|t| CLOSING.contains(&t))).collect();
+        for i in topical {
+            take(i, &mut shown, &mut left);
+        }
+    }
     for i in (0..bs.len()).rev() {
         if !bs[i].title.as_deref().is_some_and(|t| CLOSING.contains(&t)) {
             take(i, &mut shown, &mut left);
@@ -184,6 +199,24 @@ pub fn excerpt(text: &str, n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_page_in_the_shape_shows_its_newest_entries_first() {
+        let mut page = String::from("# Orbit App\n\nThe staff app.\n\n## Current state\n\nLaunch on 28 November.\n\n## Architecture\n\nOn the Hub.\n\n## Timeline\n\n");
+        for d in (1..=28).rev() {
+            page.push_str(&format!(
+                "### 2026-09-{d:02} — Weekly sync {d}\nSource: [[Meeting. Sync - 2026-09-{d:02}]]\n\n{}\n\n",
+                "Notes. ".repeat(150)
+            ));
+        }
+        page.push_str("## See also\n\n- [[Lena]]\n");
+        let v = view(&page, 6_000);
+        assert!(!v.whole);
+        assert!(v.text.contains("Launch on 28 November.") && v.text.contains("On the Hub."));
+        assert!(v.full.contains(&"2026-09-28 — weekly sync 28".to_string()), "{:?}", v.full);
+        assert!(!v.full.contains(&"2026-09-01 — weekly sync 1".to_string()));
+        assert!(v.text.contains("### 2026-09-01 — Weekly sync 1\n[… not shown"));
+    }
 
     #[test]
     fn an_excerpt_keeps_the_start_and_more_of_the_end() {

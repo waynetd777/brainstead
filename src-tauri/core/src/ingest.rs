@@ -58,6 +58,27 @@ pub struct SummaryAnswer {
     pub content: String,
 }
 
+/// What the source adds to a page's Timeline: the app files it by date, one entry per source.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct EntryAnswer {
+    /// YYYY-MM-DD, or YYYY-MM when only the month is known.
+    #[serde(default)]
+    pub date: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+}
+
+/// A topical section, rewritten whole; or, in answers before the page shape, a section's name
+/// with its text in `content`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum SectionAnswer {
+    Topic { heading: String, content: String },
+    Name(String),
+}
+
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct PageAnswer {
     pub page: String,
@@ -65,8 +86,15 @@ pub struct PageAnswer {
     pub new: bool,
     #[serde(default)]
     pub title: Option<String>,
+    /// The whole Current state, when the source changes what's true now.
     #[serde(default)]
-    pub section: Option<String>,
+    pub current_state: Option<String>,
+    #[serde(default)]
+    pub entry: Option<EntryAnswer>,
+    #[serde(default)]
+    pub section: Option<SectionAnswer>,
+    /// With `section` as a name: that section's text (answers before the page shape).
+    #[serde(default)]
     pub content: String,
     #[serde(default)]
     pub description: Option<String>,
@@ -430,24 +458,78 @@ pub fn plan(
             })
             .collect();
         let title = p.title.clone().filter(|t| !t.trim().is_empty()).unwrap_or_else(|| format!("Update from {link}"));
+        // The entry's date: as given, else the source's own day.
+        let entry_date = p.entry.as_ref().map(|e| {
+            crate::pageshape::Date::parse_iso(e.date.trim())
+                .or_else(|| source_day(&src.rel).and_then(|d| crate::pageshape::Date::parse_iso(&d)))
+        });
+        if entry_date == Some(None) {
+            dropped.push(Dropped { page: rel, reason: "Its timeline entry has no date the app can read.".into() });
+            continue;
+        }
+        let entry_date = entry_date.flatten();
+        let current_state = p.current_state.as_deref().map(str::trim).filter(|t| !t.is_empty());
         match read(&rel) {
             Some(before) => {
-                let section = p.section.clone().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| "Current state".into());
-                // The section's text is replaced: only one the model saw all of (`pageview`).
-                if !crate::pageview::view(&before, budget).can_rewrite(&before, &section) {
-                    dropped.push(Dropped {
-                        page: rel,
-                        reason: format!(
-                            "It would rewrite “{}”, which it was shown only part of.",
-                            section.trim().trim_start_matches('#').trim()
-                        ),
-                    });
+                let view = crate::pageview::view(&before, budget);
+                let mut after = before.clone();
+                let mut fail = None;
+                // The app places what the model gives (D-20261006-06): the Current state after the
+                // opening, the entry in the Timeline by date, a topical section above the Timeline.
+                // A section is replaced only when the model saw all of it.
+                if let Some(cs) = current_state {
+                    if crate::pageshape::has_current_state(&before) && !view.can_rewrite(&before, crate::pageshape::CURRENT_STATE) {
+                        fail = Some("It would rewrite “Current state”, which it was shown only part of.".to_string());
+                    } else {
+                        match crate::pageshape::with_current_state_text(&after, cs) {
+                            Ok(t) => after = t,
+                            Err(e) => fail = Some(e),
+                        }
+                    }
+                }
+                if let (Some(e), Some(d), None) = (&p.entry, entry_date, &fail) {
+                    after = crate::pageshape::with_entry(&after, d, &e.title, &link, &e.body).0;
+                }
+                // An answer in the old form with no section named: the Current state's text.
+                let legacy = SectionAnswer::Name(crate::pageshape::CURRENT_STATE.into());
+                let section = match &p.section {
+                    None if current_state.is_none() && p.entry.is_none() && !p.content.trim().is_empty() => Some(&legacy),
+                    s => s.as_ref(),
+                };
+                match (section, &fail) {
+                    (Some(SectionAnswer::Topic { heading, content }), None) => {
+                        if !view.can_rewrite(&before, heading) {
+                            fail = Some(format!(
+                                "It would rewrite “{}”, which it was shown only part of.",
+                                heading.trim().trim_start_matches('#').trim()
+                            ));
+                        } else {
+                            match crate::pageshape::with_topic(&after, heading, content) {
+                                Ok(t) => after = t,
+                                Err(e) => fail = Some(e),
+                            }
+                        }
+                    }
+                    // An answer in the old form: one section's new text.
+                    (Some(SectionAnswer::Name(section)), None) if current_state.is_none() && p.entry.is_none() => {
+                        if !view.can_rewrite(&before, section) {
+                            fail = Some(format!(
+                                "It would rewrite “{}”, which it was shown only part of.",
+                                section.trim().trim_start_matches('#').trim()
+                            ));
+                        } else {
+                            match proposals::patched(&after, &Patch::Section { section: section.clone(), content: p.content.clone() }) {
+                                Ok(t) => after = t,
+                                Err(_) => fail = Some("The change didn't apply to the page.".into()),
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                if let Some(reason) = fail {
+                    dropped.push(Dropped { page: rel, reason });
                     continue;
                 }
-                let Ok(mut after) = proposals::patched(&before, &Patch::Section { section, content: p.content.clone() }) else {
-                    dropped.push(Dropped { page: rel, reason: "The change didn't apply to the page.".into() });
-                    continue;
-                };
                 if let Some(t) = crate::fixname::with_list_value(&after, &["sources"], &cite) {
                     after = t;
                 }
@@ -460,8 +542,12 @@ pub fn plan(
             }
             None => {
                 let kind = if rel.starts_with("wiki/concepts/") { "concept" } else { "entity" };
-                let body = format!("## Current state\n\n{}", p.content.trim());
-                let after = new_page(&rel, kind, p.description.as_deref().unwrap_or(""), &link, &body);
+                let cs = current_state.unwrap_or(p.content.trim());
+                let body = if cs.is_empty() { String::new() } else { format!("## Current state\n\n{cs}") };
+                let mut after = new_page(&rel, kind, p.description.as_deref().unwrap_or(""), &link, &body);
+                if let (Some(e), Some(d)) = (&p.entry, entry_date) {
+                    after = crate::pageshape::with_entry(&after, d, &e.title, &link, &e.body).0;
+                }
                 out.push(Planned { page: rel, kind: Kind::New, title, before: None, after, quotes, claims, warnings });
             }
         }
@@ -540,6 +626,64 @@ mod tests {
         assert!(gate.after.starts_with("---\ntype: concept\nname: Launch gate\ndescription: \"\"\nsources: [\"[[Programme Update Steerco 2026-09-28.pdf]]\"]\n---\n\n## Current state\n\nGates the launch.\n"));
         let summary = &planned[0];
         assert!(summary.after.contains("type: source-summary") && summary.after.ends_with("Launch moves to 28 November.\n"));
+    }
+
+    /// A page in the shape, and an answer in the page-shape form for it.
+    const SHAPED: &str = "---\ntype: entity\n---\n# Orbit App\n\nThe staff app.\n\n## Current state\n\nSoft launch on 14 November.\n\n## Architecture\n\nOn the Hub.\n\n## Timeline\n\n### 2026-09-18 — Roadmap\nSource: [[Roadmap Update 2026-09-18]]\n\nRoadmap shared.\n\n## See also\n\n- [[Lena]]\n";
+
+    fn shaped_answer(extra: &str) -> Answer {
+        parse_answer(&format!(
+            r#"{{"pages": [{{"page": "Orbit App", "title": "Launch moves",
+              "current_state": "Soft launch to staff on 28 November ([[Programme Update Steerco 2026-09-28.pdf#page=2]]).",
+              "entry": {{"date": "2026-09-28", "title": "Steerco: launch moves to 28 November", "body": "Staff launch now 28 November, pending the pen test."}},
+              {extra}
+              "claims": [{{"subject": "Orbit App", "attribute": "go_live_date", "value": "28 November", "as_of": "2026-09-28", "quote": "Staff launch now targeted for 28 November", "anchor": "page=2"}}]}}]}}"#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn the_app_places_the_entry_and_current_state_and_reingesting_replaces_the_entry() {
+        let read = |r: &str| (r == "wiki/entities/Orbit App.md").then(|| SHAPED.to_string());
+        let (planned, dropped) = plan(&pdf(), &shaped_answer(""), read, resolve, "2026-10-02", page_budget(1));
+        assert!(dropped.is_empty(), "{dropped:?}");
+        let after = &planned[0].after;
+        assert!(after.contains("## Current state\n\nSoft launch to staff on 28 November"));
+        assert!(after.contains("## Timeline\n\n### 2026-09-28 — Steerco: launch moves to 28 November\nSource: [[Programme Update Steerco 2026-09-28.pdf]]\n\nStaff launch now 28 November, pending the pen test.\n\n### 2026-09-18 — Roadmap"), "{after}");
+        assert!(crate::pageshape::in_shape(after, &|t| t.starts_with("Roadmap") || t.ends_with(".pdf")));
+        // The same source again: its entry is replaced, not repeated.
+        let again = after.clone();
+        let read2 = move |r: &str| (r == "wiki/entities/Orbit App.md").then(|| again.clone());
+        let a2 = parse_answer(&serde_json::to_string(&serde_json::json!({"pages": [{"page": "Orbit App",
+            "entry": {"date": "2026-09-28", "title": "Steerco: launch on 28 November confirmed", "body": "Confirmed."},
+            "claims": [{"subject": "Orbit App", "attribute": "go_live_date", "value": "28 November", "quote": "Staff launch now targeted for 28 November", "anchor": "page=2"}]}]})).unwrap()).unwrap();
+        let (p2, _) = plan(&pdf(), &a2, read2, resolve, "2026-10-02", page_budget(1));
+        assert_eq!(p2[0].after.matches("Source: [[Programme Update Steerco 2026-09-28.pdf]]").count(), 1);
+        assert!(p2[0].after.contains("### 2026-09-28 — Steerco: launch on 28 November confirmed\nSource: [[Programme Update Steerco 2026-09-28.pdf]]\n\nConfirmed.\n"));
+    }
+
+    #[test]
+    fn a_topical_section_is_rewritten_only_when_shown_whole() {
+        let read = |r: &str| (r == "wiki/entities/Orbit App.md").then(|| SHAPED.to_string());
+        let a = shaped_answer(r#""section": {"heading": "Risks", "content": "- The pen test gates the launch."},"#);
+        let (planned, _) = plan(&pdf(), &a, read, resolve, "2026-10-02", page_budget(1));
+        assert!(planned[0].after.contains("On the Hub.\n\n## Risks\n\n- The pen test gates the launch.\n\n## Timeline"));
+        // A long page whose Architecture the model saw only the heading of.
+        let long = SHAPED.replace("On the Hub.", &"On the Hub, with many details. ".repeat(2000));
+        let read = move |r: &str| (r == "wiki/entities/Orbit App.md").then(|| long.clone());
+        let a = shaped_answer(r#""section": {"heading": "Architecture", "content": "Rewritten."},"#);
+        let (planned, dropped) = plan(&pdf(), &a, read, resolve, "2026-10-02", page_budget(1));
+        assert!(planned.is_empty() && dropped[0].reason.contains("Architecture"), "{dropped:?}");
+    }
+
+    #[test]
+    fn a_new_page_gets_its_current_state_and_timeline() {
+        let a = parse_answer(r#"{"pages": [{"page": "wiki/entities/Pen test.md", "new": true, "description": "The launch gate",
+            "current_state": "Gates the launch.", "entry": {"date": "", "title": "Pending", "body": "Pending closure."},
+            "claims": [{"subject": "Pen test", "attribute": "status", "value": "pending", "quote": "pending pen-test closure", "anchor": "page=2"}]}]}"#).unwrap();
+        let (planned, _) = plan(&pdf(), &a, |_| None, |_| None, "2026-10-02", page_budget(1));
+        // No date given: the source's own day.
+        assert!(planned[0].after.ends_with("## Current state\n\nGates the launch.\n\n## Timeline\n\n### 2026-09-28 — Pending\nSource: [[Programme Update Steerco 2026-09-28.pdf]]\n\nPending closure.\n"), "{}", planned[0].after);
     }
 
     #[test]
