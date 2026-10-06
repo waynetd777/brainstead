@@ -74,9 +74,7 @@ impl Instruction {
         let have = || current.ok_or_else(|| format!("{name} isn't in the vault any more."));
         match self {
             Instruction::Page { content } => Ok(content.replace("\r\n", "\n")),
-            Instruction::Section { section, content } => {
-                proposals::patched(have()?, &proposals::Patch::Section { section: section.clone(), content: content.clone() })
-            }
+            Instruction::Section { section, content } => crate::pageshape::with_section(page, have()?, section, content),
             Instruction::Replace { edits } => proposals::patched(have()?, &proposals::Patch::Replace { edits: edits.clone() })
                 .map_err(|e| e.replace("isn't in the page", "isn't on the page any more")),
             Instruction::AddTask { line } => {

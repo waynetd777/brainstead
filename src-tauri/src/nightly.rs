@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! The nightly job (stage 7b; Settings › Jobs & schedule): contradictions for the pages that
-//! changed, and `index.md`'s catalogue brought up to date. Off until switched on; at the time
+//! changed, `index.md`'s catalogue brought up to date, and the wiki pages not in the page shape
+//! counted. Off until switched on; at the time
 //! set, or on waking when the time passed while asleep or closed (the reviews' "most recent
 //! occurrence wins" rule). No cap: it only looks at what changed. A notification says what it did.
 
@@ -86,6 +87,7 @@ pub fn progress(doing: &str, contra: &str) -> f32 {
         }
         "refresh" => 0.9,
         "index" => 0.97,
+        "shape" => 0.99,
         _ => 0.0,
     }
 }
@@ -149,6 +151,7 @@ pub fn nightly_status(app: AppHandle) -> Status {
             }
             "refresh" => "Ingesting changed sources again".into(),
             "index" => "Updating index.md".into(),
+            "shape" => "Checking the page shape".into(),
             _ => String::new(),
         },
         progress: if st.running { progress(&st.doing, &crate::contradict::doing()) } else { 0.0 },
@@ -266,6 +269,15 @@ fn run(app: &AppHandle, trigger: Option<&str>) {
     } else {
         step("index");
         did.push(index_md(app, trigger, &group));
+    }
+
+    // Pages edited out of the page shape elsewhere: reported, for Knowledge health's Reshape pages.
+    if !stopped() {
+        if let Some(root) = app.state::<VaultService>().root() {
+            step("shape");
+            let results: Vec<_> = brainstead_core::pageshape::survey(&root).into_iter().map(|(r, _)| r).collect();
+            did.push(brainstead_core::pageshape::drift_line(&results));
+        }
     }
 
     st.running = false;

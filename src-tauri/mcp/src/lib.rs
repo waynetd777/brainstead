@@ -216,7 +216,7 @@ fn tool(name: &str, title: &str, effect: Effect, description: &str, mut input: V
     })
 }
 
-const EDIT_PAGE: &str = "Changes one page (a note, a wiki page, a project: any page in the vault), or makes a new wiki page (needs the app); a new note is create_note. The change is made at once and recorded in Brainstead's Changes, where the user can revert it. Give exactly one of: section + content (that section's new text, without its heading; a section that isn't there is added at the end), edits (exact find and replace pairs, each find text appearing once in the page), or content alone (the whole page; required for a new page, whose path must be wiki/entities/<Name>.md, wiki/concepts/<Name>.md or wiki/summaries/<Name>.md). Keep what's in the text you replace that you aren't changing: links, tags, and block ids such as ^q3 at a line's end. Cite what the change rests on in quotes, copied word for word from the source; cite in the text as [[Source#Heading]] or [[Source.pdf#page=6]]; a PDF quote with anchor page=N must be on that page. A quote that isn't in its source is flagged to the user.";
+const EDIT_PAGE: &str = "Changes one page (a note, a wiki page, a project: any page in the vault), or makes a new wiki page (needs the app); a new note is create_note. The change is made at once and recorded in Brainstead's Changes, where the user can revert it. Give exactly one of: section + content (that section's new text, without its heading; a section that isn't there is added at the end, or on a wiki entity or concept page where the page shape puts it: a topical one above the Timeline, a summing one such as Summary or Status as the Current state), edits (exact find and replace pairs, each find text appearing once in the page), or content alone (the whole page; required for a new page, whose path must be wiki/entities/<Name>.md, wiki/concepts/<Name>.md or wiki/summaries/<Name>.md). Keep what's in the text you replace that you aren't changing: links, tags, and block ids such as ^q3 at a line's end. Cite what the change rests on in quotes, copied word for word from the source; cite in the text as [[Source#Heading]] or [[Source.pdf#page=6]]; a PDF quote with anchor page=N must be on that page. A quote that isn't in its source is flagged to the user.";
 
 /// The tools, as `tools/list` gives them. Those marked "needs the app" run in Brainstead itself
 /// (the server opens it when it isn't running), so they behave as the screens do.
@@ -1382,7 +1382,13 @@ fn edit_page(ctx: &Ctx, a: ProposeArgs) -> Result<String, String> {
     };
     // Checked here, so the model hears at once what's wrong; the app runs it again on the page as
     // it is when it's made.
-    let mut after = proposals::patched(before.as_deref().unwrap_or(""), &patch)?;
+    let mut after = match &patch {
+        // A heading the page doesn't have goes where the page shape puts it.
+        Patch::Section { section, content } => {
+            brainstead_core::pageshape::with_section(&rel, before.as_deref().unwrap_or(""), section, content)?
+        }
+        _ => proposals::patched(before.as_deref().unwrap_or(""), &patch)?,
+    };
     if let Some(b) = &before {
         after = proposals::bump_updated(b, &after, &ctx.today.to_string());
         if after.replace("\r\n", "\n") == b.replace("\r\n", "\n") {

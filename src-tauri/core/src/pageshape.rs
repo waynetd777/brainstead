@@ -1233,6 +1233,40 @@ pub fn with_topic(page: &str, heading: &str, content: &str) -> Result<String, St
     Ok(insert_sections(page, &format!("## {h}\n\n{}\n", content.trim()), &[Kind::Timeline, Kind::Closing]))
 }
 
+/// A section's new text, as an edit gives it (`edit_page`, a change's section): on an entity or
+/// concept page a heading it doesn't have goes where the shape puts it, a topical one above the
+/// Timeline and a summing one (Summary, Status…) as Current state after the opening; anything
+/// else as `proposals::patched` does it.
+pub fn with_section(rel: &str, page: &str, heading: &str, content: &str) -> Result<String, String> {
+    let page = page.replace("\r\n", "\n");
+    let h = heading.trim().trim_start_matches('#').trim();
+    let has =
+        markdown::lines(&page, 0).iter().any(|l| !l.code && markdown::heading(l.text).is_some_and(|(_, t)| t.eq_ignore_ascii_case(h)));
+    if shaped(rel) && !has {
+        match classify(h) {
+            Kind::Topical => return with_topic(&page, h, content),
+            Kind::Summing => return with_current_state_text(&page, content),
+            _ => {}
+        }
+    }
+    crate::proposals::patched(&page, &crate::proposals::Patch::Section { section: h.to_string(), content: content.to_string() })
+}
+
+/// The nightly check's line on the page shape: how many pages aren't in it, and how many of those
+/// Reshape pages can do by itself.
+pub fn drift_line(results: &[PageResult]) -> String {
+    let out: Vec<&PageResult> = results.iter().filter(|r| !r.in_shape).collect();
+    if out.is_empty() {
+        return "every wiki page in the page shape".into();
+    }
+    let auto = out.iter().filter(|r| r.auto && r.report.broken.is_empty()).count();
+    let n = out.len();
+    format!(
+        "{n} wiki page{} not in the page shape ({auto} Reshape pages can do by itself, in Knowledge health)",
+        if n == 1 { "" } else { "s" }
+    )
+}
+
 /// The page with its Current state's text `text`: replaced when it has one, else put after the opening.
 pub fn with_current_state_text(page: &str, text: &str) -> Result<String, String> {
     if has_current_state(page) {
@@ -1630,6 +1664,39 @@ mod tests {
         assert!(new.contains("## Current state\n\nLaunch on 5 December.\n\n## Architecture"));
         let (bare, _) = reshape(&fixture("dated-only"), &is_source);
         assert!(in_shape(&with_current_state_text(&bare, "Live.").unwrap(), &is_source));
+    }
+
+    #[test]
+    fn an_edit_puts_a_new_heading_where_the_shape_does() {
+        let page = fixture("in-shape");
+        let rel = "wiki/entities/Orbit App.md";
+        let new = with_section(rel, &page, "## Risks", "- Pen test.").unwrap();
+        assert!(new.contains("## Risks\n\n- Pen test.\n\n## Timeline\n"), "{new}");
+        assert!(in_shape(&new, &is_source));
+        // A summing heading is the page's Current state.
+        let new = with_section(rel, &page, "Status", "Live.").unwrap();
+        assert!(new.contains("## Current state\n\nLive.\n\n## Architecture") && !new.contains("## Status"), "{new}");
+        // A heading it has is rewritten where it is; a page outside the shape as before.
+        let new = with_section(rel, &page, "architecture", "Hub 2.").unwrap();
+        assert!(new.contains("## Architecture\n\nHub 2.\n\n## Timeline"));
+        let new = with_section("Projects/Orbit.md", &page, "Risks", "- Pen test.").unwrap();
+        assert!(new.contains("## Risks\n\n- Pen test.\n\n## See also"), "{new}");
+    }
+
+    #[test]
+    fn a_page_edited_out_of_shape_is_reported_and_reshaped() {
+        let sources = Sources::from_paths(["Meeting. Orbit App Steerco - 2026-10-02.md", "Meeting. Orbit App Sync - 2026-10-05.md"]);
+        let page = fixture("in-shape");
+        let (ok, _) = one("wiki/entities/Orbit App.md", &page, &sources);
+        assert_eq!(drift_line(std::slice::from_ref(&ok)), "every wiki page in the page shape");
+        // Edited elsewhere: a dated section added at the end, below See also.
+        let drifted = format!("{page}\n\n## 5 Oct 2026 — Sync\n\nScope agreed [[Meeting. Orbit App Sync - 2026-10-05]].\n");
+        let (r, new) = one("wiki/entities/Orbit App.md", &drifted, &sources);
+        assert!(!r.in_shape && r.auto, "{r:?}");
+        assert_eq!(drift_line(&[ok, r]), "1 wiki page not in the page shape (1 Reshape pages can do by itself, in Knowledge health)");
+        let new = new.unwrap();
+        assert!(new.contains("## Timeline\n\n### 2026-10-05 — Sync\nSource: [[Meeting. Orbit App Sync - 2026-10-05]]"), "{new}");
+        assert!(in_shape(&new, &|t| sources.is_source(t)));
     }
 
     #[test]
