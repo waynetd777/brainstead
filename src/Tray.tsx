@@ -19,7 +19,8 @@ import { localToday } from "./md/taskQuery";
 import { pageName } from "./knowledge";
 import { ReadOnlyPill } from "./Sidebar";
 import { applyTheme, settings, useStore } from "./store";
-import { todayRows, viewRows, VIEWS } from "./taskModel";
+import { Switch } from "./ui";
+import { deferredPast, todayRows, viewRows, VIEWS } from "./taskModel";
 
 export interface Running {
   key: string;
@@ -137,7 +138,7 @@ async function load(): Promise<TrayData> {
   return {
     overdue: t ? t.overdue.length : null,
     due: t ? t.due.length : null,
-    waiting: tasks ? (waitingView ? viewRows(tasks, waitingView, today).length : 0) : null,
+    waiting: tasks ? (waitingView ? viewRows(tasks, waitingView, today).filter((r) => !deferredPast(r, today)).length : 0) : null,
     inbox: inbox && inbox.filter(unclarified).length,
     held: changes && changes.filter((c) => c.status === "held").length,
     running: runningOf(ingests, nightly, reviews, !!contra?.last?.running),
@@ -188,6 +189,9 @@ export function TrayWindow() {
   const [nightly, setNightly] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const readOnly = !!useStore(settings).readOnly;
+  // Open at login: null where macOS can't manage it for this copy of the app (`make dev`).
+  const [login, setLogin] = useState<boolean | null>(null);
+  const [loginErr, setLoginErr] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     void load().then((x) => {
@@ -200,9 +204,18 @@ export function TrayWindow() {
   // Fresh when opened (the theme too, which the main window may have changed), when the vault or
   // the queue changes, and every so often for runs: often while one is going.
   useEffect(() => {
+    // Read again each time it opens: System Settings › Login Items can change it too.
+    const loadLogin = () =>
+      void api
+        .loginItem()
+        .then(setLogin)
+        .catch(() => {});
     refresh();
+    loadLogin();
     const offs = [
       listen("tray-opened", () => {
+        loadLogin();
+        setLoginErr(null);
         void api.settingsRead().then((s) => {
           settings.loadFrom(s);
           applyTheme(s.theme);
@@ -213,6 +226,12 @@ export function TrayWindow() {
       }),
       api.onVaultChanged(() => refresh()),
       api.onChangesChanged(() => refresh()),
+      // Runs starting and stopping, so the rows and the icon's dots don't wait for the poll.
+      api.onIngestChanged(() => refresh()),
+      api.onNightlyChanged(() => refresh()),
+      api.onReviewsChanged(() => refresh()),
+      api.onContradictionsChanged(() => refresh()),
+      api.onLoginItemChanged(setLogin),
     ];
     return () => offs.forEach((o) => void o.then((f) => f()));
   }, [refresh]);
@@ -325,6 +344,26 @@ export function TrayWindow() {
           {!!d.inbox && (
             <Item icon="inbox" label={`${d.inbox} ${d.inbox === 1 ? "item" : "items"} in the Inbox`} onClick={() => show("inbox")} />
           )}
+        </div>
+      )}
+      {login !== null && (
+        <div className="tray-sec tray-switches">
+          <div className="tray-switch">
+            <Icon name="power" size={14} />
+            <span className="grow">Open at login</span>
+            <Switch
+              label="Open at login"
+              on={login}
+              onChange={(v) => {
+                setLoginErr(null);
+                void api
+                  .loginItemSet(v)
+                  .then(setLogin)
+                  .catch((e) => setLoginErr(String(e)));
+              }}
+            />
+          </div>
+          {loginErr && <div className="tray-err small">{loginErr}</div>}
         </div>
       )}
       <div className="tray-sec tray-list">

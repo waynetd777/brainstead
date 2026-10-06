@@ -27,6 +27,8 @@ import { reviewWeek } from "./Weekly";
 import { Dialog, TableBand } from "./ui";
 import { Markdown } from "./md/Markdown";
 import { settings, useStore } from "./store";
+import { useVaultVersion } from "./state";
+import { makeMeetingNotes } from "./meetingFlow";
 import { TaskText } from "./TaskList";
 import { appendAsReference, newReferenceNote, settleInboxItem } from "./inboxActions";
 
@@ -83,7 +85,13 @@ export function InboxScreen() {
   const [thinking, setThinking] = useState(false);
   const [done, setDone] = useState(0);
   const key = (i: InboxItem) => `${i.kind}:${i.line}:${i.lineText.slice(0, 40)}`;
-  // What the weekly review's preparation suggested for these items, until Suggest asks again.
+  // What the weekly review's preparation suggested for these items, until Suggest asks again;
+  // read again when a preparation finishes.
+  const [prepped, setPrepped] = useState(0);
+  useEffect(() => {
+    const off = api.onWeekprepChanged(() => setPrepped((n) => n + 1));
+    return () => void off.then((f) => f());
+  }, []);
   useEffect(() => {
     void api
       .weekprepStatus(reviewWeek(localToday()))
@@ -107,7 +115,7 @@ export function InboxScreen() {
         setSugg((m) => ({ ...ready, ...m }));
       })
       .catch(() => {});
-  }, []);
+  }, [prepped]);
   const idx = Math.max(
     0,
     items.findIndex((i) => key(i) === sel),
@@ -149,7 +157,8 @@ export function InboxScreen() {
       case "project":
         return setMaking(s.text || itemText(i));
       case "meeting":
-        return nav.go({ screen: "meeting", path: i.path });
+        // In one step when Brainstead is sure of the note; otherwise the meeting screen asks.
+        return void makeMeetingNotes([i.path]);
       case "reply":
         return nav.go({ screen: "reply", path: i.path });
       case "ingest":
@@ -424,6 +433,7 @@ const captureTitle = (stem: string) => stem.replace(/^(Email|Teams)\.( [A-Z][a-z
 /** A capture: its title, a link to the file, and the start of its text. */
 function CaptureBody({ item }: { item: InboxItem }) {
   const [doc, setDoc] = useState<{ content: string; root: string } | null>(null);
+  const v = useVaultVersion();
   useEffect(() => {
     let live = true;
     api
@@ -433,7 +443,7 @@ function CaptureBody({ item }: { item: InboxItem }) {
     return () => {
       live = false;
     };
-  }, [item.path]);
+  }, [item.path, v]);
   // The heading, link and time above the first `---` are shown above it already.
   const text = doc?.content ?? "";
   const cut = text.indexOf("\n---\n");

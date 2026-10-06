@@ -19,7 +19,7 @@ import { localToday } from "./md/taskQuery";
 import { nav, openDoc, useViewState } from "./nav";
 import { recentDocs } from "./recent";
 import { DraftNudge, LoadFailed, TaskList, TasksFailed, useTaskListKeys } from "./TaskList";
-import { tasksFailed, todayRows, useAllTasks, viewRows, VIEWS } from "./taskModel";
+import { deferredPast, tasksFailed, todayRows, useAllTasks, viewRows, VIEWS } from "./taskModel";
 import { useVaultOpening, useVaultVersion, vaultStatus } from "./state";
 import { TopBar } from "./TopBar";
 import { ago, fmtCount, TableBand } from "./ui";
@@ -73,7 +73,7 @@ export function TodayScreen() {
             all,
             VIEWS.find((v) => v.id === "waiting")!,
             today,
-          )
+          ).filter((r) => !deferredPast(r, today))
         : [],
     [all, today],
   );

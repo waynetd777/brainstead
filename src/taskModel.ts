@@ -109,9 +109,14 @@ export function viewRows(all: TaskRow[], v: View, today: string, inbox?: InboxIt
   return v.sort ? r.sort(v.sort) : r;
 }
 
-/** Today: overdue, due today, and deferred until today or earlier (the previous app's GTD counts). */
+/** Deferred to a day after `today`: left off Today, its counts and its Waiting band (D-20261006-02). */
+export const deferredPast = (t: TaskRow, today: string) => !!t.scheduled && t.scheduled > today;
+
+/** Today: overdue, due today, and deferred until today or earlier (the previous app's GTD counts).
+ *  A task deferred past today is left out even when it's due or overdue: deferring it is saying
+ *  "not today" (D-20261006-02). */
 export function todayRows(all: TaskRow[], today: string): { overdue: TaskRow[]; due: TaskRow[]; scheduled: TaskRow[] } {
-  const open = all.filter((t) => !t.done);
+  const open = all.filter((t) => !t.done && !deferredPast(t, today));
   const overdue = open.filter((t) => t.due && t.due < today).sort((a, b) => a.due!.localeCompare(b.due!));
   const due = open.filter((t) => t.due === today);
   const scheduled = open.filter((t) => t.scheduled && t.scheduled <= today && !(t.due && t.due <= today));

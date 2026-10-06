@@ -21,29 +21,20 @@ import { TopBar } from "./TopBar";
 import { useVaultVersion } from "./state";
 import { place, useViewState } from "./nav";
 import { Seg } from "./ui";
+import { draftNotes, noteFile, specOf, specOk } from "./meetingFlow";
+
+export { noteFile, specOf, specOk };
 
 const TYPES = ["Meeting", "1-1", "Workshop", "Interview"];
-
-/** The note a transcript becomes, from what was read from its name and what was changed. */
-export function specOf(t: Transcript, edits: Partial<NoteSpec> = {}): NoteSpec {
-  return {
-    type: edits.type ?? t.inferred.type ?? "Meeting",
-    name: edits.name ?? t.inferred.name ?? "",
-    date: edits.date ?? t.inferred.date ?? "",
-  };
-}
 
 /** The date is only the day the transcript was captured, and the user hasn't confirmed or changed
  *  it yet: the note waits until they do. */
 export const needsDate = (t: Transcript, edits: Partial<NoteSpec> = {}) => t.inferred.dateCheck && edits.date === undefined;
 
-export const noteFile = (s: NoteSpec) => `${s.type}. ${s.name.trim()} - ${s.date}.md`;
 /** Its note exists already (at the name read from the transcript, unchanged): there's nothing to
  *  draft, unless the name or date is changed. */
 export const noteExists = (t: Transcript, edits: Partial<NoteSpec> = {}) =>
   t.inferred.exists && noteFile(specOf(t, edits)) === noteFile(specOf(t));
-
-export const specOk = (s: NoteSpec) => !!s.name.trim() && /^\d{4}-\d{2}-\d{2}$/.test(s.date);
 
 const DONE: Record<NonNullable<Transcript["done"]>, string> = { ingested: "ingested", linked: "linked from a note" };
 
@@ -111,13 +102,10 @@ export function MeetingScreen() {
       );
     const paths = items.map((t) => t.path);
     setSending((x) => new Set([...x, ...paths]));
-    api
-      .meetingDraft(pairs)
+    draftNotes(pairs)
       .then((ids) => {
         toast(ids.length === 1 ? "Drafting the note: it'll be made in the vault" : `Drafting ${ids.length} notes, one after another`);
         setPicked(new Set());
-        // A transcript captured from Teams leaves the Inbox once its note is being drafted.
-        paths.forEach((p) => void api.inboxCaptureDone(p).catch(() => {}));
       })
       .catch(reportEditError)
       .finally(() =>

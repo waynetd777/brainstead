@@ -494,3 +494,18 @@ fn moving_over_and_starting_the_review_over_go_to_the_app() {
         assert_eq!(app.join().unwrap().action, action);
     }
 }
+
+#[test]
+fn a_long_page_or_section_is_shown_in_part() {
+    let page = format!(
+        "# Orbit App\n\nThe staff app.\n\n## Current state\n\nLaunch 28 November.\n\n{}## Oct 2026\n\nRecon moves to 16 Oct.\n",
+        (1..=60).map(|i| format!("## Sync {i}\n\n{}\n\n", "Nothing new. ".repeat(60))).collect::<String>()
+    );
+    let f = fit(&page, page.chars().count(), true);
+    assert!(f.starts_with("[") && f.contains("shown in part"));
+    assert!(f.contains("Launch 28 November.") && f.contains("Recon moves to 16 Oct.") && f.contains("## Sync 1\n[… not shown"));
+    // No headings: its start and its end.
+    let log = format!("Started.\n{}Latest entry.\n", "- an entry\n".repeat(5_000));
+    let f = fit(&log, log.chars().count(), false);
+    assert!(f.contains("Started.") && f.ends_with("Latest entry.\n") && f.chars().count() < MAX_CHARS);
+}

@@ -46,6 +46,7 @@ import { keepsPaused, reviewWeek, scheduleLabel, STEPS } from "./Weekly";
 import { ask, isSaved, keepChat } from "./askState";
 import { settings } from "./store";
 import { choice, prepStep, WEEKLY_STATE_CHANGED } from "./weeklyPrep";
+import { draftNotes, followThrough } from "./meetingFlow";
 
 const TODO_LIST = "Me. To Do List.md";
 
@@ -762,9 +763,11 @@ async function startRun(a: Args): Promise<string> {
         date: str(a, "date") ?? t.inferred.date ?? localToday(),
       };
       if (!spec.name) throw new Error("Give name: who the 1-1 was with, or the meeting's name.");
-      await api.meetingDraft([[t.path, spec]], unattended);
+      await draftNotes([[t.path, spec]], unattended);
       noted(`started a meeting note from ${t.path}`);
-      return `Drafting the ${spec.type} note “${spec.name}” for ${spec.date}; it's made in the vault when it's ready (listed in Changes).`;
+      const f = followThrough();
+      const then = [f.ingest && "ingested", f.trash && "the transcript moved to the Trash"].filter(Boolean).join(" and ");
+      return `Drafting the ${spec.type} note “${spec.name}” for ${spec.date}; it's made in the vault when it's ready (listed in Changes)${then ? `, then ${then}` : ""}.`;
     }
     default:
       throw new Error("run is ingest, nightly, daily_summary, weekly_summary, weekly_prep, contradictions or meeting_note.");

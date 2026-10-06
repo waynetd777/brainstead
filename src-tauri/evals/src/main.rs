@@ -32,6 +32,9 @@ struct Scenario {
     transcript: Option<Named>,
     #[serde(default)]
     plant: Option<Planted>,
+    /// For ingest: this wiki page made long first (`pad_page`), as real hub pages are.
+    #[serde(default)]
+    pad: Option<String>,
     #[serde(default)]
     question: String,
     #[serde(default)]
@@ -150,8 +153,30 @@ fn wiki_pages(root: &Path) -> Vec<(String, Vec<String>)> {
     c::pages(root).into_iter().map(|(r, _, a)| (r, a)).collect()
 }
 
+/// A page grown long: a long `sources:` list, and forty dated sections of invented history
+/// between its Current state and the rest, so it's shown to the model in part.
+fn pad_page(root: &Path, rel: &str) {
+    let path = root.join(rel);
+    let page = std::fs::read_to_string(&path).unwrap_or_default();
+    let sources: String = (1..=120).map(|i| format!("  - \"[[Weekly sync {i:03} - Orbit App]]\"\n")).collect();
+    let page = page.replacen("sources:\n", &format!("sources:\n{sources}"), 1);
+    let history: String = (1..=40)
+        .map(|i| {
+            format!(
+                "## Weekly sync {i:03}\n\n{}\n\n",
+                "The team walked the board, cleared the review queue and noted no change to the plan. ".repeat(14)
+            )
+        })
+        .collect();
+    let page = page.replacen("## History", &format!("{history}## History"), 1);
+    std::fs::write(path, page).unwrap();
+}
+
 fn run_ingest(s: &Scenario, root: &Path, model: &str) -> Outcome {
     let mut failures = Vec::new();
+    if let Some(p) = &s.pad {
+        pad_page(root, p);
+    }
     let text = std::fs::read_to_string(root.join(&s.source)).unwrap_or_default();
     let src = ingest::Source { rel: s.source.clone(), text: ingest::SourceText::Text(text.clone()) };
     let m = names::mentions(&text, &wiki_pages(root));
@@ -171,7 +196,7 @@ fn run_ingest(s: &Scenario, root: &Path, model: &str) -> Outcome {
     let read = |r: &str| std::fs::read_to_string(root.join(r)).ok();
     let resolve =
         |n: &str| m.iter().find(|x| brainstead_core::lint::stem(brainstead_core::lint::name_of(&x.page)) == n).map(|x| x.page.clone());
-    let (planned, dropped) = ingest::plan(&src, &answer, read, resolve, "2026-10-02");
+    let (planned, dropped) = ingest::plan(&src, &answer, read, resolve, "2026-10-02", ingest::page_budget(pages.len()));
     if planned.is_empty() {
         failures.push("No page change survived the checks.".into());
     }
@@ -196,6 +221,9 @@ fn run_ingest(s: &Scenario, root: &Path, model: &str) -> Outcome {
     }
     for d in &dropped {
         output.push_str(&format!("Dropped {}: {}\n", d.page, d.reason));
+        if d.reason.contains("shown only part of") {
+            failures.push(format!("It tried to rewrite a section of {} it was shown only part of.", d.page));
+        }
     }
     Outcome { output, failures }
 }

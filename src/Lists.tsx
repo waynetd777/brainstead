@@ -11,6 +11,7 @@ import { filedPage } from "./Ask";
 import { Column, FileList, fmtDay, Grouping, Snippet } from "./FileList";
 import { Icon } from "./icons";
 import { ingest, RunsPane } from "./Ingest";
+import { isTranscriptPath, makeMeetingNotes } from "./meetingFlow";
 import { checkTemplate } from "./notes/templater";
 import { changes, health, held, startKnowledge } from "./knowledge";
 import { settings, useStore } from "./store";
@@ -552,7 +553,8 @@ async function importToSources(paths: string[]) {
     else if (ok.length > 1) toast(`Added ${ok.length} files to Sources`);
     // Settings › Jobs & schedule: new sources are ingested as they arrive.
     const added = ok.map((x) => x.path!).filter(ingestable);
-    if (settings.get().ingestOnArrival && added.length) ingest(added);
+    const toIngest = added.filter((p) => !isTranscriptPath(p));
+    if (settings.get().ingestOnArrival && toIngest.length) ingest(toIngest);
     if (bad.length)
       toast(bad.length === 1 ? (bad[0].error ?? "Not added") : `${bad.length} files not added: ${bad[0].error}`, undefined, "bad");
   } catch (e) {
@@ -611,7 +613,10 @@ export function SourcesScreen() {
     () => (!rows || status === "all" ? rows : rows.filter((r) => sourceStatus(r, changed) === status)),
     [rows, status, changed],
   );
-  const waiting = (rows ?? []).filter((r) => ingestable(r.path) && sourceStatus(r, changed) !== "ingested").map((r) => r.path);
+  // Transcripts wait for their meeting notes (Meeting note on their rows), so they aren't ingested as they are.
+  const waiting = (rows ?? [])
+    .filter((r) => ingestable(r.path) && sourceStatus(r, changed) !== "ingested" && !isTranscriptPath(r.path))
+    .map((r) => r.path);
   const dropping = useDropToSources();
   const columns: Column<SourceRow>[] = [
     {
@@ -635,10 +640,13 @@ export function SourcesScreen() {
     {
       key: "act",
       label: "",
-      width: "0 0 90px",
+      width: "0 0 150px",
       value: () => "",
       render: (r) =>
-        ingestable(r.path) && (
+        ingestable(r.path) &&
+        (isTranscriptPath(r.path) && !r.ingested ? (
+          <TranscriptAction path={r.path} />
+        ) : (
           <button
             type="button"
             className="btn sm"
@@ -650,7 +658,7 @@ export function SourcesScreen() {
           >
             {r.ingested ? "Re-ingest" : "Ingest"}
           </button>
-        ),
+        )),
     },
     {
       // Only the folder: the title already names the file.
@@ -680,7 +688,9 @@ export function SourcesScreen() {
         </button>
         <span
           title={
-            waiting.length ? "Ingest the new and changed sources into the wiki, one after another" : "No new or changed sources to ingest"
+            waiting.length
+              ? "Ingest the new and changed sources into the wiki, one after another (transcripts get meeting notes instead)"
+              : "No new or changed sources to ingest"
           }
         >
           <button type="button" className="btn pri" disabled={!waiting.length} onClick={() => ingest(waiting)}>
@@ -723,6 +733,57 @@ export function SourcesScreen() {
         )}
       </div>
     </main>
+  );
+}
+
+/** A transcript's row button: Make meeting note (the note written, ingested and the transcript
+ *  trashed, src/meetingFlow.ts), with Ingest into the wiki on its menu. */
+function TranscriptAction({ path }: { path: string }) {
+  const [at, setAt] = useState<DOMRect | null>(null);
+  return (
+    <span className="splitbtn" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        className="btn sm"
+        title="Write a meeting or 1-1 note from this transcript, ingest it and move the transcript to the Trash"
+        onClick={() => void makeMeetingNotes([path])}
+      >
+        Meeting note
+      </button>
+      <button
+        type="button"
+        className="btn sm"
+        aria-label="More ways to use this transcript"
+        title="More ways to use this transcript"
+        onClick={(e) => setAt(e.currentTarget.getBoundingClientRect())}
+      >
+        <Icon name="chevdown" size={12} />
+      </button>
+      {at && (
+        <Popover anchor={at} onClose={() => setAt(null)} width={230}>
+          <div className="menu" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              title="Write a meeting or 1-1 note from this transcript, ingest it and move the transcript to the Trash"
+              onClick={() => (setAt(null), void makeMeetingNotes([path]))}
+            >
+              <Icon name="note" size={14} />
+              Make a meeting note
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              title="Read the transcript itself into the wiki, with no meeting note"
+              onClick={() => (setAt(null), ingest([path]))}
+            >
+              <Icon name="wiki" size={14} />
+              Ingest into the wiki
+            </button>
+          </div>
+        </Popover>
+      )}
+    </span>
   );
 }
 

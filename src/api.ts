@@ -26,6 +26,9 @@ export interface Settings {
   /** Jobs & schedule: ingest a new source as it arrives (a capture, a file dropped or imported);
    *  and, in the nightly check, ingest again the sources that changed since pages cited them. */
   ingestOnArrival?: boolean;
+  /** After a meeting note is made: ingest it (default on), then move its transcript to the Trash (default on). */
+  meetingIngest?: boolean;
+  meetingTrash?: boolean;
   refreshStale?: boolean;
   /** A model per background job (reviews, ingest, meeting, clarify, contradictions, skills); a
    *  job not named uses `askModel`. */
@@ -975,6 +978,9 @@ export const api = {
   /** Whether Brainstead opens at login; null where the system can't say. */
   loginItem: () => invoke<boolean | null>("login_item"),
   loginItemSet: (on: boolean) => invoke<boolean | null>("login_item_set", { on }),
+  /** Open at login changed, from Settings or the menu-bar window. */
+  onLoginItemChanged: (f: (on: boolean | null) => void): Promise<UnlistenFn> =>
+    listen<boolean | null>("login-item-changed", (e) => f(e.payload)),
   /** The switch-over checklist's own checks (Settings › General). */
   /** `previous`: the previous app's own files are in the vault, so the checklist shows. */
   switchoverStatus: () =>
@@ -1079,6 +1085,10 @@ export const api = {
   /** A Note menu item was chosen: its id, as `note:save`. */
   onMenu: (f: (id: string) => void): Promise<UnlistenFn> => listen<string>("menu", (e) => f(e.payload)),
   onIndexStatus: (f: (s: VaultStatus) => void): Promise<UnlistenFn> => listen<VaultStatus>("index-status", (e) => f(e.payload)),
+  /** A file renamed (`to`) or trashed (`to` null), from any screen, an assistant or Changes; `draft`
+   *  is where its unsaved edits belong now. */
+  onFileMoved: (f: (m: { from: string; to: string | null; draft: string }) => void): Promise<UnlistenFn> =>
+    listen<{ from: string; to: string | null; draft: string }>("file-moved", (e) => f(e.payload)),
   onVaultChanged: (f: (c: VaultChanges) => void): Promise<UnlistenFn> => listen<VaultChanges>("vault-changed", (e) => f(e.payload)),
   /** A capture from the Outlook or Teams extension, written (`path`) or refused (`error`). */
   /** Settings › Capture extensions: the folder to load them from, the browsers that know the host, the last captures. */

@@ -193,9 +193,12 @@ const priorityOf = (t: TaskRow) => parseTask(t.lineText)?.priority ?? "none";
 
 function TaskMenu({ t, at, onClose }: { t: TaskRow; at: DOMRect; onClose: () => void }) {
   const [pick, setPick] = useState<TaskDateKind | null>(null);
-  // Start and created are folded away unless the task has them.
-  const [more, setMore] = useState(!!(t.start || t.created));
+  // Start and created are folded away unless it has a start date (nearly every task has a created
+  // date, stamped on capture, so that alone doesn't open them).
+  const [more, setMore] = useState(!!t.start);
   const today = localToday();
+  // Two columns when the window can take them beside the row; one on a narrow window.
+  const wide = window.innerWidth >= 600;
   const set = (kind: TaskDateKind, d: string | null) => {
     onClose();
     void setTaskDate(t, kind, d);
@@ -242,104 +245,114 @@ function TaskMenu({ t, at, onClose }: { t: TaskRow; at: DOMRect; onClose: () => 
     );
   };
   return (
-    <Popover anchor={at} onClose={onClose} width={276}>
-      <div className="menu" role="menu">
+    <Popover anchor={at} onClose={onClose} width={wide ? 540 : 276}>
+      <div className={`menu tmenu${wide ? " wide" : ""}`} role="menu">
         {pick ? (
           <DatePicker value={valueOf(t, pick)} label={HEAD[pick][1]} onPick={(d) => set(pick, d)} onCancel={() => setPick(null)} />
         ) : (
           <>
-            {section("due")}
-            {section("scheduled")}
-            {more ? (
-              <>
-                {section("start")}
-                {section("created")}
-              </>
-            ) : (
-              <button
-                type="button"
-                role="menuitem"
-                className="faint"
-                title="Show the start and created dates too"
-                onClick={() => setMore(true)}
-              >
-                <Icon name="chevdown" size={14} />
-                Start and created dates
-              </button>
-            )}
-            <div className="sep" />
-            <div className="mlabel" title={TASK_FIELDS.priority.explain}>
-              <Icon name="priority" size={14} />
-              Priority
+            {/* Two columns where the window has room: dates, then the task's fields; its actions below. */}
+            <div className="tmcols">
+              <div className="tmcol">
+                {section("due")}
+                {section("scheduled")}
+                {more ? (
+                  <>
+                    {section("start")}
+                    {section("created")}
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="faint"
+                    title="Show the start and created dates too"
+                    onClick={() => setMore(true)}
+                  >
+                    <Icon name="chevdown" size={14} />
+                    More dates…
+                  </button>
+                )}
+                <div className="sep" />
+                <div className="mlabel" title={TASK_FIELDS.priority.explain}>
+                  <Icon name="priority" size={14} />
+                  Priority
+                </div>
+                <div className="qchips">
+                  {PRIORITY_CHOICES.map(([p, label]) => (
+                    <button
+                      key={p}
+                      type="button"
+                      className={`chip f ${priorityOf(t) === p ? "on" : ""}`}
+                      aria-pressed={priorityOf(t) === p}
+                      title={p === "none" ? "Remove the priority" : `Set the priority to ${label.toLowerCase()}`}
+                      onClick={() => {
+                        onClose();
+                        void changeTask(t, { priority: p });
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="tmcol">
+                <GtdMenu t={t} onClose={onClose} />
+              </div>
             </div>
-            <div className="qchips">
-              {PRIORITY_CHOICES.map(([p, label]) => (
-                <button
-                  key={p}
-                  type="button"
-                  className={`chip f ${priorityOf(t) === p ? "on" : ""}`}
-                  aria-pressed={priorityOf(t) === p}
-                  title={p === "none" ? "Remove the priority" : `Set the priority to ${label.toLowerCase()}`}
-                  onClick={() => {
-                    onClose();
-                    void changeTask(t, { priority: p });
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="sep" />
-            <GtdMenu t={t} onClose={onClose} />
             {/* Its state; a done task has none of these, so no empty group. */}
             {(!t.done || t.status === "-") && <div className="sep" />}
-            {t.status !== "/" && !t.done && (
-              <button
-                type="button"
-                role="menuitem"
-                title="Mark it as started but not finished"
-                onClick={() => (onClose(), void changeTask(t, "start"))}
-              >
-                <Icon name="in-progress" size={14} />
-                Mark in progress
-              </button>
-            )}
-            {!t.done && (
-              <button
-                type="button"
-                role="menuitem"
-                title={
-                  t.tags.includes("waiting-for") ? "Remove the waiting-for tag" : "Tag it waiting-for, so it shows on the Waiting for list"
-                }
-                onClick={() => (onClose(), void changeTask(t, "waiting"))}
-              >
-                <Icon name="waiting" size={14} />
-                {t.tags.includes("waiting-for") ? "No longer waiting for it" : "Waiting for someone"}
-              </button>
-            )}
-            {t.status === "-" || t.status === "/" ? (
-              <button
-                type="button"
-                role="menuitem"
-                title={t.status === "-" ? "Make the cancelled task open again" : "Mark it as not started"}
-                onClick={() => (onClose(), void changeTask(t, "reopen"))}
-              >
-                <Icon name="refresh" size={14} />
-                {t.status === "-" ? "Reopen" : "Back to to-do"}
-              </button>
-            ) : (
-              !t.done && (
+            <div className="tmacts">
+              {t.status !== "/" && !t.done && (
                 <button
                   type="button"
                   role="menuitem"
-                  title="Mark it cancelled; it stays in its note"
-                  onClick={() => (onClose(), void changeTask(t, "cancel"))}
+                  title="Mark it as started but not finished"
+                  onClick={() => (onClose(), void changeTask(t, "start"))}
                 >
-                  <Icon name="cancelled" size={14} />
-                  Cancel task
+                  <Icon name="in-progress" size={14} />
+                  Mark in progress
                 </button>
-              )
-            )}
+              )}
+              {!t.done && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  title={
+                    t.tags.includes("waiting-for")
+                      ? "Remove the waiting-for tag"
+                      : "Tag it waiting-for, so it shows on the Waiting for list"
+                  }
+                  onClick={() => (onClose(), void changeTask(t, "waiting"))}
+                >
+                  <Icon name="waiting" size={14} />
+                  {t.tags.includes("waiting-for") ? "No longer waiting for it" : "Waiting for someone"}
+                </button>
+              )}
+              {t.status === "-" || t.status === "/" ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  title={t.status === "-" ? "Make the cancelled task open again" : "Mark it as not started"}
+                  onClick={() => (onClose(), void changeTask(t, "reopen"))}
+                >
+                  <Icon name="refresh" size={14} />
+                  {t.status === "-" ? "Reopen" : "Back to to-do"}
+                </button>
+              ) : (
+                !t.done && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    title="Mark it cancelled; it stays in its note"
+                    onClick={() => (onClose(), void changeTask(t, "cancel"))}
+                  >
+                    <Icon name="cancelled" size={14} />
+                    Cancel task
+                  </button>
+                )
+              )}
+            </div>
             <div className="sep" />
             <button
               type="button"
@@ -506,6 +519,12 @@ function GtdMenu({ t, onClose }: { t: TaskRow; onClose: () => void }) {
   };
   const toggle = (c: string) => run({ contexts: mine.includes(c) ? mine.filter((x) => x !== c) : [...mine, c] });
   const active = (projects ?? []).filter((p) => p.status === "active" || p.path === t.project);
+  // The menu's few: its own project first, then those with the newest tasks (by created date).
+  const latest = new Map<string, string>();
+  for (const x of all ?? []) if (x.project && (x.created ?? "") > (latest.get(x.project) ?? "")) latest.set(x.project, x.created ?? "");
+  const recent = [...active].sort(
+    (a, b) => +(b.path === t.project) - +(a.path === t.project) || (latest.get(b.path) ?? "").localeCompare(latest.get(a.path) ?? ""),
+  );
   const matching = active.filter((p) => !q || p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 6);
   return (
     <>
@@ -605,7 +624,7 @@ function GtdMenu({ t, onClose }: { t: TaskRow; onClose: () => void }) {
           </>
         ) : (
           <>
-            {active.slice(0, 4).map((p) => (
+            {recent.slice(0, 3).map((p) => (
               <button
                 key={p.path}
                 type="button"
@@ -686,6 +705,15 @@ export function TaskList({
   const [dragging, setDragging] = useState<string | null>(null);
   const list = useRef<HTMLUListElement>(null);
   useEffect(() => setOrder(null), [rows]);
+  // Screenshot mode: a task's menu open (scene.ts `taskMenu`), once its row is there.
+  useEffect(() => {
+    const want = document.documentElement.dataset.taskMenu;
+    const t = want ? rows.find((r) => taskKey(r) === want) : null;
+    const btn = t && list.current?.querySelector<HTMLElement>(`li[data-key="${CSS.escape(want!)}"] .tmore`);
+    if (!t || !btn) return;
+    delete document.documentElement.dataset.taskMenu;
+    setMenu({ t, at: btn.getBoundingClientRect() });
+  }, [rows]);
   const shown = order ?? rows;
 
   const startDrag = (e: React.PointerEvent, t: TaskRow) => {

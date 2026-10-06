@@ -212,17 +212,38 @@ pub fn from_texts(before: Option<&str>, after: &str) -> Instruction {
             _ => merged.push((a, b)),
         }
     }
-    // Where an old line boundary is in the new text: past every change before it.
-    let shift = |x: usize| -> usize {
-        let d: isize = runs.iter().filter(|r| r.0 < x).map(|r| (r.3 - r.2) as isize - (r.1 - r.0) as isize).sum();
+    // Where an old line boundary is in the new text: past every change before it. A window's end
+    // is also past a change that starts right there at the page's end (lines added after the
+    // last one), which no later window can carry: without it, what was added there was lost.
+    let shift = |x: usize, end: bool| -> usize {
+        let d: isize = runs
+            .iter()
+            .filter(|r| r.0 < x || (end && r.0 == x && x == old.len()))
+            .map(|r| (r.3 - r.2) as isize - (r.1 - r.0) as isize)
+            .sum();
         (x as isize + d) as usize
     };
-    let edits: Vec<Edit> =
-        merged.iter().map(|&(a, b)| Edit { find: old[a..b].join("\n"), replace: new[shift(a)..shift(b)].join("\n") }).collect();
+    let edits: Vec<Edit> = merged
+        .iter()
+        .map(|&(a, b)| Edit { find: old[a..b].join("\n"), replace: new[shift(a, false)..shift(b, true)].join("\n") })
+        .collect();
     if edits.iter().any(|e| e.find.trim().is_empty()) || (edits.len() == 1 && edits[0].find == before) {
         return Instruction::Page { content: after };
     }
-    Instruction::Replace { edits }
+    // Each find is once in the page, but edits apply in turn, and an earlier one can add a copy
+    // of a later one's text (a section moved: added above, then taken out below). Then the
+    // other way round, else the whole page.
+    let gives = |es: &[Edit]| {
+        crate::proposals::patched(&before, &crate::proposals::Patch::Replace { edits: es.to_vec() }).is_ok_and(|t| t == after)
+    };
+    if gives(&edits) {
+        return Instruction::Replace { edits };
+    }
+    let rev: Vec<Edit> = edits.iter().rev().cloned().collect();
+    if gives(&rev) {
+        return Instruction::Replace { edits: rev };
+    }
+    Instruction::Page { content: after }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -779,6 +800,45 @@ pub fn migrate(data_dir: &Path, vault: &Path, today: chrono::NaiveDate, days: i6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Applies the instruction's edits to `before`, as the change would.
+    fn applied(before: &str, i: &Instruction) -> String {
+        match i {
+            Instruction::Replace { edits } => edits.iter().fold(before.to_string(), |t, e| t.replacen(&e.find, &e.replace, 1)),
+            Instruction::Page { content } => content.clone(),
+            _ => panic!("not a text change"),
+        }
+    }
+
+    #[test]
+    fn a_moved_section_applies() {
+        let before = "# Orbit App\n\n## History\n\nPilot in August.\n\n## See also\n\n- [[Lena]]\n\n## Oct 2026\n\nRecon moves to 16 Oct.\n\n## Nov 2026\n\nLaunch on 28 November.\n";
+        let after = "# Orbit App\n\n## History\n\nPilot in August.\n\n## Oct 2026\n\nRecon moves to 16 Oct.\n\n## Nov 2026\n\nLaunch on 28 November.\n\n## See also\n\n- [[Lena]]\n";
+        let i = from_texts(Some(before), after);
+        let p = match i {
+            Instruction::Replace { edits } => crate::proposals::Patch::Replace { edits },
+            Instruction::Page { content } => crate::proposals::Patch::Content { content },
+            _ => panic!(),
+        };
+        assert_eq!(crate::proposals::patched(before, &p).unwrap(), after);
+    }
+
+    #[test]
+    fn a_section_added_at_the_end_is_kept() {
+        let before = "---\nupdated: 2026-10-01\n---\n# Orbit App\n\n## Oct 2026\n\n- **Pending**: the pen test, due 16 Oct.\n";
+        for after in [
+            format!("{before}\n## Oct 2026 roadmap\n\n- Origination is in build.\n"),
+            format!("{}\n\n## Oct 2026 roadmap\n\n- Origination is in build.", before.trim_end()),
+            format!("{before}## Oct 2026 roadmap\n- Origination is in build.\n"),
+        ] {
+            let i = from_texts(Some(before), &after);
+            assert_eq!(applied(before, &i), after, "{i:?}");
+        }
+        // Without a newline at the end of the page.
+        let before = before.trim_end();
+        let after = format!("{before}\n\n## Oct 2026 roadmap\n\n- Origination is in build.\n");
+        assert_eq!(applied(before, &from_texts(Some(before), &after)), after);
+    }
 
     const PAGE: &str = "---\ntype: entity\nupdated: 2026-09-01\n---\n\n# Orbit App\n\n## Current state\n\nIn build.\nLaunch planned for 14 November.\n\n## History\n\n- Started in May.\n";
 

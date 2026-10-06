@@ -198,22 +198,53 @@ export function Popover({
   place?: "below" | "above" | "right";
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ left: anchor.left, top: anchor.bottom + 8 });
+  const [pos, setPos] = useState<{ left: number; top: number; maxHeight?: number }>({ left: anchor.left, top: anchor.bottom + 8 });
   useDismiss(ref, onClose);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const h = el.offsetHeight;
-    let left = place === "right" ? anchor.right + 8 : anchor.left + anchor.width / 2 - width / 2;
-    left = Math.max(12, Math.min(left, window.innerWidth - width - 12));
-    let top = place === "above" ? anchor.top - h - 8 : place === "right" ? anchor.top - 12 : anchor.bottom + 8;
-    if (top + h > window.innerHeight - 12) top = Math.max(12, anchor.top - h - 8);
-    setPos({ left, top: Math.max(12, top) });
+    const placeIt = () => {
+      // Its whole height, even while it's capped and scrolling.
+      const h = el.scrollHeight;
+      const w = Math.min(width, window.innerWidth - 24);
+      const H = window.innerHeight;
+      let left = place === "right" ? anchor.right + 8 : anchor.left + anchor.width / 2 - w / 2;
+      left = Math.max(12, Math.min(left, window.innerWidth - w - 12));
+      if (place === "right") {
+        // Beside the anchor, moved up as far as it needs to fit; scrolling when the window is shorter.
+        const top = Math.max(12, Math.min(anchor.top - 12, H - 12 - h));
+        return setPos({ left, top, maxHeight: h > H - 24 ? H - 24 : undefined });
+      }
+      // Below or above, on the side asked for if it fits, else the other, else the roomier one,
+      // never past the window: what doesn't fit scrolls inside it.
+      const below = H - anchor.bottom - 8 - 12;
+      const above = anchor.top - 8 - 12;
+      const under = place === "above" ? !(h <= above) && (h <= below || below > above) : h <= below || (!(h <= above) && below >= above);
+      const room = under ? below : above;
+      const fit = Math.min(h, room);
+      setPos({ left, top: under ? anchor.bottom + 8 : anchor.top - 8 - fit, maxHeight: h > room ? room : undefined });
+    };
+    placeIt();
+    // Placed again when what's inside grows or shrinks (a list that loads after it opened).
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(placeIt);
+    for (const c of el.children) ro.observe(c);
+    return () => ro.disconnect();
   }, [anchor, width, place, children]);
   // On the body: a fixed card inside a blurred bar (the editor's toolbar) would be placed
   // relative to the bar, not the window.
   return createPortal(
-    <div ref={ref} className="popover" style={{ left: pos.left, top: pos.top, width }}>
+    <div
+      ref={ref}
+      className="popover"
+      style={{
+        left: pos.left,
+        top: pos.top,
+        width: Math.min(width, window.innerWidth - 24),
+        maxHeight: pos.maxHeight,
+        overflowY: pos.maxHeight ? "auto" : undefined,
+      }}
+    >
       {children}
     </div>,
     document.body,

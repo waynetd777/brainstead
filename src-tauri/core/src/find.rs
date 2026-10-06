@@ -148,9 +148,9 @@ pub fn prompt(batch: &[&Note], i: &Inputs, today_label: &str) -> String {
     }
     s.push_str("\n## Notes\n\n");
     for n in batch {
-        let text: String = n.text.chars().take(NOTE_CHARS).collect();
-        let cut = if text.len() < n.text.len() { "\n\n(cut short)" } else { "" };
-        s.push_str(&format!("### {}\n\n{}{cut}\n\n", n.path, text.trim()));
+        // Its start and most of its end: what's new in a note is mostly at the end.
+        let text = crate::pageview::excerpt(&n.text, NOTE_CHARS);
+        s.push_str(&format!("### {}\n\n{}\n\n", n.path, text.trim()));
     }
     s.push_str("Answer with the JSON array only.");
     s

@@ -20,9 +20,19 @@ use crate::extract::Extracted;
 use crate::proposals::{self, Kind, Patch, Quote};
 
 pub const WORKFLOW: &str = include_str!("../workflows/ingest.md");
-/// Most of the source the model is given, and of each page it mentions.
+/// Most of the source the model is given.
 const SOURCE_CHARS: usize = 150_000;
-const PAGE_CHARS: usize = 4_000;
+/// What the pages it mentions share between them, and the least and most each gets
+/// (`pageview::view`: a bigger page is shown as an outline with its key and newest sections).
+const PAGES_CHARS: usize = 120_000;
+const PAGE_MIN: usize = 6_000;
+const PAGE_MAX: usize = 24_000;
+
+/// How much of each page the model is shown, when it's given `n` of them. `plan` checks against
+/// the same view, so it must be given the same.
+pub fn page_budget(n: usize) -> usize {
+    (PAGES_CHARS / n.max(1)).clamp(PAGE_MIN, PAGE_MAX)
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Claim {
@@ -70,6 +80,34 @@ pub struct Answer {
     pub summary: Option<SummaryAnswer>,
     #[serde(default)]
     pub pages: Vec<PageAnswer>,
+}
+
+/// The day a source is from, by its name: a `YYYY-MM-DD` in it (a note's date, a capture's), or a
+/// day written out ("Week ending 2 October 2026"). Ingests wait in this order, oldest first, so a
+/// newer source has the last word on a page (D-20261006-05).
+pub fn source_day(name: &str) -> Option<String> {
+    // Exactly dddd-dd-dd, not inside a longer number (bytes, so a name with "–" in it is fine).
+    let b = name.as_bytes();
+    let digit = |i: usize| b.get(i).is_some_and(u8::is_ascii_digit);
+    for i in 0..b.len().saturating_sub(9) {
+        let shape = (0..10).all(|k| if k == 4 || k == 7 { b[i + k] == b'-' } else { digit(i + k) });
+        if shape && (i == 0 || !digit(i - 1)) && !digit(i + 10) {
+            let w = std::str::from_utf8(&b[i..i + 10]).unwrap_or_default();
+            if chrono::NaiveDate::parse_from_str(w, "%Y-%m-%d").is_ok() {
+                return Some(w.to_string());
+            }
+        }
+    }
+    let words: Vec<&str> = name.split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    for k in 0..words.len().saturating_sub(2) {
+        let t = format!("{} {} {}", words[k], words[k + 1], words[k + 2]);
+        for f in ["%d %B %Y", "%d %b %Y"] {
+            if let Ok(d) = chrono::NaiveDate::parse_from_str(&t, f) {
+                return Some(d.to_string());
+            }
+        }
+    }
+    None
 }
 
 /// The JSON in a model's answer: inside a code fence or not, from its first `{` to its last `}`.
@@ -150,6 +188,33 @@ impl Source {
     }
 }
 
+/// Most of the catalogue of wiki pages the model is given.
+const CATALOGUE_CHARS: usize = 20_000;
+
+/// The catalogue within `n`: as it is if it fits, else without the summaries (the model writes
+/// only its own), then without descriptions, so every entity and concept is still named and none
+/// is made twice for want of seeing it.
+fn fit_catalogue(c: &str, n: usize) -> String {
+    if c.chars().count() <= n {
+        return c.to_string();
+    }
+    let mut keep = Vec::new();
+    let mut in_summaries = false;
+    for l in c.lines() {
+        if l.starts_with("## ") {
+            in_summaries = l.starts_with("## Summaries");
+        }
+        if !in_summaries {
+            keep.push(l);
+        }
+    }
+    let c = keep.join("\n");
+    if c.chars().count() <= n {
+        return c;
+    }
+    c.lines().map(|l| l.split(" — ").next().unwrap_or(l)).collect::<Vec<_>>().join("\n")
+}
+
 fn cut(s: &str, n: usize) -> String {
     if s.chars().count() <= n {
         s.to_string()
@@ -168,12 +233,13 @@ pub fn prompt(src: &Source, pages: &[(String, String)], catalogue: &str, today: 
     if pages.is_empty() {
         out.push_str("None yet.\n");
     }
+    let budget = page_budget(pages.len());
     for (rel, text) in pages {
-        out.push_str(&format!("## {rel}\n\n{}\n\n", cut(text, PAGE_CHARS)));
+        out.push_str(&format!("## {rel}\n\n{}\n\n", crate::pageview::view(text, budget).text));
     }
     if !catalogue.trim().is_empty() {
         out.push_str("\n# Every wiki page\n\nA source may not name what it's about (\"the steerco\", \"the launch\"): these are the pages it could change.\n\n");
-        out.push_str(&cut(catalogue, 20_000));
+        out.push_str(&cut(&fit_catalogue(catalogue, CATALOGUE_CHARS), CATALOGUE_CHARS));
         out.push('\n');
     }
     if src.is_journal() {
@@ -283,6 +349,7 @@ pub fn plan(
     read: impl Fn(&str) -> Option<String>,
     resolve: impl Fn(&str) -> Option<String>,
     today: &str,
+    budget: usize,
 ) -> (Vec<Planned>, Vec<Dropped>) {
     let mut out = Vec::new();
     let mut dropped = Vec::new();
@@ -366,6 +433,17 @@ pub fn plan(
         match read(&rel) {
             Some(before) => {
                 let section = p.section.clone().filter(|s| !s.trim().is_empty()).unwrap_or_else(|| "Current state".into());
+                // The section's text is replaced: only one the model saw all of (`pageview`).
+                if !crate::pageview::view(&before, budget).can_rewrite(&before, &section) {
+                    dropped.push(Dropped {
+                        page: rel,
+                        reason: format!(
+                            "It would rewrite “{}”, which it was shown only part of.",
+                            section.trim().trim_start_matches('#').trim()
+                        ),
+                    });
+                    continue;
+                }
                 let Ok(mut after) = proposals::patched(&before, &Patch::Section { section, content: p.content.clone() }) else {
                     dropped.push(Dropped { page: rel, reason: "The change didn't apply to the page.".into() });
                     continue;
@@ -441,7 +519,7 @@ mod tests {
 
     #[test]
     fn quotes_decide_what_survives() {
-        let (planned, dropped) = plan(&pdf(), &answer(), read, resolve, "2026-10-02");
+        let (planned, dropped) = plan(&pdf(), &answer(), read, resolve, "2026-10-02", page_budget(1));
         let pages: Vec<&str> = planned.iter().map(|p| p.page.as_str()).collect();
         assert_eq!(
             pages,
@@ -471,7 +549,7 @@ mod tests {
             text: SourceText::Text("Staff launch now targeted for 28 November, pending pen-test closure.".into()),
         };
         assert!(note.is_journal());
-        let (planned, dropped) = plan(&note, &answer(), read, resolve, "2026-10-02");
+        let (planned, dropped) = plan(&note, &answer(), read, resolve, "2026-10-02", page_budget(1));
         assert!(planned.iter().all(|p| !p.page.starts_with("wiki/summaries/")));
         assert_eq!(dropped[0].reason, "A journal note gets no summary page.");
         // Without anchors to check, a markdown source's quotes are found anywhere in it.
@@ -484,6 +562,26 @@ mod tests {
         assert!(parse_answer("No JSON here").unwrap_err().contains("no JSON"));
         assert!(parse_answer("{\"pages\": 3}").unwrap_err().contains("schema"));
         assert!(parse_answer("{}").unwrap().pages.is_empty());
+    }
+
+    #[test]
+    fn a_source_is_dated_by_its_name() {
+        assert_eq!(source_day("Meeting. Orbit App Steerco - 2026-09-30.md").as_deref(), Some("2026-09-30"));
+        assert_eq!(source_day("sources/Roadmap Update 2026-10-02-061026-052837.pdf").as_deref(), Some("2026-10-02"));
+        assert_eq!(source_day("sources/Milestones (Product & Tech) - Week ending 2 October 2026.pdf").as_deref(), Some("2026-10-02"));
+        assert_eq!(source_day("sources/TOM v2.1.pdf"), None);
+    }
+
+    #[test]
+    fn a_big_catalogue_keeps_every_entity_named() {
+        let mut c = String::from("# Catalogue\n\n## Entities (300)\n\n");
+        for i in 0..300 {
+            c.push_str(&format!("- [[Person {i}]] — {}\n", "Works on the Orbit App. ".repeat(4)));
+        }
+        c.push_str("\n## Concepts (1)\n\n- [[Launch plan]] — The plan.\n\n## Summaries (1)\n\n- [[Steerco 2026-09-30]] — Notes.\n");
+        let f = fit_catalogue(&c, CATALOGUE_CHARS);
+        assert!(f.contains("- [[Person 299]]") && f.contains("- [[Launch plan]]"));
+        assert!(!f.contains("Steerco 2026-09-30") && !f.contains("Works on"));
     }
 
     #[test]
@@ -519,7 +617,7 @@ mod tests {
             ]}"#,
         )
         .unwrap();
-        let (planned, dropped) = plan(&src, &a, read, resolve, "2026-10-04");
+        let (planned, dropped) = plan(&src, &a, read, resolve, "2026-10-04", page_budget(1));
         assert_eq!(planned.iter().map(|p| p.page.as_str()).collect::<Vec<_>>(), ["wiki/entities/Orbit App.md", "wiki/entities/Lena.md"]);
         assert_eq!(dropped.iter().map(|d| d.page.as_str()).collect::<Vec<_>>(), ["wiki/entities/Theo.md"]);
         // The OCR'd quote counts as found; the one read from the picture alone is a warning.
@@ -561,7 +659,7 @@ mod tests {
             ]}"#,
         )
         .unwrap();
-        let (planned, dropped) = plan(&pdf(), &a, read, |_| Some("Projects/Hub.md".into()), "2026-10-03");
+        let (planned, dropped) = plan(&pdf(), &a, read, |_| Some("Projects/Hub.md".into()), "2026-10-03", page_budget(1));
         assert!(planned.is_empty(), "{planned:?}");
         assert_eq!(dropped.len(), 3);
     }
@@ -576,7 +674,7 @@ mod tests {
 
     fn plan_one(content: &str, quotes: &[&str]) -> Planned {
         let read = |rel: &str| (rel == "wiki/entities/Orbit App.md").then(|| LIST_PAGE.to_string());
-        let (planned, dropped) = plan(&pdf(), &one(content, quotes), read, resolve, "2026-10-03");
+        let (planned, dropped) = plan(&pdf(), &one(content, quotes), read, resolve, "2026-10-03", page_budget(1));
         assert!(dropped.is_empty(), "{dropped:?}");
         planned.into_iter().next().unwrap()
     }

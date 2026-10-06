@@ -10,7 +10,7 @@ Brainstead runs [Getting Things Done](https://gettingthingsdone.com) (GTD) over 
 
 Today (⌥⌘1) is what needs you now:
 
-- One table with a band each for **Overdue**, **Due today**, **Deferred** (until now) and **Waiting**, with a count above that jumps to each band. Waiting-for rows show how many days they've waited. Tick, date and change tasks in place; ⌘Z undoes.
+- One table with a band each for **Overdue**, **Due today**, **Deferred** (until now) and **Waiting**, with a count above that jumps to each band. A task deferred to a later day stays off Today until then, even when it's due or overdue. Waiting-for rows show how many days they've waited. Tick, date and change tasks in place; ⌘Z undoes.
 - `@context` chips (and **All**) to show only the tasks in one context, Waiting for included.
 - A capture box, the same as Quick capture.
 - **To process**: the Inbox to clarify, bookmarks to triage, wiki issues to decide, and the weekly review on its day.

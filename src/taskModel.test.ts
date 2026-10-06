@@ -85,6 +85,8 @@ describe("task views", () => {
         t("def", { scheduled: FRI }),
         t("both", { due: FRI, scheduled: FRI }),
         t("x", { done: true, due: "2026-09-01" }),
+        t("not today", { due: FRI, scheduled: "2026-10-07" }),
+        t("not yet", { due: "2026-09-30", scheduled: "2026-10-03" }),
       ],
       FRI,
     );

@@ -33,46 +33,57 @@ pub fn data_dir() -> PathBuf {
 #[link(name = "ServiceManagement", kind = "framework")]
 unsafe extern "C" {}
 
-/// Whether Brainstead opens at login (SMAppService.mainApp: macOS 13 and later). Some(true) when
-/// registered, Some(false) when not, None when macOS can't say (a build run from a folder).
+/// Whether Brainstead opens at login (SMAppService.mainApp: macOS 13 and later, the switch in
+/// System Settings › General › Login Items too). Some(true) when enabled, Some(false) when not,
+/// None outside an app bundle (`make dev`), which SMAppService can't register. As in the sibling
+/// apps, "requires approval" counts as off (the user switched it off in System Settings), and
+/// availability is the bundle, not the status: macOS says "not found" for a bundle never registered.
 pub fn open_at_login() -> Option<bool> {
-    use objc2::msg_send;
-    use objc2::runtime::{AnyClass, AnyObject};
-    unsafe {
-        let cls = AnyClass::get(c"SMAppService")?;
-        let svc: *mut AnyObject = msg_send![cls, mainAppService];
-        if svc.is_null() {
-            return None;
-        }
-        // SMAppServiceStatus: 0 not registered, 1 enabled, 2 requires approval, 3 not found.
-        let status: isize = msg_send![svc, status];
-        match status {
-            1 | 2 => Some(true),
-            0 => Some(false),
-            _ => None,
-        }
-    }
+    let svc = login_service()?;
+    in_app_bundle().then(|| login_status(svc) == 1)
 }
 
-pub fn set_open_at_login(on: bool) -> Result<(), String> {
+/// SMAppServiceStatus: 0 not registered, 1 enabled, 2 requires approval, 3 not found.
+fn login_status(svc: *mut objc2::runtime::AnyObject) -> isize {
+    unsafe { objc2::msg_send![svc, status] }
+}
+
+fn login_service() -> Option<*mut objc2::runtime::AnyObject> {
     use objc2::msg_send;
     use objc2::runtime::{AnyClass, AnyObject};
-    unsafe {
-        let cls = AnyClass::get(c"SMAppService").ok_or("Opening at login needs macOS 13 or later.")?;
-        let svc: *mut AnyObject = msg_send![cls, mainAppService];
-        if svc.is_null() {
-            return Err("macOS didn't give Brainstead a login item.".into());
+    let cls = AnyClass::get(c"SMAppService")?;
+    let svc: *mut AnyObject = unsafe { msg_send![cls, mainAppService] };
+    (!svc.is_null()).then_some(svc)
+}
+
+/// Whether this process runs from inside a `.app` bundle (…/Name.app/Contents/MacOS/exe).
+fn in_app_bundle() -> bool {
+    std::env::current_exe().ok().and_then(|p| p.ancestors().nth(3).map(|a| a.extension().is_some_and(|e| e == "app"))).unwrap_or(false)
+}
+
+/// Turns it on or off. When macOS wants the user to approve it, System Settings opens at Login Items.
+pub fn set_open_at_login(on: bool) -> Result<(), String> {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+    let svc = login_service().ok_or("Opening at login needs macOS 13 or later.")?;
+    let mut err: *mut AnyObject = std::ptr::null_mut();
+    let ok: bool = unsafe {
+        if on {
+            msg_send![svc, registerAndReturnError: &mut err]
+        } else {
+            msg_send![svc, unregisterAndReturnError: &mut err]
         }
-        let mut err: *mut AnyObject = std::ptr::null_mut();
-        let ok: bool =
-            if on { msg_send![svc, registerAndReturnError: &mut err] } else { msg_send![svc, unregisterAndReturnError: &mut err] };
-        if ok {
-            return Ok(());
-        }
-        let why: Option<objc2::rc::Retained<objc2_foundation::NSString>> =
-            if err.is_null() { None } else { msg_send![err, localizedDescription] };
-        Err(why.map(|w| w.to_string()).unwrap_or_else(|| "macOS refused.".into()))
+    };
+    if on && login_status(svc) == 2 {
+        let _ = Command::new("/usr/bin/open").arg("x-apple.systempreferences:com.apple.LoginItems-Settings.extension").status();
+        return Ok(());
     }
+    if ok {
+        return Ok(());
+    }
+    let why: Option<objc2::rc::Retained<objc2_foundation::NSString>> =
+        if err.is_null() { None } else { unsafe { msg_send![err, localizedDescription] } };
+    Err(why.map(|w| w.to_string()).unwrap_or_else(|| "macOS refused.".into()))
 }
 
 pub fn reveal(path: &Path) -> Result<(), String> {

@@ -25,6 +25,11 @@
     "docs": true
   },
   {
+    "name": "task-menu",
+    "screen": "tasks",
+    "taskMenu": "Project. Orbit App launch.md:9"
+  },
+  {
     "name": "tasks-search",
     "screen": "tasks",
     "view": {
@@ -246,7 +251,9 @@
   {
     "name": "weekly",
     "screen": "weekly",
-    "view": { "weekly:begun": true },
+    "view": {
+      "weekly:begun": true
+    },
     "docs": true
   },
   {
@@ -261,7 +268,9 @@
   {
     "name": "review-applied",
     "screen": "review",
-    "view": { "review:sel": "demo-4" }
+    "view": {
+      "review:sel": "demo-4"
+    }
   },
   {
     "name": "doc-agent-changes",

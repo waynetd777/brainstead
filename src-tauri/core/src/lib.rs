@@ -34,6 +34,7 @@ pub mod markdown;
 pub mod meeting;
 pub mod names;
 pub mod note;
+pub mod pageview;
 pub mod projects;
 pub mod proposals;
 pub mod read;

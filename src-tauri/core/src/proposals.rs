@@ -368,7 +368,8 @@ fn short(s: &str) -> String {
 }
 
 /// Replaces the body of the section under `heading` (to the next heading of the same or a higher
-/// level), or adds the section at the end.
+/// level), or adds the section at the end: above a closing See also (Related, References), which
+/// stays last.
 fn with_section(text: &str, heading: &str, content: &str) -> String {
     let (mut lines, eol, trailing) = split_lines(text);
     let want = heading.trim().trim_start_matches('#').trim();
@@ -392,6 +393,15 @@ fn with_section(text: &str, heading: &str, content: &str) -> String {
             lines.splice(h + 1..end, fill);
         }
         None => {
+            // A summing-up section goes first, under the page's opening text; any other goes above
+            // a closing See also (Related, References), wherever that is.
+            let top = (0..lines.len()).find(|&i| head(i).is_some_and(|(n, _)| n == 2));
+            let summing = ["current state", "summary", "overview", "status"].contains(&want.to_lowercase().as_str());
+            let closing = (0..lines.len()).rev().find(|&i| {
+                head(i).is_some_and(|(n, t)| n <= 2 && ["see also", "related", "references"].contains(&t.trim().to_lowercase().as_str()))
+            });
+            let at = if summing { top.or(closing) } else { closing };
+            let mut tail = at.map(|i| lines.split_off(i)).unwrap_or_default();
             while lines.last().is_some_and(|l| l.trim().is_empty()) {
                 lines.pop();
             }
@@ -401,6 +411,10 @@ fn with_section(text: &str, heading: &str, content: &str) -> String {
             lines.push(format!("## {want}"));
             lines.push(String::new());
             lines.extend(body);
+            if !tail.is_empty() {
+                lines.push(String::new());
+                lines.append(&mut tail);
+            }
         }
     }
     join_lines(&lines, &eol, trailing || text.is_empty())
@@ -684,6 +698,19 @@ mod tests {
         // A heading that isn't there is added at the end.
         let p = Patch::Section { section: "## Risks".into(), content: "- Pen test.".into() };
         assert!(patched(PAGE, &p).unwrap().ends_with("- Started in May.\n\n## Risks\n\n- Pen test.\n"));
+        // Above a closing See also, which stays last.
+        let page = format!("{PAGE}\n## See also\n\n- [[Lena]]\n");
+        assert!(patched(&page, &p).unwrap().ends_with("- Started in May.\n\n## Risks\n\n- Pen test.\n\n## See also\n\n- [[Lena]]\n"));
+        // Above See also even when older sections were left below it.
+        let page = format!("{PAGE}\n## See also\n\n- [[Lena]]\n\n## Old note\n\nKept.\n");
+        assert!(patched(&page, &p).unwrap().contains("## Risks\n\n- Pen test.\n\n## See also\n\n- [[Lena]]\n\n## Old note"));
+        // A new Current state goes under the opening text, not at the end.
+        let page = "# Lena\n\nLeads design.\n\n## Sep 2026\n\nJoined.\n\n## See also\n\n- [[Maya]]\n";
+        let cs = Patch::Section { section: "Current state".into(), content: "Leads design at Acme.".into() };
+        assert_eq!(
+            patched(page, &cs).unwrap(),
+            "# Lena\n\nLeads design.\n\n## Current state\n\nLeads design at Acme.\n\n## Sep 2026\n\nJoined.\n\n## See also\n\n- [[Maya]]\n"
+        );
     }
 
     #[test]

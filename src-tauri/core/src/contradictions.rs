@@ -538,8 +538,9 @@ pub fn extract_prompt(batch: &[String], texts: &HashMap<String, String>, pages: 
         }
     }
     let mut out = format!("{}\n\n# Known subjects (page name | aliases)\n\n{names}\n# The pages\n\n", EXTRACT.trim());
+    // Without their `sources:` lists, which can be most of a page and hold no claims.
     for p in batch {
-        out.push_str(&format!("## {p}\n\n{}\n\n", texts.get(p).map(String::as_str).unwrap_or("")));
+        out.push_str(&format!("## {p}\n\n{}\n\n", crate::pageview::excerpt(texts.get(p).map(String::as_str).unwrap_or(""), usize::MAX)));
     }
     out
 }

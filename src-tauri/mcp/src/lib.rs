@@ -273,7 +273,7 @@ pub fn tools() -> Vec<Value> {
         tool("list_tasks", "List tasks", Read,
             "Tasks as Brainstead's lists show them (needs the app). Each line gives the task, its dates and chips, and its id (path:line) to act on it with edit_task or move_task.",
             schema(json!({
-                "view": {"type": "string", "enum": ["today", "next", "followups", "waiting", "deferred", "someday", "done-this-week", "done-last-week", "all"], "description": "today: overdue, due and deferred until today. next: open tasks that aren't follow-ups, waiting, someday, deferred or still in the Inbox (the default). deferred: the Deferred list, tasks deferred to a later day. all: every open task."},
+                "view": {"type": "string", "enum": ["today", "next", "followups", "waiting", "deferred", "someday", "done-this-week", "done-last-week", "all"], "description": "today: overdue, due and deferred until today, leaving out tasks deferred to a later day. next: open tasks that aren't follow-ups, waiting, someday, deferred or still in the Inbox (the default). deferred: the Deferred list, tasks deferred to a later day. all: every open task."},
                 "project": {"type": "string", "description": "Only this project's tasks, by its name."},
                 "context": {"type": "string", "description": "Only tasks with this context: calls, office…"},
                 "query": {"type": "string", "description": "Only tasks whose text has these words."},
@@ -395,10 +395,10 @@ pub fn tools() -> Vec<Value> {
             }), &[])),
         // Runs and the wiki.
         tool("start_run", "Start a run", Run,
-            "Starts work Brainstead does with a model on the user's account, as its screens do (needs the app): ingest sources into the wiki (notes, PDFs, Office files or images; their changes are made and recorded in Changes), the nightly check, the daily or weekly summary (daily_summary, weekly_summary; date picks the day or week; summary reads them), the weekly review's preparation (weekly_prep: suggestions for each step of the week's review, nothing changed until one is accepted; weekly_review lists them), a look through the last 90 days of notes for tasks and projects (find_tasks; suggestions lists what it found), a contradictions check, or a meeting note from a Teams transcript (list_transcripts). It returns once started; run_status shows progress and stop_run stops it.",
+            "Starts work Brainstead does with a model on the user's account, as its screens do (needs the app): ingest sources into the wiki (notes, PDFs, Office files or images; their changes are made and recorded in Changes), the nightly check, the daily or weekly summary (daily_summary, weekly_summary; date picks the day or week; summary reads them), the weekly review's preparation (weekly_prep: suggestions for each step of the week's review, nothing changed until one is accepted; weekly_review lists them), a look through the last 90 days of notes for tasks and projects (find_tasks; suggestions lists what it found), a contradictions check, or a meeting note from a Teams transcript (list_transcripts; once made, the note is ingested and the transcript moved to the Trash, as the user's settings say). It returns once started; run_status shows progress and stop_run stops it.",
             schema(json!({
                 "run": {"type": "string", "enum": ["ingest", "nightly", "daily_summary", "weekly_summary", "weekly_prep", "find_tasks", "contradictions", "meeting_note"]},
-                "sources": {"type": "array", "items": {"type": "string"}, "description": "For ingest: paths in sources/ (pending_sources lists those not yet ingested)."},
+                "sources": {"type": "array", "items": {"type": "string"}, "description": "For ingest: vault paths to ingest, in sources/ or notes (pending_sources lists those not yet ingested). All are checked before any is queued. Every ingest waits in one queue with the app's own, one at a time, oldest source first (by the date in its name, else the file's), so the order given and how many calls make no difference."},
                 "transcript": {"type": "string", "description": "For meeting_note: the transcript's path."},
                 "type": {"type": "string", "description": "For meeting_note: Meeting or 1-1, if Brainstead guessed wrong."},
                 "name": {"type": "string", "description": "For meeting_note: the meeting's name, or who the 1-1 was with."},
@@ -993,6 +993,23 @@ fn headings(text: &str) -> Vec<(usize, usize, String)> {
         .collect()
 }
 
+/// A page or section within the result's limit. One with headings is shown as an outline with its
+/// opening, summing-up and newest sections in full (`pageview::view`); one without keeps its start
+/// and most of its end (`pageview::excerpt`), as what's new is mostly at the end. Either says how
+/// to read the rest.
+fn fit(text: &str, len: usize, has_headings: bool) -> String {
+    let budget = MAX_CHARS - 2_000;
+    if len <= budget {
+        return text.to_string();
+    }
+    let (shown, how) = if has_headings {
+        (brainstead_core::pageview::view(text, budget).text, "Sections shown only by their heading: ask for one by its heading.")
+    } else {
+        (brainstead_core::pageview::excerpt(text, budget), "The middle isn't shown: search for words in it to find what you need.")
+    };
+    format!("[{len} characters in all, so shown in part. {how}]\n\n{shown}")
+}
+
 fn read_section(ctx: &Ctx, a: ReadArgs) -> Result<String, String> {
     let ix = ctx.index()?;
     let rel = existing(ctx, &ix, &a.page)?;
@@ -1003,12 +1020,7 @@ fn read_section(ctx: &Ctx, a: ReadArgs) -> Result<String, String> {
     let hs = headings(&text);
     let list = || hs.iter().map(|(_, n, t)| format!("{}{t}", "  ".repeat(n.saturating_sub(1)))).collect::<Vec<_>>().join("\n");
     match a.heading.as_deref().map(|h| h.trim().trim_start_matches('#').trim()).filter(|h| !h.is_empty()) {
-        None => {
-            if text.chars().count() > MAX_CHARS && !hs.is_empty() {
-                return Ok(format!("{rel} is long ({} characters). Ask for one section. Its headings:\n{}", text.chars().count(), list()));
-            }
-            Ok(format!("{rel}\n\n{text}"))
-        }
+        None => Ok(format!("{rel}\n\n{}", fit(&text, text.chars().count(), !hs.is_empty()))),
         Some(h) => {
             let Some(at) = hs.iter().position(|(_, _, t)| t.eq_ignore_ascii_case(h)) else {
                 return Err(format!("{rel} has no heading “{h}”. Its headings:\n{}", list()));
@@ -1017,7 +1029,8 @@ fn read_section(ctx: &Ctx, a: ReadArgs) -> Result<String, String> {
             let end = hs[at + 1..].iter().find(|(_, n, _)| *n <= level).map(|(i, _, _)| *i);
             let lines: Vec<&str> = text.split('\n').collect();
             let part = lines[start..end.unwrap_or(lines.len())].join("\n");
-            Ok(format!("{rel}\n\n{}", part.trim_end()))
+            let subs = hs[at + 1..].iter().take_while(|(_, n, _)| *n > level).count() > 0;
+            Ok(format!("{rel}\n\n{}", fit(part.trim_end(), part.chars().count(), subs).trim_end()))
         }
     }
 }

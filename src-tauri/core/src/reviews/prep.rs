@@ -217,8 +217,10 @@ pub fn gather(root: &Path, ix: &Index, week: &str, today: NaiveDate, now_ms: i64
         .filter(|p| p.ends_with(".md") && dated_in(p, &w.start, &w.end))
         .filter_map(|p| Some(Note { path: p.clone(), meeting: is_meeting(p), text: std::fs::read_to_string(root.join(p)).ok()? }))
         .collect();
-    notes.sort_by(|a, b| (note_day(&a.path), &a.path).cmp(&(note_day(&b.path), &b.path)));
+    // The newest when there are too many, shown oldest first.
+    notes.sort_by(|a, b| (note_day(&b.path), &b.path).cmp(&(note_day(&a.path), &a.path)));
     notes.truncate(MAX_NOTES);
+    notes.reverse();
     seen.extend(notes.iter().map(|n| format!("{}\n{}", n.path, n.text)));
     let ahead_notes: Vec<String> = notes_all
         .iter()
@@ -394,8 +396,9 @@ pub fn render_inputs(i: &Inputs) -> String {
         s.push_str("None dated this week.\n\n");
     }
     for n in &i.notes {
-        let text: String = n.text.chars().take(NOTE_CHARS).collect();
-        let cut = if text.len() < n.text.len() { "\n\n(cut short: read the rest in the vault if you need it)" } else { "" };
+        // Its start and most of its end (a meeting's actions come last); the rest is in the vault.
+        let text = crate::pageview::excerpt(&n.text, NOTE_CHARS);
+        let cut = if text.contains("characters not shown …]") { "\n\n(read the part not shown in the vault if you need it)" } else { "" };
         s.push_str(&format!("### {} ({})\n\n{}{cut}\n\n", n.path, if n.meeting { "meeting" } else { "note" }, text.trim()));
     }
     s.push_str("## Inbox\n\n");

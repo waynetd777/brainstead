@@ -12,6 +12,7 @@ import { api, FileSummary } from "./api";
 import { Icon } from "./icons";
 import { askAboutNote } from "./Ask";
 import { ingest } from "./Ingest";
+import { isTranscriptPath, makeMeetingNotes } from "./meetingFlow";
 import { ingestable } from "./Lists";
 import { copyRich, errText, exportPdf, openRename, toggleBookmark, trashFile, useBookmarked } from "./notes/actions";
 import { Popover } from "./ui";
@@ -122,6 +123,20 @@ export function FileMenu({ menu, doc, readFrom }: { menu: MenuState; doc?: () =>
           >
             <Icon name="ask" size={14} />
             Ask about this note
+          </button>
+        )}
+        {canIngest && isTranscriptPath(f.path) && (
+          <button
+            type="button"
+            role="menuitem"
+            title="Write a meeting or 1-1 note from this transcript, ingest it and move the transcript to the Trash"
+            onClick={() => {
+              menu.close();
+              void makeMeetingNotes([f.path]);
+            }}
+          >
+            <Icon name="note" size={14} />
+            Make a meeting note
           </button>
         )}
         {canIngest && (

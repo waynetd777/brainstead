@@ -690,10 +690,13 @@ fn login_item() -> Option<bool> {
     platform::open_at_login()
 }
 
+/// Turns Open at login on or off and tells every window (Settings and the menu-bar window both have the switch).
 #[tauri::command]
-fn login_item_set(on: bool) -> Result<Option<bool>, String> {
+fn login_item_set(app: AppHandle, on: bool) -> Result<Option<bool>, String> {
     platform::set_open_at_login(on)?;
-    Ok(platform::open_at_login())
+    let now = platform::open_at_login();
+    let _ = tauri::Emitter::emit(&app, "login-item-changed", now);
+    Ok(now)
 }
 
 /// Shows the app's log folder in Finder.
@@ -919,6 +922,8 @@ pub fn run() {
             scene
         ])
         .setup(move |app| {
+            // Runs an earlier session left waiting: nothing will take them now.
+            ingest::settle_stale();
             // The capture extensions' host, registered with each browser (not by a screenshot demo,
             // and not by a dev build: that would point the browsers at target/debug).
             if scene().is_none() && std::env::var_os("BRAINSTEAD_DATA").is_none() && !cfg!(debug_assertions) {

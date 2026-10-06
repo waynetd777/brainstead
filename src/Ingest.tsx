@@ -17,6 +17,7 @@ import { Dialog } from "./ui";
 import { reportEditError } from "./taskModel";
 import { toast } from "./Toast";
 import { DocButton, useIsGone } from "./docButton";
+import { ingestRunEnded, meetingRunEnded } from "./meetingFlow";
 
 export const runs = new Store<IngestRun[] | null>(null);
 let started = false;
@@ -33,10 +34,15 @@ export function startRuns() {
     .onIngestChanged((r) => {
       const was = (runs.get() ?? []).find((x) => x.id === r.id);
       runs.set(merge(runs.get() ?? [], r));
-      // A meeting note made: offer to ingest it and trash the transcript. A note held in Changes
-      // is offered when it's accepted there instead.
-      if (r.kind === "meeting" && r.status === "done" && was?.status !== "done" && r.note && meetingNoteMade(r))
-        offerFollowUp({ note: `${r.note.type.trim()}. ${r.note.name.trim()} - ${r.note.date.trim()}.md`, transcript: r.source });
+      const ended = !isActive(r) && (!was || isActive(was));
+      if (!ended) return;
+      // A meeting note made: ingested and its transcript trashed (src/meetingFlow.ts), or with
+      // both off, offered. A note held in Changes is offered when it's accepted there instead.
+      if (r.kind === "meeting" && r.note) {
+        const made = r.status === "done" && meetingNoteMade(r);
+        if (!meetingRunEnded(r, made) && made)
+          offerFollowUp({ note: `${r.note.type.trim()}. ${r.note.name.trim()} - ${r.note.date.trim()}.md`, transcript: r.source });
+      } else ingestRunEnded(r);
     })
     .catch(() => {});
 }

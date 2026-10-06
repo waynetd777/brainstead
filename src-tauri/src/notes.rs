@@ -212,6 +212,7 @@ pub async fn rename_commit(app: AppHandle, plan: RenamePlan) -> Res<String> {
         let root = root(&svc)?;
         with_links(&svc, &plan.from, |linkers, resolves| Ok(rename::commit(&root, &plan, linkers, resolves)?))?;
         app.state::<Drafts>().rename(&plan.from, &plan.to);
+        moved(&app, &plan.from, Some(&plan.to), &plan.to);
         let mut paths: Vec<PathBuf> = plan.changes.iter().map(|c| root.join(&c.path)).collect();
         paths.extend([root.join(&plan.from), root.join(&plan.to)]);
         paths.dedup();
@@ -232,6 +233,7 @@ pub async fn trash_move(app: AppHandle, path: String) -> Res<TrashEntry> {
         let e = trash::move_to_trash(&root, &path, &layer)?;
         // Unsaved edits go into the trash with the note, and come back if it's restored.
         app.state::<Drafts>().rename(&path, &trashed_draft(&e.id));
+        moved(&app, &path, None, &trashed_draft(&e.id));
         written(&app, &[root.join(&path)]);
         Ok(e)
     })
@@ -294,6 +296,13 @@ pub async fn trash_empty(app: AppHandle) -> Res<usize> {
 
 /// Where a trashed note's unsaved edits wait: a draft keyed by its trash entry, which `drafts_list`
 /// leaves out.
+/// Tells the windows a file was renamed (`to`) or trashed (None), whoever did it: a screen, an
+/// assistant, a run or a revert in Changes. The main window follows it there (src/moves.ts), and
+/// hands unsaved edits still in its editor to the draft at `draft`.
+fn moved(app: &AppHandle, from: &str, to: Option<&str>, draft: &str) {
+    let _ = tauri::Emitter::emit(app, "file-moved", serde_json::json!({ "from": from, "to": to, "draft": draft }));
+}
+
 fn trashed_draft(id: &str) -> String {
     format!("{}{id}", brainstead_core::drafts::TRASHED)
 }

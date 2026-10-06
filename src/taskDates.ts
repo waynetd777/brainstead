@@ -33,7 +33,7 @@ export const TASK_DATES: TaskDate[] = [
     emoji: "⏳",
     icon: "defer",
     label: "Deferred until",
-    explain: "Hidden from Next actions until this day, then it shows on Today. Type defer: mon to set it.",
+    explain: "Hidden from Next actions and Today until this day, then it shows on Today. Type defer: mon to set it.",
     shorthand: "defer:",
   },
   {

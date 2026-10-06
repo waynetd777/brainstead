@@ -5,7 +5,9 @@ screens: [meeting]
 order: 21
 summary: Turn a Teams meeting transcript in your sources into a meeting or 1-1 note.
 ---
-The AI writes a meeting or 1-1 note from a Teams transcript in `sources/`, using your meeting template, and Brainstead makes the note (listed in [Changes](app:review), where you can revert it). Open it from **Meeting notes** on [Sources](app:sources), from ⌘K, or with `M` on a transcript capture in the [Inbox](app:inbox).
+The AI writes a meeting or 1-1 note from a Teams transcript in `sources/`, using your meeting template, and Brainstead makes the note (listed in [Changes](app:review), where you can revert it). Open it from **Meeting notes** on [Sources](app:sources) or from ⌘K.
+
+**Make a meeting note** does it in one step when Brainstead is sure of the note (its type, name and date read from the transcript's name, and no note of that name yet): it writes the note, ingests it and moves the transcript to the Trash, then says so in one message. A transcript it isn't sure about opens this screen at the question instead. Start it with **Meeting note** on the transcript's row in [Sources](app:sources) (its ▾ also has **Ingest into the wiki**, for the transcript itself), **Make a meeting note** on its right-click menu, or `M` on a transcript capture in the [Inbox](app:inbox).
 
 ## Pick a transcript
 The list shows the transcripts still to do: those no wiki page cites and no note links. Switch **Show** to **All** to see the rest, marked "ingested" or "linked from a note". "note exists" means a note of that name is already in the vault, perhaps still empty. Select a transcript to read it in the middle.
@@ -18,5 +20,5 @@ Brainstead works out the note's **Type** (Meeting, 1-1, Workshop or Interview) f
 ## Draft the note
 Click **Draft the note**. The AI fills in the note from `Templates/<Type>.md`, with names spelt as your vault spells them. The run shows in the pane on the right. To do several at once, tick them and click **Draft all N**; they are drafted one after another. When the note exists already, **Draft the note** is off and **Draft all** leaves that transcript out: open the note to fill it in, or change the name or date for a new one.
 
-## Accept it
-The note is made in the vault, listed in [Changes](app:review) with Revert. Then Brainstead offers to ingest the note into the wiki and to move the transcript to the Trash: tick what you want and click **Go**, or **Neither**. When several notes are drafted, each gets its own offer, one after another. A note held in Changes (from a scheduled run whose note failed a check, or a note that adds code that runs, such as a `dataviewjs` block, whoever started it) isn't in the vault yet, so the offer comes when you accept it there.
+## After the note
+The note is made in the vault, listed in [Changes](app:review) with Revert. Then Brainstead ingests it into the wiki and, once that's done, moves the transcript to the Trash; with several, each goes through in turn and one message says how they went. A transcript whose note or ingest failed stays where it is. Turn either step off in [Settings › AI assistants](app:settings/assistants), under Meeting notes; with both off, Brainstead asks after each note: tick what you want and click **Go**, or **Neither**. A note held in Changes (from a scheduled run whose note failed a check, or a note that adds code that runs, such as a `dataviewjs` block, whoever started it) isn't in the vault yet, so the offer comes when you accept it there.

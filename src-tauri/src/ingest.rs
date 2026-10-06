@@ -92,7 +92,7 @@ pub async fn fixname_apply(app: AppHandle, req: Request, rows: Vec<Row>) -> Res<
 use brainstead_core::ingest::{self as core_ingest, Dropped, Source, SourceText};
 use brainstead_core::proposals::{self, Origin};
 use serde::Deserialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use tauri::Emitter;
 
@@ -147,6 +147,10 @@ pub struct Run {
     /// The `log.md` ingest line has been added (with the first page accepted).
     #[serde(default)]
     pub logged: bool,
+    /// How many page changes the run is making, saved before the first is made: the `log.md`
+    /// line is written as that one applies, before the run on disk lists any.
+    #[serde(default)]
+    pub planned: usize,
 }
 
 fn ingest_kind() -> String {
@@ -201,7 +205,7 @@ pub fn take_log(id: &str) -> Option<String> {
     r.logged = true;
     save_run(&r);
     let link = brainstead_core::lint::name_of(&r.source).trim_end_matches(".md").to_string();
-    let n = r.proposals.len();
+    let n = r.proposals.len().max(r.planned);
     let summary = format!("{n} page change{}", if n == 1 { "" } else { "s" });
     Some(brainstead_core::reviews::log_entry("ingest", &link, Some(&summary), chrono::Local::now().naive_local()))
 }
@@ -275,7 +279,82 @@ pub fn ingest_stop(app: AppHandle, id: String) {
     app.state::<std::sync::Arc<crate::ask::Running>>().cancel(&id);
 }
 
-/// Ingests these sources (or notes) one after another, in the background. Returns the runs' ids.
+/// The runs waiting, and whether a worker is taking them: every ingest and meeting note goes
+/// through this one queue, whoever asked (a screen, an assistant, the nightly check), so two
+/// never change the same page at once (D-20261006-05).
+static QUEUE: Mutex<(Vec<Run>, bool)> = Mutex::new((Vec::new(), false));
+
+/// The day a run's source is from, for the queue's order: from its name (a meeting note's own
+/// date), else the file's last change.
+fn run_day(app: &AppHandle, r: &Run) -> String {
+    if let Some(n) = &r.note {
+        return n.date.clone();
+    }
+    brainstead_core::ingest::source_day(&r.source)
+        .or_else(|| {
+            let root = root(app).ok()?;
+            let t = std::fs::metadata(root.join(&r.source)).ok()?.modified().ok()?;
+            Some(chrono::DateTime::<chrono::Local>::from(t).date_naive().to_string())
+        })
+        .unwrap_or_default()
+}
+
+/// Queues these runs and announces them. What waits is taken oldest source first (a newer source
+/// then has the last word on a page), in the order asked among sources of the same day.
+fn enqueue(app: &AppHandle, runs: Vec<Run>) {
+    let mut q = crate::lock(&QUEUE);
+    for r in runs {
+        emit(app, &r);
+        q.0.push(r);
+    }
+    let days: HashMap<String, String> = q.0.iter().map(|r| (r.id.clone(), run_day(app, r))).collect();
+    q.0.sort_by(|a, b| days[&a.id].cmp(&days[&b.id]));
+    if q.1 {
+        return;
+    }
+    q.1 = true;
+    let app = app.clone();
+    std::thread::spawn(move || loop {
+        let next = {
+            let mut q = crate::lock(&QUEUE);
+            if q.0.is_empty() {
+                q.1 = false;
+                return;
+            }
+            q.0.remove(0)
+        };
+        let mut r = next;
+        // Stopped while it waited: never started.
+        if app.state::<Stops>().0.lock().unwrap().contains(&r.id) {
+            r.status = "stopped".into();
+            r.finished = Some(proposals::now_local());
+            r.error = Some("Stopped before it started.".into());
+            for s in r.steps.iter_mut() {
+                s.status = "skipped".into();
+            }
+            emit(&app, &r);
+            continue;
+        }
+        run(&app, &mut r);
+    });
+}
+
+/// Runs left "queued" or "running" by an app that closed (or a request that failed half way):
+/// marked stopped at start, as nothing will take them.
+pub fn settle_stale() {
+    for mut r in all_runs().into_iter().filter(|r| r.status == "queued" || r.status == "running") {
+        r.status = "stopped".into();
+        r.finished = Some(proposals::now_local());
+        r.error = Some("Brainstead closed before it finished.".into());
+        for s in r.steps.iter_mut().filter(|s| s.status == "waiting" || s.status == "running") {
+            s.status = "skipped".into();
+        }
+        save_run(&r);
+    }
+}
+
+/// Ingests these sources (or notes) one after another, in the background, oldest first, after
+/// any already waiting. Returns the runs' ids.
 /// `unattended`: an assistant session nobody is watching asked, so its changes are treated as a
 /// scheduled run's.
 #[tauri::command]
@@ -311,16 +390,13 @@ pub fn ingest_start_for(app: &AppHandle, paths: Vec<String>, trigger: Option<&st
             pages: vec![],
             error: None,
             logged: false,
+            planned: 0,
         };
-        emit(&app, &r);
         runs.push(r);
     }
+    // Every path is checked before any run is announced: a bad one leaves nothing half queued.
     let ids = runs.iter().map(|r| r.id.clone()).collect();
-    std::thread::spawn(move || {
-        for mut r in runs {
-            run(&app, &mut r);
-        }
-    });
+    enqueue(&app, runs);
     Ok(ids)
 }
 
@@ -538,7 +614,7 @@ fn steps(app: &AppHandle, r: &mut Run, stopped: &dyn Fn(&Run) -> bool) -> Result
                 .and_then(|x| x.exact.map(|(p, _)| p))
                 .filter(|p| p.starts_with("wiki/"))
         };
-        let (planned, dropped) = core_ingest::plan(&source, &answer, read, resolve, &today);
+        let (planned, dropped) = core_ingest::plan(&source, &answer, read, resolve, &today, core_ingest::page_budget(pages.len()));
         let d = format!("{} kept, {} dropped", planned.len(), dropped.len());
         r.dropped = dropped;
         Ok((planned, d))
@@ -551,6 +627,8 @@ fn steps(app: &AppHandle, r: &mut Run, stopped: &dyn Fn(&Run) -> bool) -> Result
     step(app, r, 5, |r| {
         let label = format!("Ingest of {}", brainstead_core::lint::name_of(&r.source));
         let (mut applied, mut held, mut failed) = (0, 0, 0);
+        r.planned = planned.len();
+        save_run(r);
         for p in planned {
             let instruction = match &p.before {
                 Some(b) => brainstead_core::changes::from_texts(Some(b), &p.after),
@@ -767,16 +845,13 @@ pub fn meeting_draft(app: AppHandle, items: Vec<(String, NoteSpec)>, unattended:
             pages: vec![],
             error: None,
             logged: false,
+            planned: 0,
         };
-        emit(&app, &r);
         runs.push(r);
     }
+    // Every path is checked before any run is announced: a bad one leaves nothing half queued.
     let ids = runs.iter().map(|r| r.id.clone()).collect();
-    std::thread::spawn(move || {
-        for mut r in runs {
-            run(&app, &mut r);
-        }
-    });
+    enqueue(&app, runs);
     Ok(ids)
 }
 

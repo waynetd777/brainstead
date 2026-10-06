@@ -25,6 +25,10 @@ Beside a source, its provenance says when it was ingested and by which model, an
 
 **Ingest** reads a source and has the AI draft changes to the wiki pages it mentions, each claim with a quote from the source. Brainstead checks every quote: a change none of whose quotes it can find is dropped, and one with only some missing is kept and flagged. The changes are made and listed in Changes, and the source is added to each page's `sources:` list. If your notetaker misheard a name, ingest also fixes it in the source. A run shows its steps as it goes, with **Stop**.
 
+Ingests wait in one queue, whoever started them (you, an assistant or the nightly check), and run one at a time, the oldest source first (by the date in its name, else the file's), so a newer source has the last word on a page.
+
+The AI sees a long page as its outline, with its opening, its summing-up sections (such as Current state) and its newest sections in full, and never its `sources:` list. It updates a section it saw all of, or adds a new one: a Current state under the page's opening text, anything else above its See also; a change that would rewrite a section it saw only part of is dropped, so nothing it couldn't see is lost.
+
 An image is ingested from the text read from it; Claude Code and Codex also see the picture, Copilot and Antigravity don't (so an image with no text needs one of the first two). Its changes are kept even when a quote isn't in that text, each flagged in Changes to check against the picture.
 
 An ingest you start makes its changes at once (logged, and revertable in Changes). One the nightly check starts holds a change that fails a check (a quote not found, text read from an image) for you instead. **Ingest new sources as they arrive**, under Ingest in Settings › AI assistants, in the same group, ingests each capture as it lands.
@@ -71,7 +75,7 @@ The **Graph** draws how pages link: a page's neighbourhood, or the whole wiki. E
 
 ## Meeting notes and the other tools
 
-- **Meeting notes** turns a Teams transcript into a meeting or 1-1 note from your template, with names spelt as your vault spells them; it's made in the vault (listed in Changes), then Brainstead offers to ingest it and trash the transcript. The note is dated with the meeting's day, which the Teams extension reads from the recap page; when it couldn't, the date is the capture day and you confirm it first.
+- **Meeting notes** turns a Teams transcript into a meeting or 1-1 note from your template, with names spelt as your vault spells them; it's made in the vault (listed in Changes), then ingested, and the transcript moved to the Trash (both on by default, in Settings › AI assistants; a transcript whose note or ingest failed is kept). **Meeting note** on a transcript's row in Sources, `M` in the Inbox or **Make a meeting note** on its right-click menu does all of that in one step when Brainstead is sure of the note's type, name and date, and opens Meeting notes at the question when it isn't. Tick several there and **Draft all** does each the same way, with one message at the end. The note is dated with the meeting's day, which the Teams extension reads from the recap page; when it couldn't, the date is the capture day and you confirm it first.
 - **Fix name** corrects a misspelt name across every note and wiki page at once (sources are left alone), adds the wrong spelling as an alias, and remembers the correction for future ingests. One ⌘Z undoes it all.
 - **Draft reply** drafts an answer to an email or Teams thread, drawing on the vault, for you to copy and send.
 - **Triage bookmarks** goes through your bookmarked notes with a suggestion for each: keep, update or drop.

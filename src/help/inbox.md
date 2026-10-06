@@ -38,7 +38,7 @@ A task under Other that you clarify in place keeps its line, rewritten with what
 On a capture from Outlook or Teams, `R` and `⌫` change and three more choices appear; **Open the capture** shows the whole file:
 
 - `I` **Ingest into the wiki**: the AI reads it into the wiki; its changes are listed in [Changes](app:review).
-- `M` **Make a meeting note**, for a Teams meeting transcript.
+- `M` **Make a meeting note**, for a Teams meeting transcript: written, ingested and the transcript trashed in one step when Brainstead is sure of the note, or [Meeting note from a transcript](app:meeting) opens to ask.
 - `D` **Draft a reply**, for an email thread or chat; opens [Draft reply](app:reply).
 - `R` **Keep in Sources** takes it out of the Inbox and leaves the file in [Sources](app:sources).
 - `⌫` **Move to the Trash** moves the file to the vault's Trash.

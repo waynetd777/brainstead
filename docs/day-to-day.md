@@ -16,7 +16,7 @@ Brainstead's icon in the menu bar shows three dots while a run is going, and a d
 - Changes held for you and items in the Inbox, each opening its screen.
 - **Open Brainstead** (⌘O), **Today** (⌘T), **Ask** (⌘J), **Run the nightly check now**, **Settings…** (⌘,) and **Quit Brainstead** (⌘Q).
 
-With **Open at login** and **Only in the menu bar when the window is closed** on in Settings › General, Brainstead starts when you log in and lives in the menu bar, out of the Dock until you open its window.
+With **Open at login** (in Settings › General or the menu-bar window) and **Only in the menu bar when the window is closed** on in Settings › General, Brainstead starts when you log in and lives in the menu bar, out of the Dock until you open its window.
 
 ## Summaries and jobs
 

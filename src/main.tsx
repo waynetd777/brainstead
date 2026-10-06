@@ -19,6 +19,8 @@ import { nav, openDoc, restorePlaces, Screen, SettingsPane } from "./nav";
 import { applyScene, parseScene } from "./scene";
 import { recheckPermissions, startStatus } from "./state";
 import { applyReadSize, applyTheme, installFlushers, settings } from "./store";
+import { startMoves } from "./moves";
+import { isTranscriptPath } from "./meetingFlow";
 
 async function start() {
   const [s, sceneJson] = await Promise.all([api.settingsRead(), api.scene().catch(() => null)]);
@@ -56,6 +58,8 @@ async function start() {
     return;
   }
   await Promise.all([startStatus(), recheckPermissions(), startAsk().catch((e) => console.error("ask", e))]);
+  // A note renamed or trashed by an assistant, a run or Changes: the screens follow it.
+  startMoves();
   // The menu-bar window asks for a screen when it opens the main window; "settings/vault" is a Settings pane.
   void listen<string>("navigate", (e) => {
     const [screen, pane] = e.payload.split("/");
@@ -66,7 +70,8 @@ async function start() {
     if (!c.path) return toast(`${c.what} not captured: ${c.error ?? "refused"}`, undefined, "bad");
     toast(`${c.what} captured`, { label: "Open", run: () => openDoc(c.path!) });
     // Settings › AI assistants › Ingest: a new source is ingested as it arrives.
-    if (settings.get().ingestOnArrival) ingest([c.path]);
+    // A transcript waits for its meeting note instead (src/meetingFlow.ts).
+    if (settings.get().ingestOnArrival && !isTranscriptPath(c.path)) ingest([c.path]);
   });
   root.render(
     <React.StrictMode>

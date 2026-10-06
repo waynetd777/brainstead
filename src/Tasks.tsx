@@ -5,7 +5,7 @@
 // Tasks: the previous app's To Do lists as views, each task live from the notes it's written in.
 
 import { FoundTasks } from "./Found";
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { CaptureBox } from "./Capture";
 import { EFFORT_LIMITS, GroupBy, groupTasks, matchesSearch, withinEffort } from "./taskGroups";
 import { fieldIcon, fieldValue, taskFieldsOf } from "./taskFields";
@@ -87,6 +87,24 @@ export function TasksScreen() {
     setNaming(null);
   };
   const selected = rows.find((t) => taskKey(t) === sel) ?? null;
+  // The selection is a line in a note. When lines above it come or go (an edit elsewhere), it
+  // follows its task: the same text in the same note, nearest to where it was.
+  const selText = useRef<{ key: string | null; text: string | null }>({ key: null, text: null });
+  useEffect(() => {
+    const { key, text: was } = selText.current;
+    selText.current = { key: sel, text: selected?.lineText ?? null };
+    // Only when the rows changed under the same selection, not when another task was chosen.
+    if (!was || !sel || key !== sel || selected?.lineText === was) return;
+    const at = Number(sel.slice(sel.lastIndexOf(":") + 1));
+    const path = sel.slice(0, sel.lastIndexOf(":"));
+    const moved = rows
+      .filter((t) => t.path === path && t.lineText === was)
+      .sort((a, b) => Math.abs(a.line - at) - Math.abs(b.line - at))[0];
+    if (moved) {
+      selText.current = { key: taskKey(moved), text: moved.lineText };
+      setSel(taskKey(moved));
+    }
+  }, [rows, selected, sel, setSel]);
   const failed = useStore(tasksFailed);
   // A new task takes the list's tag and context, so it shows where you are; with none it goes to the Inbox.
   const adds = [view.adds, ctx && `#context/${ctx}`].filter(Boolean).join(" ");

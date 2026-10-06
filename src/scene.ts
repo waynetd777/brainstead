@@ -51,6 +51,8 @@ export interface Scene {
   view?: Record<string, unknown>;
   /** For "ask": show a sample chat. */
   chat?: boolean;
+  /** A task's menu open, by its `path:line` (the task list's key). */
+  taskMenu?: string;
   /** A toast to show, with an Undo button. */
   toast?: string;
 }
@@ -102,6 +104,7 @@ export function applyScene(sc: Scene) {
   if (sc.find) document.documentElement.dataset.find = sc.find;
   if (sc.caret) document.documentElement.dataset.caret = sc.caret;
   if (sc.hover) document.documentElement.dataset.hover = "1";
+  if (sc.taskMenu) document.documentElement.dataset.taskMenu = sc.taskMenu;
   settings.frozen = true;
   if (sc.theme) {
     settings.update({ theme: sc.theme });

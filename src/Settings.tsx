@@ -263,10 +263,19 @@ function OpenAtLogin() {
   const s = useStore(settings);
   const [on, setOn] = useState<boolean | null>(null);
   useEffect(() => {
-    void api
-      .loginItem()
-      .then(setOn)
-      .catch(() => {});
+    // Read again when the window comes back: System Settings › Login Items can change it too.
+    const load = () =>
+      void api
+        .loginItem()
+        .then(setOn)
+        .catch(() => {});
+    load();
+    window.addEventListener("focus", load);
+    const off = api.onLoginItemChanged(setOn);
+    return () => {
+      window.removeEventListener("focus", load);
+      void off.then((f) => f());
+    };
   }, []);
   const menuBar = s.menuBar !== false;
   return (
@@ -299,7 +308,7 @@ function OpenAtLogin() {
         )}
         {on !== null && (
           <div className="srow">
-            <Icon name="start" />
+            <Icon name="power" />
             <div className="t">
               <div className="pt">Open at login</div>
               <div className="faint">
@@ -689,7 +698,8 @@ function Vault() {
               Never change anything in the vault. Turn it off to tick tasks, set their dates and capture from Brainstead.
             </div>
           </div>
-          <Switch label="Read-only" on={s.readOnly} onChange={(v) => settings.update({ readOnly: v })} />
+          {/* Saved at once: Rust refuses or allows writes by it, so the switch and the app mustn't disagree. */}
+          <Switch label="Read-only" on={s.readOnly} onChange={(v) => void settings.commit({ readOnly: v })} />
         </div>
       </div>
       <section className="sgroup">
@@ -882,6 +892,38 @@ function Assistants() {
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+      </section>
+      <section className="sgroup">
+        <h2 className="h3">Meeting notes</h2>
+        <div className="card">
+          <div className="srow">
+            <Icon name="wiki" style={{ color: s.meetingIngest !== false ? "var(--green)" : "var(--ink3)" }} />
+            <div className="t">
+              <div className="pt">Ingest a meeting note once it's made</div>
+              <div className="faint">A note written from a transcript is read into the wiki straight after.</div>
+            </div>
+            <Switch
+              label="Ingest a meeting note once it's made"
+              on={s.meetingIngest !== false}
+              onChange={(v) => settings.update({ meetingIngest: v })}
+            />
+          </div>
+          <div className="srow">
+            <Icon name="trash" style={{ color: s.meetingTrash !== false ? "var(--green)" : "var(--ink3)" }} />
+            <div className="t">
+              <div className="pt">Then move the transcript to the Trash</div>
+              <div className="faint">
+                Only once the note is made (and ingested, when that's on); a transcript whose note or ingest failed is kept. With both off,
+                Brainstead asks after each note.
+              </div>
+            </div>
+            <Switch
+              label="Then move the transcript to the Trash"
+              on={s.meetingTrash !== false}
+              onChange={(v) => settings.update({ meetingTrash: v })}
+            />
           </div>
         </div>
       </section>

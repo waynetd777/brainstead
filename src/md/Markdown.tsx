@@ -41,6 +41,7 @@ import { remarkTags } from "./tags";
 import { calloutLook, defaultTitle, remarkCallouts } from "./callouts";
 import { parseWikilink, remarkWikilinks, WikiTarget } from "./wikilinks";
 import { ErrorBoundary } from "../ErrorBoundary";
+import { useVaultVersion } from "../state";
 
 const WIKI_IN_TEXT = /!?\\?\[\\?\[([^[\]\n]+?)\\?\]\\?\]/g;
 
@@ -54,9 +55,11 @@ export function wikiTargets(md: string): string[] {
   return [...out];
 }
 
-/** Where wikilink targets go, looked up in the index once per document. */
+/** Where wikilink targets go, looked up in the index: again when the vault changes, as a note
+ *  linked to may have been made, renamed or trashed. */
 function useResolved(targets: string[]): Map<string, string | null> | null {
   const key = targets.join("\u0000");
+  const v = useVaultVersion();
   const [map, setMap] = useState<Map<string, string | null> | null>(null);
   useEffect(() => {
     let live = true;
@@ -71,7 +74,7 @@ function useResolved(targets: string[]): Map<string, string | null> | null {
     return () => {
       live = false;
     };
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, v]); // eslint-disable-line react-hooks/exhaustive-deps
   return map;
 }
 

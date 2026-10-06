@@ -71,6 +71,8 @@ const PATHS: Record<string, string> = {
   defer:
     "M5 2.5h14M5 21.5h14M7 2.5v2.2c0 3.3 4 5.1 4 7.3s-4 4-4 7.3v2.2M17 2.5v2.2c0 3.3-4 5.1-4 7.3s4 4 4 7.3v2.2M9.3 7.5h5.4M12 12.5v4M8.5 20c.8-1.8 2-2.7 3.5-2.7s2.7.9 3.5 2.7",
   start: "M5 21V4M5 4h12l-2.5 4L17 12H5",
+  // A power symbol: Open at login.
+  power: "M12 3.75v7.5M7.8 6.6a7.5 7.5 0 1 0 8.4 0",
   created: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8v8M8 12h8",
   done: "M21 12a9 9 0 1 1-5.3-8.2M21 5l-9 9-3-3",
   // Menus: rename (a pencil) and export (a page with an arrow out).

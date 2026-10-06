@@ -16,7 +16,9 @@ What assistants and runs change is made at once and listed in [Changes](app:revi
 ## Ingest
 The **Ingest** group holds every switch about ingesting.
 
-With **Ingest new sources as they arrive** on, an email or chat captured from the browser, or a file dropped or imported into Sources, is ingested straight away, as [Sources](app:sources) would.
+With **Ingest new sources as they arrive** on, an email or chat captured from the browser, or a file dropped or imported into Sources, is ingested straight away, as [Sources](app:sources) would. A Teams transcript isn't: it waits for its meeting note.
+
+Under **Meeting notes**, **Ingest a meeting note once it's made** and **Then move the transcript to the Trash** (both on) are what happens after a note is written from a transcript. With both off, Brainstead asks after each note.
 
 With **Also refresh pages whose sources changed** on, the nightly check in [Settings › Jobs & schedule](app:settings/jobs) ingests again each source that changed since the pages citing it were written. What it finds is made at once, and a change that fails a check is held for you in [Changes](app:review).
 

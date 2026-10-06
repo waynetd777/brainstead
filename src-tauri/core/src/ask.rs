@@ -187,14 +187,15 @@ pub fn help_hint(cli: Cli, mcp: bool) -> Option<&'static str> {
 pub const NEXT_SYSTEM: &str = "You suggest the user's next message in a chat about their vault (plain markdown notes, tasks and a wiki in your working directory). You may read and search the vault to make the suggestion specific, but never change anything. Reply with the one message only.";
 
 /// The prompt for the next-turn suggestion: the chat's title and its last few exchanges, each cut
-/// short, newest last.
+/// to its end, newest last.
 pub fn next_prompt(title: &str, turns: &[(String, String)]) -> String {
+    // The end of a long answer is where it lands (its conclusion, what it offers to do next).
     let cut = |s: &str, n: usize| {
-        let t: String = s.chars().take(n).collect();
-        if t.len() < s.len() {
-            format!("{t}…")
+        let len = s.chars().count();
+        if len <= n {
+            s.to_string()
         } else {
-            t
+            format!("…{}", s.chars().skip(len - n).collect::<String>())
         }
     };
     let mut p = format!(
@@ -686,7 +687,10 @@ mod tests {
         assert!(p.starts_with("Chat: Orbit App pilot"));
         assert!(!p.contains("q2") && p.contains("q3") && p.contains("a5"));
         let long = next_prompt("t", &[("x".repeat(2000), "y".into())]);
-        assert!(long.contains(&format!("{}…", "x".repeat(1500))));
+        assert!(long.contains(&format!("User: …{}\n", "x".repeat(1500))));
+        // A long answer keeps its end, where it lands.
+        let answer = format!("{}The launch moves to 28 November.", "y".repeat(5000));
+        assert!(next_prompt("t", &[("q".into(), answer)]).contains("The launch moves to 28 November."));
     }
 
     #[test]

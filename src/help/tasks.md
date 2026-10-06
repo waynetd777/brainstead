@@ -25,7 +25,7 @@ The top bar says how many tasks the list holds. In Next actions, Follow-ups, Wai
 ## Tick, defer and undo
 Tick a task's box to mark it done; it gets a done date (`✅ 2026-10-03`). Untick it to take that away. ⌘Z undoes up to five task changes, even after a restart, as long as the line hasn't changed since.
 
-Right-click a row, or click its ⋯ button, to open the task's menu. **Due** takes a quick choice (Today, Tomorrow, Mon, Next week) and **Defer until** another (Tomorrow, Mon, Next week, 2 weeks), or **Pick…** for a calendar, or **Clear**. A deferred task stays off Next actions until that day, then shows on [Today](app:today). **Start and created dates** shows the other two. A start date doesn't hide the task: it stays in its lists, just less urgent until then.
+Right-click a row, or click the ⋯ button at the end of every row, to open the task's menu. **Due** takes a quick choice (Today, Tomorrow, Mon, Next week) and **Defer until** another (Tomorrow, Mon, Next week, 2 weeks), or **Pick…** for a calendar, or **Clear**. A deferred task stays off Next actions until that day, then shows on [Today](app:today). **More dates…** shows the start and created dates (open already when the task has a start date). A start date doesn't hide the task: it stays in its lists, just less urgent until then.
 
 The menu also sets the priority, context, effort and project (each with quick chips, and **Find…** or **Other…** for the rest), and has **Mark in progress** (its box then shows a dot; it's started, with no percentage) and **Back to to-do** once it is, **Reopen** on a cancelled task, **Waiting for someone**, **Cancel task**, **Open** with the note's name, and **Delete task**, which ⌘Z puts back.
 

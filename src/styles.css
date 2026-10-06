@@ -2083,13 +2083,16 @@ details.callout[open] .callout-chev {
 .trow .tag {
   color: var(--accent-ink);
 }
+
+/* Always there, muted until the row is hovered or selected, so the menu can be found. */
 .trow .tmore {
-  opacity: 0;
+  opacity: 0.45;
   width: 24px;
   height: 24px;
 }
 .trow:hover .tmore,
-.trow.sel .tmore {
+.trow.sel .tmore,
+.trow .tmore:focus-visible {
   opacity: 1;
 }
 .chip.red {
@@ -8845,4 +8848,62 @@ html.tray-view body {
   vertical-align: -1px;
   color: var(--ink3);
   cursor: help;
+}
+.tray-switches {
+  gap: 2px;
+  padding: 8px 18px;
+}
+.tray-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 28px;
+}
+.tray-switch svg {
+  color: var(--ink3);
+  flex-shrink: 0;
+}
+
+/* The task menu, two columns wide where there's room (TaskList.tsx TaskMenu). */
+.tmenu.wide .tmcols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 14px;
+}
+.tmenu:not(.wide) .tmcols,
+.tmenu:not(.wide) .tmcol {
+  display: contents;
+}
+.tmenu .tmcol {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tmenu.wide .tmacts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.tmenu:not(.wide) .tmacts {
+  display: contents;
+}
+.tmenu .tmacts button {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A button with its menu beside it (Sources' Meeting note ▾). */
+.splitbtn {
+  display: inline-flex;
+}
+.splitbtn > .btn:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.splitbtn > .btn + .btn {
+  margin-left: -1px;
+  padding: 0 5px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }

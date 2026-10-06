@@ -38,7 +38,7 @@ import { localToday } from "./md/taskQuery";
 import { toggleTask } from "./taskModel";
 import { noteOpened } from "./recent";
 import { SourcePreview } from "./SourcePreview";
-import { vaultVersion } from "./state";
+import { useVaultVersion, vaultVersion } from "./state";
 import { applyReadSize, READ_SIZE, settings, useStore } from "./store";
 import { reportEditError } from "./taskModel";
 import { toast } from "./Toast";
@@ -411,6 +411,8 @@ export function DocScreen() {
   const pageText = liveText ?? doc?.content ?? "";
   const [cites, setCites] = useState<{ listed: string[]; order: string[] }>({ listed: [], order: [] });
   const sourceNames = isWiki ? getList(rendered, "sources").map(linkName).join("\n") : "";
+  // Again when the vault changes: a source may have been added or renamed.
+  const vv = useVaultVersion();
   useEffect(() => {
     let live = true;
     const names = sourceNames ? sourceNames.split("\n") : [];
@@ -423,7 +425,7 @@ export function DocScreen() {
     return () => {
       live = false;
     };
-  }, [sourceNames, path]);
+  }, [sourceNames, path, vv]);
   return (
     <main className="main" ref={mainEl}>
       <TopBar
