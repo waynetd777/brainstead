@@ -645,8 +645,14 @@ pub struct Draft<'a> {
 /// (src/md/scripts.ts). Wiki pages don't need it: no script runs in `wiki/`.
 pub const ASSISTANT_MARK: (&str, &str) = ("created-by", "assistant");
 
+/// Whether a new page from an assistant gets the mark: not a wiki page, and not a template, whose
+/// notes would all carry it.
+pub fn gets_mark(page: &str) -> bool {
+    !page.starts_with("wiki/") && !page.starts_with("Templates/")
+}
+
 pub fn make(mut d: Draft) -> Result<Proposal, String> {
-    if d.kind == Kind::New && !d.page.starts_with("wiki/") {
+    if d.kind == Kind::New && gets_mark(d.page) {
         d.after = crate::write::with_property(&d.after, ASSISTANT_MARK.0, Some(ASSISTANT_MARK.1)).map_err(|e| e.to_string())?;
     }
     let before = d.before.unwrap_or("");
@@ -907,6 +913,7 @@ mod tests {
     #[test]
     fn new_pages_go_in_the_wiki() {
         assert!(valid_new_page("wiki/entities/Northwind.md").is_ok());
+        assert!(gets_mark("Idea. Plan.md") && !gets_mark("wiki/entities/Northwind.md") && !gets_mark("Templates/Retro.md"));
         assert!(valid_new_page("Northwind.md").is_err());
         assert!(valid_new_page("wiki/../x.md").is_err());
         assert!(valid_new_page("wiki/entities/.hidden.md").is_err());

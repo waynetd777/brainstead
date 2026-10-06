@@ -131,6 +131,30 @@ fn reading_tools() {
     assert!(pending.contains("sources/Whiteboard photo.png"), "{pending}");
     let lint = ok(&f.ctx, "lint", json!({"page": "Hub Platform"}));
     assert!(lint.contains("[[Missing Concept]]"), "{lint}");
+    // Each check names its id; the grey ones say they aren't counted, and safe fixes are marked.
+    let all = ok(&f.ctx, "lint", json!({}));
+    assert!(all.contains("; check missing-pages)"), "{all}");
+    assert!(all.lines().any(|l| l.contains("[safe fix]")), "{all}");
+    assert!(all.lines().filter(|l| l.contains("check stale-pages")).all(|l| l.contains("not counted")), "{all}");
+}
+
+#[test]
+fn lint_asks_the_app_when_its_open() {
+    let f = fixture();
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("No issues."), error: None });
+    assert_eq!(ok(&f.ctx, "lint", json!({})), "No issues.");
+    assert_eq!(app.join().unwrap().action, "health.lint");
+}
+
+#[test]
+fn create_template_is_a_new_file_in_templates() {
+    let f = fixture();
+    let (_, c) = submitted(&f, "create_template", json!({"name": "Retro", "content": "# <% tp.file.title %>\n\n## What went well"}));
+    assert_eq!((c["kind"].as_str(), c["page"].as_str()), (Some("new"), Some("Templates/Retro.md")));
+    assert!(c["instruction"]["content"].as_str().unwrap().ends_with("went well\n"));
+    assert!(refused(&f.ctx, "create_template", json!({"name": "Meeting", "content": "x"})).contains("exists already"));
+    assert!(refused(&f.ctx, "create_template", json!({"name": "a/b", "content": "x"})).contains("without a folder"));
+    assert!(refused(&f.ctx, "create_template", json!({"name": "x", "content": " "})).contains("content"));
 }
 
 /// Runs a change tool against a stand-in app; its reply, and the change the app was sent.

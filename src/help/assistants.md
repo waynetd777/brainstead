@@ -12,7 +12,8 @@ These change things straight away, as the screens do, and each is undoable with 
 
 - The [Weekly review](app:weekly)'s prepared suggestions: accept one (it does what the suggestion's button does) or skip it.
 - Save an open [Ask](app:ask) chat to the vault as a note, as **Save** does (move it to the Trash from History to take it out again).
-- Bookmarks, saved searches, restoring from the Trash, Knowledge health's safe fixes and Fix a name everywhere.
+- The Weekly review's **Finish and save**, which writes the week's review note.
+- Bookmarks, saved searches, restoring from the Trash (under another name too), adding files to Sources, Knowledge health's safe fixes, **Create** on a missing page, **Not duplicates**, moving an unused image to the Trash, and Fix a name everywhere.
 
 These happen at once with no `⌘Z`, and only when you ask:
 
@@ -21,6 +22,11 @@ These happen at once with no `⌘Z`, and only when you ask:
 - How long [Changes](app:review) keeps its history (**Keep the history of agent changes**): read it, or set it.
 - Your tools that start Claude Code sessions ([Settings › Jobs & schedule](app:settings/jobs)): list, add or remove one.
 - Knowledge health's **Ignore** for an issue with no fix, and **Show again**.
+- Going through the [Weekly review](app:weekly): start it, move on a step, add to its notes.
+- [Contradictions](app:contradictions): mark one resolved or ignored.
+- Ask's chats: list, read, rename or move one to the Trash.
+- Tasks' saved lists: save one or remove one.
+- Settings: read them, or change one, such as a job's time or a switch. The vault, **Read-only** and the folders left out are yours to change.
 - Find tasks and projects' suggestions: accept one (it's made as a change in [Changes](app:review), with Revert) or skip it.
 - Runs, with their progress and Stop: an ingest (notes, PDFs, Office files and images), the daily or weekly summary, the weekly review's preparation, the nightly check, Find tasks and projects, a contradictions check, a meeting note from a transcript, Knowledge health's **Write Current state**, bookmark triage, a drafted reply (never sent) and a doc check. They use the models set in [Settings › AI assistants](app:settings/assistants). What a run changes in the vault is listed in Changes.
 
@@ -31,14 +37,15 @@ These are made at once too, and each is listed in [Changes](app:review), where y
 - The Inbox: clarify an item as a next action, waiting for, someday, a new project, done, reference, an ingest, or delete it. When clarifying changes two notes (a task out of the To Do list and into a project), both are made, or both held, together.
 - Projects: create one, set its status, area or outcome.
 - A change to any page, a new note, a new wiki page, a rename and a move to the Trash.
-- Knowledge health's **Reshape pages**: each page is one change, in one run you can revert alone or all together.
+- Knowledge health's **Reshape pages**: each page is one change, in one run you can revert alone or all together. **Link to…** on a missing page: each page it relinks is a change.
+- A new template (always held for you), and a saved Contradictions report.
 
 A quote that isn't in its source is flagged there, once. A change to a template, one to a system note's header (the "This is a system note" callout), one that adds code that runs when a note is shown, and a rename or move to the Trash of a template (or a rename whose link updates change a template) are always held for you to accept. An assistant in a session nobody is watching, such as a loop, can say so: its changes that fail a check are then held for you instead of made, and so are the changes of the runs it starts. See [Changes](help:review) for the checks.
 
 An assistant can list changes and revert one when you ask it to, and reject a held one. It can accept a held change only while you're there, and only one held because a check failed: one held because it changes a template or a system note's header, adds code that runs, or comes from a job you set to hold its changes is yours to accept, on the Changes screen. An assistant nobody is watching can't accept anything, and can't start the Weekly review over or retire the other app's skills and scripts.
 
 ## What assistants can read
-Search, any page or one of its sections, backlinks, which page a name means, the facts ingest checked and kept for each wiki page, sources not yet in the wiki, Knowledge health's report and its Page shape check, your tasks by list (the Deferred list included), the Inbox, projects, the daily and weekly summaries (so it can answer "what did I do yesterday?"), the Weekly review's progress and suggestions, Changes, runs, transcripts, Activity, the links around a page, whether the app is running, and this help.
+Search, any page or one of its sections, backlinks, which page a name means, the facts ingest checked and kept for each wiki page, sources not yet in the wiki, Knowledge health's report (as the screen shows it, while Brainstead is open) and its Page shape check, the contradictions found, Ask's chats, your settings, your tasks by list (the Deferred list included), the Inbox, projects, the daily and weekly summaries (so it can answer "what did I do yesterday?"), the Weekly review's progress and suggestions, Changes, runs, transcripts, Activity, the links around a page, whether the app is running, and this help.
 
 ## When Brainstead isn't open
 Reading pages, search, facts, the summaries, the health report and the Page shape check work whether the app is open or not. Every change, and tasks, the Inbox, projects, the Weekly review, Changes, runs and Activity, need the app: the assistant opens Brainstead and waits for it. While the vault is read-only ([Settings › Vault](app:settings/vault)) nothing can be changed.

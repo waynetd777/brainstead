@@ -372,6 +372,228 @@ describe("MCP actions", () => {
     });
   });
 
+  describe("tools for what the screens do", () => {
+    const report = {
+      checks: [
+        {
+          id: "missing-pages",
+          title: "Missing pages",
+          classic: true,
+          items: [{ text: "[[Northwind]]", name: "Northwind", pages: ["wiki/entities/Acme.md"], safe: false }],
+        },
+        {
+          id: "duplicates",
+          title: "Possible duplicates",
+          classic: false,
+          items: [{ text: "Acme ~ Acme Ltd", page: "wiki/entities/Acme.md", pages: ["wiki/entities/Acme Ltd.md"], safe: false }],
+        },
+        {
+          id: "orphans",
+          title: "Orphan pages",
+          classic: true,
+          ignored: 2,
+          items: [{ text: "Lena", page: "wiki/entities/Lena.md", safe: false }],
+        },
+        { id: "stale-pages", title: "Stale pages", classic: false, items: [{ text: "Maya", page: "wiki/entities/Maya.md", safe: false }] },
+        {
+          id: "updated",
+          title: "Stale updated: dates",
+          classic: true,
+          items: [{ text: "Acme: updated is old", page: "wiki/entities/Acme.md", safe: true }],
+        },
+      ],
+    };
+    beforeEach(() => {
+      answers.health_report = () => ({ report, history: [], ranAt: null });
+    });
+
+    it("lint gives the screen's report: counted or not, safe fixes and ignored issues", async () => {
+      const out = (await run("health.lint")) as string;
+      expect(out).toMatch(/Orphan pages \(1, 2 ignored .*; check orphans\)/);
+      expect(out).toMatch(/Stale pages \(1, not counted/);
+      expect(out).toMatch(/Acme: updated is old \[safe fix\]/);
+      expect(await run("health.lint", { page: "Lena" })).toMatch(/^Knowledge health for Lena:\n\nOrphan pages \(1; check orphans\)/);
+    });
+
+    it("does an issue's own buttons, and Ignore only where the screen has it", async () => {
+      answers.health_create_page = () => "wiki/concepts/Northwind.md";
+      await run("health.issue", { action: "create", item: "[[Northwind]]", folder: "concepts" });
+      expect(calls.find(([c]) => c === "health_create_page")![1]).toEqual({ name: "Northwind", folder: "concepts" });
+      answers.links_resolve = () => ["wiki/entities/Acme.md"];
+      answers.health_link_ghost = () => 1;
+      expect(await run("health.issue", { action: "link_to", item: "[[Northwind]]", to: "Acme" })).toMatch(/in 1 page, each a change/);
+      expect(calls.find(([c]) => c === "health_link_ghost")![1]).toEqual({
+        target: "Northwind",
+        to: "wiki/entities/Acme.md",
+        pages: ["wiki/entities/Acme.md"],
+        unattended: false,
+      });
+      await run("health.issue", { action: "not_duplicates", item: "Acme ~ Acme Ltd" });
+      expect(calls.find(([c]) => c === "health_dismiss")![1]).toEqual({ a: "wiki/entities/Acme.md", b: "wiki/entities/Acme Ltd.md" });
+      expect(await run("health.issue", { action: "not_duplicates", item: "Lena" })).toMatch(/isn't an issue/);
+      expect(await run("health.ignore", { item: "[[Northwind]]" })).toMatch(/buttons of their own/);
+      expect(calls.some(([c]) => c === "health_ignore")).toBe(false);
+      await run("health.ignore", { item: "Lena" });
+      expect(calls.find(([c]) => c === "health_ignore")![1]).toEqual({ check: "orphans", text: "Lena" });
+    });
+
+    it("tells Reshape pages and Write Current state when nobody's watching", async () => {
+      answers.health_reshape = () => ({ run: "r", applied: 0, failed: [], left: 0 });
+      answers.current_state_start = () => true;
+      answers.current_state_status = () => ({
+        running: true,
+        run: "r",
+        total: 1,
+        done: 0,
+        written: 0,
+        nothing: 0,
+        failed: [],
+        error: null,
+        model: "m",
+      });
+      await run("health.reshape", { unattended: true });
+      await run("health.current_state", { unattended: true });
+      expect(calls.find(([c]) => c === "health_reshape")![1]).toEqual({ pages: null, unattended: true });
+      expect(calls.find(([c]) => c === "current_state_start")![1]).toEqual({ pages: null, limit: null, unattended: true });
+    });
+
+    it("lists contradictions, marks one and saves the report through Changes", async () => {
+      const rep = {
+        last: {
+          started: "2026-10-05T10:00",
+          finished: "2026-10-05T10:05",
+          running: false,
+          doing: "",
+          pages: 3,
+          extracted: 3,
+          claims: 5,
+          clashes: 1,
+          judged: 1,
+          contradictions: 1,
+          proposed: 0,
+          failed: 0,
+          failures: [],
+          error: null,
+        },
+        items: [
+          {
+            id: "c1",
+            subject: "Orbit App",
+            attribute: "launch date",
+            claims: [{ page: "wiki/entities/Orbit App.md", value: "March", quote: "launches in March" }],
+            verdict: {
+              id: "c1",
+              verdict: "contradiction",
+              severity: "high",
+              summary: "Two dates.",
+              correct: "",
+              fix: "",
+              patch: null,
+              judged: "",
+            },
+          },
+        ],
+      };
+      answers.contradictions_report = () => rep;
+      expect(await run("contradictions")).toMatch(/Orbit App · launch date \(id c1\): contradiction, high/);
+      await run("contradictions", { action: "mark", id: "c1", as: "resolved" });
+      expect(calls.find(([c]) => c === "contradictions_mark")![1]).toEqual({ id: "c1", verdict: "resolved" });
+      await expect(run("contradictions", { action: "mark", id: "c1", as: "fixed" })).rejects.toThrow(/resolved/);
+      let tries = 0;
+      answers.changes_submit_many = () => {
+        if (tries++ === 0) throw new Error("There's already a page at that path.");
+        return [{ applied: true, message: "Made it.", flags: [] }];
+      };
+      expect(await run("contradictions", { action: "save" })).toBe("Made it.");
+      const sent = calls.filter(([c]) => c === "changes_submit_many").map(([, a]) => (a!.changes as { page: string }[])[0].page);
+      expect(sent[1]).toMatch(/^Contradictions - \d{4}-\d\d-\d\d-2\.md$/);
+    });
+
+    it("goes through the weekly review: start, done, notes and finish", async () => {
+      let saved: unknown = null;
+      answers.weekly_state_read = () => saved;
+      answers.weekly_state_write = (a) => void (saved = a!.state);
+      answers.weekly_finish = () => "Me. Weekly Review - 2099-W01.md";
+      await expect(run("weekly.step", { action: "done" })).rejects.toThrow(/isn't started/);
+      expect(await run("weekly.step", { action: "start" })).toMatch(/step 1 of 11/);
+      expect(await run("weekly.step", { action: "done" })).toMatch(/Now step 2 of 11/);
+      await run("weekly.step", { action: "notes", log: "Dropped the Garden project" });
+      await run("weekly.step", { action: "notes", text: "A good week." });
+      expect(saved).toMatchObject({ step: 1, done: [0], log: ["Dropped the Garden project"], notes: "A good week." });
+      expect(await run("weekly.step", { action: "finish" })).toMatch(/Saved the review/);
+      const body = calls.find(([c]) => c === "weekly_finish")![1]!.body as string;
+      expect(body).toMatch(/^2 of 11 steps done\.\n\n- Dropped the Garden project\n\nA good week\.$/);
+      expect(saved).toBe(null);
+    });
+
+    it("lists, reads, renames and trashes Ask's chats", async () => {
+      const c = { filename: "local:a.json", id: "a", title: "Orbit App plan", updatedAt: "2026-10-05T09:00:00" };
+      answers.chats_list = () => [c];
+      answers.chat_read = () => ({
+        ...c,
+        transcript: [
+          { id: "1", role: "user", text: "Hi" },
+          { id: "2", role: "tool", text: "x" },
+          { id: "3", role: "assistant", text: "Hello" },
+        ],
+      });
+      expect(await run("chats")).toMatch(/Orbit App plan · 2026-10-05 09:00 · not saved/);
+      expect(await run("chats", { action: "read", chat: "orbit app plan" })).toBe(
+        "Orbit App plan (2 messages):\n\nUser: Hi\n\nAssistant: Hello",
+      );
+      await run("chats", { action: "rename", chat: "local:a.json", title: "Launch" });
+      expect(calls.find(([c]) => c === "chat_rename")![1]).toEqual({ filename: "local:a.json", title: "Launch" });
+      await run("chats", { action: "trash", chat: "local:a.json" });
+      expect(calls.find(([c]) => c === "chat_trash")![1]).toEqual({ filename: "local:a.json" });
+    });
+
+    it("saves a task list and shows its tasks", async () => {
+      answers.settings_write = (a) => a!.settings;
+      await run("task_lists", { action: "save", name: "Quick calls", view: "next", context: "@calls", effort: 15 });
+      expect(await run("task_lists")).toBe("- Quick calls: next, @calls, 15 min or less");
+      answers.tasks_all = () => [
+        row({ contexts: ["calls"], effortMin: 10 }),
+        row({ line: 3, contexts: ["calls"], effortMin: 60, text: "Long call" }),
+        row({ line: 4, text: "Not a call" }),
+      ];
+      answers.inbox_list = () => [];
+      const out = (await run("tasks.list", { list: "Quick calls" })) as string;
+      expect(out).toMatch(/^1 task in next:/);
+      await expect(run("tasks.list", { list: "Nope" })).rejects.toThrow(/No saved list/);
+      await run("task_lists", { action: "remove", name: "Quick calls" });
+      expect(await run("task_lists")).toBe("No saved lists.");
+    });
+
+    it("reads and changes the settings it's allowed, never Read-only", async () => {
+      answers.settings_write = (a) => a!.settings;
+      expect(await run("settings")).toMatch(/nightlyTime · Settings › Jobs & schedule › Nightly check time: "02:10"/);
+      expect(await run("settings", { action: "set", key: "nightlyTime", value: "03:30" })).toMatch(/is now "03:30"/);
+      await run("settings", { action: "set", key: "reviews.weeklyReviewDay", value: "Thursday" });
+      expect(await run("settings")).toMatch(/Weekly review day: "thu"/);
+      await expect(run("settings", { action: "set", key: "readOnly", value: false })).rejects.toThrow(/the user's/);
+      await expect(run("settings", { action: "set", key: "nightlyTime", value: "25:00" })).rejects.toThrow(/HH:MM/);
+      await expect(run("settings", { action: "set", key: "spellCheck", value: "maybe" })).rejects.toThrow(/true or false/);
+    });
+
+    it("imports files into Sources", async () => {
+      answers.sources_import = () => [
+        { name: "Plan.pdf", path: "sources/Plan.pdf", error: null },
+        { name: "Big.mov", path: null, error: "Over 200 MB" },
+      ];
+      expect(await run("sources.import", { paths: ["/tmp/Plan.pdf", "/tmp/Big.mov"] })).toBe(
+        "Added to Sources: sources/Plan.pdf. Not added: Big.mov (Over 200 MB).",
+      );
+    });
+
+    it("restores from the Trash under another path, and stops every run", async () => {
+      answers.trash_restore = (a) => a!.as ?? "x.md";
+      expect(await run("trash", { action: "restore", id: "t1", to: "Idea. Other.md" })).toBe("Restored to Idea. Other.md.");
+      await run("run.stop", { run: "find_tasks" });
+      await run("run.stop", { run: "write_current_state" });
+      expect(calls.some(([c]) => c === "find_stop") && calls.some(([c]) => c === "current_state_stop")).toBe(true);
+    });
+  });
+
   it("refuses an action it doesn't know", async () => {
     await expect(run("nope")).rejects.toThrow(/doesn't know the action/);
   });

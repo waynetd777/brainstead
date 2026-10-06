@@ -45,6 +45,8 @@ Brainstead can't read your calendar, so Look ahead asks you to open Outlook your
 ## Finish and save
 Type anything worth keeping in **Notes for this week's review** at any step; they're kept with your progress. On the last step, **Finish and save** writes the week's own note, `Me. Weekly Review - 2026-W40` for week 40, in the vault's top folder. It has a title, the week's dates and when you finished, how many steps you did, the actions you took (next actions added, projects moved, suggestions accepted) and your notes. You go back to Today, and **Open** on the message shows the note. ⌘Z undoes the save, and it's noted in the log.
 
+An assistant can go through the review with you: start it, move on a step, add to your notes and finish it, as the buttons do.
+
 The note is yours: edit it, move it or delete it. Anything you write under its **Added later** heading stays if you finish the same week's review again, which rewrites everything above that heading. If you take the heading out, finishing again keeps the whole old note under a new **Added later**. The scheduled weekly summary reads the note when it sums up the week; it never writes to it.
 
 The pane on the right shows this week's block from the weekly summaries note, if the scheduled weekly summary has written it, with how many notes and meetings are dated this week, and **Your review: open** once you've finished this week's review. If there's no block yet, it says "This week's summary isn't written yet."

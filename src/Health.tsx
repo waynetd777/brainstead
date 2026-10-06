@@ -18,6 +18,7 @@ import { useGlance, WikiGlance } from "./Glance";
 import {
   ADVISORY,
   decisions,
+  OWN_ACTIONS,
   fixOf,
   fixWithAskPrompt,
   health,
@@ -460,9 +461,6 @@ function Row({ check, i, on }: { check: string; i: LintItem; on: Handlers }) {
     </div>
   );
 }
-
-/** Checks whose issues have their own buttons, so they get no Ignore. */
-const OWN_ACTIONS = new Set(["missing-pages", "duplicates", "unreferenced-images", "uningested-sources", "page-shape"]);
 
 /** A check's ignored issues: how many, and Show again. */
 function Ignored({ check, n }: { check: string; n: number }) {

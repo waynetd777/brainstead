@@ -1006,7 +1006,8 @@ export const api = {
   healthUnignore: (check: string | null) => invoke<number>("health_unignore", { check }),
   healthTrashImage: (path: string) => invoke<string>("health_trash_image", { path }),
   healthCreatePage: (name: string, folder: "entities" | "concepts") => invoke<string>("health_create_page", { name, folder }),
-  healthLinkGhost: (target: string, to: string, pages: string[]) => invoke<number>("health_link_ghost", { target, to, pages }),
+  healthLinkGhost: (target: string, to: string, pages: string[], unattended = false) =>
+    invoke<number>("health_link_ghost", { target, to, pages, unattended }),
   onChangesChanged: (f: () => void): Promise<UnlistenFn> => listen("changes-changed", () => f()),
   /** Write Current state: a run in the background on the pages named, or every page that wants one, at most `limit`. False when one is going. */
   currentStateStart: (pages: string[] | null, limit: number | null, unattended = false) =>

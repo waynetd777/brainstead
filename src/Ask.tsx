@@ -28,13 +28,15 @@ import {
   newChat,
   openSaved,
   pendingPrompt,
-  rename,
   selectChat,
   send,
   setModel,
-  setPinned,
   stop,
   unqueue,
+  renameSaved,
+  trashSaved,
+  pinSaved,
+  keepSaved,
 } from "./askState";
 import { suggest } from "./Capture";
 import { Icon } from "./icons";
@@ -1011,32 +1013,6 @@ function HistoryDialog({ onClose }: { onClose: () => void }) {
       </div>
     </Dialog>
   );
-}
-
-/** Saved-chat actions from History, keeping an open tab in step. */
-async function renameSaved(c: ChatSummary, title: string) {
-  const open = ask.get().chats.find((x) => x.filename === c.filename);
-  if (open) return rename(open.id, title);
-  await api.chatRename(c.filename, title);
-}
-
-async function pinSaved(c: ChatSummary, pin: boolean) {
-  const open = ask.get().chats.find((x) => x.filename === c.filename);
-  if (open) return setPinned(open.id, pin);
-  const full = await api.chatRead(c.filename);
-  await api.chatSave({ ...full, state: pin ? "pinned" : "archived" });
-}
-
-async function keepSaved(c: ChatSummary) {
-  const open = ask.get().chats.find((x) => x.filename === c.filename);
-  if (open) return void (await keepChat(open.id));
-  await api.chatSave(await api.chatRead(c.filename), true);
-}
-
-async function trashSaved(c: ChatSummary) {
-  await api.chatTrash(c.filename);
-  const open = ask.get().chats.find((x) => x.filename === c.filename);
-  if (open) closeChat(open.id);
 }
 
 /** "Ask about this note": Ask, on a new chat whose message names the note, ready to finish. */

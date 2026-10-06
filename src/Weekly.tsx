@@ -118,7 +118,7 @@ export function reviewBody(s: WeeklyState): string {
 /** A note's name without its folder or `.md`. */
 const noteTitle = (path: string) => path.replace(/\.md$/, "").split("/").pop() ?? path;
 
-const fresh = (week: string): WeeklyState => ({ week, step: 0, done: [], log: [], notes: "", startedAt: Date.now() });
+export const fresh = (week: string): WeeklyState => ({ week, step: 0, done: [], log: [], notes: "", startedAt: Date.now() });
 
 /** Goes into the review, past its start page: Start or Carry on, from Today and ⌘K. */
 export const startWeekly = () => nav.go({ screen: "weekly", view: { "weekly:begun": true } });

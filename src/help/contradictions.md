@@ -24,3 +24,5 @@ When the judge has a fix, it is made to the page that's wrong, and listed in [Ch
 
 ## Keep a record
 **Save report as note** saves the findings as a new note, `Contradictions - <date>.md`, with each clash's claims, verdict and fix.
+
+An assistant can read the findings, mark one resolved or ignored, and save the report, when you ask; its saved report is listed in [Changes](app:review).

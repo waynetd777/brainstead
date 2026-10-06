@@ -204,7 +204,7 @@ fn move_needs_the_user(app: &AppHandle, c: &Change) -> Res<Option<String>> {
 /// on a new note.
 fn preview(c: &Change, current: Option<&str>) -> Result<String, String> {
     let after = c.instruction.text(&c.page, current)?;
-    if c.kind == Kind::New && !c.page.starts_with("wiki/") {
+    if c.kind == Kind::New && proposals::gets_mark(&c.page) {
         return write::with_property(&after, proposals::ASSISTANT_MARK.0, Some(proposals::ASSISTANT_MARK.1)).map_err(|e| e.to_string());
     }
     Ok(after)

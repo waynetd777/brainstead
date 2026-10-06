@@ -81,6 +81,9 @@ function reviewLabel(detail: string): string {
 export const pageName = (path: string) => (path.split("/").pop() ?? path).replace(/\.md$/, "");
 
 /** Checks that are worth a look but aren't problems: not counted in the sidebar. */
+/** Checks whose issues have their own buttons, so they get no Ignore. */
+export const OWN_ACTIONS = new Set(["missing-pages", "duplicates", "unreferenced-images", "uningested-sources", "page-shape"]);
+
 export const ADVISORY = new Set(["stale-pages", "uncited-claims", "no-current-state"]);
 
 /** Issues that need you: everything Brainstead can't fix on its own. */

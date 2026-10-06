@@ -14,7 +14,7 @@ Press `⌘N`, or click **New note** on [Notes](app:notes). Pick a template on th
 The template's questions appear in the dialog as the run reaches them. Answer and press `↩`. **Cancel** skips a question and the template carries on; **Stop** ends the run and makes nothing. A template that doesn't name its note makes `Untitled.md`. The new note opens in Edit, with the caret at `tp.file.cursor()`.
 
 ## Write a template
-Click **New template**, type a name and click **Create**. It's made as `Templates/<name>.md`, starting with the note's title as its heading, and opens in Edit.
+Click **New template**, type a name and click **Create**. It's made as `Templates/<name>.md`, starting with the note's title as its heading, and opens in Edit. A template an assistant makes waits in [Changes](app:review) for you to accept, since a template can run code.
 
 A template can hold [query blocks](help:queries) too, which every note made from it runs.
 

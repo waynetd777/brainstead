@@ -453,3 +453,29 @@ export function findClis(again = false) {
     .catch(() => clis.set([]));
   return looking;
 }
+
+/** Saved-chat actions from History, keeping an open tab in step. */
+export async function renameSaved(c: ChatSummary, title: string) {
+  const open = ask.get().chats.find((x) => x.filename === c.filename);
+  if (open) return rename(open.id, title);
+  await api.chatRename(c.filename, title);
+}
+
+export async function pinSaved(c: ChatSummary, pin: boolean) {
+  const open = ask.get().chats.find((x) => x.filename === c.filename);
+  if (open) return setPinned(open.id, pin);
+  const full = await api.chatRead(c.filename);
+  await api.chatSave({ ...full, state: pin ? "pinned" : "archived" });
+}
+
+export async function keepSaved(c: ChatSummary) {
+  const open = ask.get().chats.find((x) => x.filename === c.filename);
+  if (open) return void (await keepChat(open.id));
+  await api.chatSave(await api.chatRead(c.filename), true);
+}
+
+export async function trashSaved(c: ChatSummary) {
+  await api.chatTrash(c.filename);
+  const open = ask.get().chats.find((x) => x.filename === c.filename);
+  if (open) closeChat(open.id);
+}

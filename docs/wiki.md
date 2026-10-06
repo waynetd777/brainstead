@@ -12,7 +12,7 @@ It follows Andrej Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a6bf
 
 Sources (⌥⌘0) are the files in `sources/`: emails and Teams chats and transcripts captured from the browser, PDFs, Word, PowerPoint and Excel files, images, and notes. They are the record, so Brainstead doesn't edit them, except to correct misheard names (a change you can revert).
 
-- Drag files onto Sources, or click **Import**, to copy them in.
+- Drag files onto Sources, or click **Import**, to copy them in (assistants use `import_sources`).
 - The **Outlook** and **Teams** Chrome extensions capture a thread, a chat or a meeting transcript into `sources/` with one click. Set them up in Settings › Capture extensions; each capture also waits in the Inbox.
 - Each source is **New**, **Changed** (since the pages citing it were written) or **Ingested**.
 - A PDF opens with page navigation, zoom and find; Word, PowerPoint and Excel show the text Brainstead reads from them (slide by slide, sheet by sheet), with **Quick Look** (`Space`) for how they look in their app; an image with the text read from it (macOS's text recognition), which search uses too.
@@ -62,7 +62,7 @@ Knowledge health checks the wiki whenever the vault changes: missing pages and l
 
 - Pie charts on the right show the wiki's pages by type and by tag; a slice opens the Wiki filtered to it.
 - **Fix safe issues** fixes the ones with one right answer (a missing link, a date, a `log.md` line, a system note's lost header), undoably.
-- **Ignore** on an issue with nothing to fix stops listing and counting it until its page changes; **Show again** lists a check's ignored issues again. Checks that are only worth a look (stale pages, claims with no citation, pages with no Current state) have a grey icon, not amber. Assistants use `ignore_issue`.
+- **Ignore** on an issue with nothing to fix stops listing and counting it until its page changes; **Show again** lists a check's ignored issues again. Checks that are only worth a look (stale pages, claims with no citation, pages with no Current state) have a grey icon, not amber. Assistants use `ignore_issue`, and `health_issue` for the buttons an issue has of its own (**Create** and **Link to…** on a missing page, **Not duplicates**, **Move to the Trash** on an unused image). With Brainstead open, the `lint` tool gives the report as the screen shows it.
 - Missing pages can be created or linked to an existing page; duplicates compared or dismissed.
 - **Pages not in the page shape** lists entity and concept pages laid out another way. **Reshape pages** reshapes those it can by itself, by script with no model: sections move whole, dated headings are rewritten to the ISO form, a dated summing-up heading becomes Current state with an "As of" line, entries from one source on one date merge, of several dated summing-up sections the newest is Current state, See also lists merge, and every result is checked (no line lost, the frontmatter untouched, reshaping it again changes nothing) before it's written. Each page is one change in Changes, in one run with Revert all. A page that needs you says why (a year it can't tell, two summing-up sections, two entries citing the same note on different dates); fix the heading, or **Reshape anyway**. Assistants use `page_shape` and `reshape_pages`. The nightly check counts the pages edited out of the shape, and an edit that adds a section the page doesn't have puts it where the shape does: a topical one above the Timeline, a Summary or Status as the Current state.
 - **Pages with no Current state** (not counted) lists pages with a Timeline but no Current state. **Write 5** and **Write all** have the cheap model (Haiku when Claude is the assistant) write one from the page's opening and newest Timeline entries only; a link to a page that doesn't exist is left as plain text. Each page is a change in one run in Changes. Assistants use `write_current_state`.
@@ -70,7 +70,7 @@ Knowledge health checks the wiki whenever the vault changes: missing pages and l
 
 ## Contradictions
 
-The contradictions check reads the claims on the pages that changed, adds the facts ingest kept for them, groups claims about the same thing, and has the AI judge the ones whose values differ: **Real** (with its severity), **Newer supersedes older**, **Not a conflict** or **Unclear**. When the judge has a fix for a real one, it's made and listed in Changes. **Mark resolved**, **Ignore**, or **Save report as note**. The [nightly check](day-to-day.md#summaries-and-jobs) runs it on the pages that changed each day.
+The contradictions check reads the claims on the pages that changed, adds the facts ingest kept for them, groups claims about the same thing, and has the AI judge the ones whose values differ: **Real** (with its severity), **Newer supersedes older**, **Not a conflict** or **Unclear**. When the judge has a fix for a real one, it's made and listed in Changes. **Mark resolved**, **Ignore**, or **Save report as note**; assistants do the same with `contradictions`. The [nightly check](day-to-day.md#summaries-and-jobs) runs it on the pages that changed each day.
 
 ## Graph
 

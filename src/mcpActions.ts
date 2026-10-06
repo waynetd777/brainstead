@@ -25,6 +25,7 @@ import {
   FixNameRequest,
   InboxItem,
   ProjectRow,
+  Settings,
   TaskDateKind,
   TaskLineEdit,
   TaskRow,
@@ -34,7 +35,7 @@ import {
 import { contextName, projectName } from "./gtd";
 import { taskLine, unclarified } from "./Inbox";
 import { appendAsReference, newReferenceNote, settleInboxItem } from "./inboxActions";
-import { byRun, fixOf, makePage, originLabel, safeFixes } from "./knowledge";
+import { ADVISORY, byRun, fixOf, makePage, originLabel, OWN_ACTIONS, pageName, safeFixes } from "./knowledge";
 import { localToday } from "./md/taskQuery";
 import { composeFilename } from "./notes/filename";
 import { Ask, Env, freeName, runTemplate, StopRun } from "./notes/templater";
@@ -43,11 +44,15 @@ import { todayRows, toggleTaskEdit, undoAction, viewRows, VIEWS } from "./taskMo
 import { cancelled, completion, inQuote, LineChange, reopened, started, waitingToggled, withPriority } from "./tasksq/edits";
 import type { PriorityName } from "./tasksq/fields";
 import { toast } from "./Toast";
-import { keepsPaused, reviewWeek, scheduleLabel, STEPS } from "./Weekly";
-import { ask, isSaved, keepChat } from "./askState";
-import { settings } from "./store";
+import { fresh, keepsPaused, reviewBody, reviewWeek, scheduleLabel, STEPS } from "./Weekly";
+import { ask, isSaved, keepChat, renameSaved, trashSaved } from "./askState";
+import { applyTheme, settings } from "./store";
+import { DEFAULT_SCHEDULE } from "./Jobs";
 import { choice, prepStep, WEEKLY_STATE_CHANGED } from "./weeklyPrep";
-import { draftNotes, followThrough } from "./meetingFlow";
+import { draftNotes, followThrough, isTranscriptPath } from "./meetingFlow";
+import { reportMarkdown } from "./Contradictions";
+import { ingestable } from "./Lists";
+import { EFFORT_LIMITS, withinEffort } from "./taskGroups";
 
 const TODO_LIST = "Me. To Do List.md";
 
@@ -143,6 +148,13 @@ async function listTasks(a: Args): Promise<string> {
   const all = await api.tasksAll();
   const today = localToday();
   // The Deferred list's id is `scheduled` (saved lists keep it); `deferred` is its name.
+  const saved = str(a, "list");
+  const named = saved ? (settings.get().taskLists ?? []).find((l) => l.name.toLowerCase() === saved.toLowerCase()) : undefined;
+  if (saved && !named)
+    throw new Error(
+      `No saved list “${saved}”. task_lists lists them: ${(settings.get().taskLists ?? []).map((l) => l.name).join(", ") || "none"}.`,
+    );
+  if (named) a = { ...a, view: named.view, context: named.context || undefined };
   const asked = str(a, "view") ?? "next";
   const view = asked === "deferred" ? "scheduled" : asked;
   let rows: TaskRow[];
@@ -162,6 +174,7 @@ async function listTasks(a: Args): Promise<string> {
   if (context) rows = rows.filter((t) => (t.contexts ?? []).includes(contextName(context)));
   const q = str(a, "query")?.toLowerCase();
   if (q) rows = rows.filter((t) => t.text.toLowerCase().includes(q));
+  if (named?.effort) rows = rows.filter((t) => withinEffort(t, named.effort));
   const limit = Math.min(Number(a.limit) || 50, 300);
   const shown = viewName(view);
   if (!rows.length) return `No tasks in ${shown}${project || context || q ? " with those filters" : ""}.`;
@@ -783,12 +796,22 @@ async function startRun(a: Args): Promise<string> {
       return `Drafting the ${spec.type} note “${spec.name}” for ${spec.date}; it's made in the vault when it's ready (listed in Changes)${then ? `, then ${then}` : ""}.`;
     }
     default:
-      throw new Error("run is ingest, nightly, daily_summary, weekly_summary, weekly_prep, contradictions or meeting_note.");
+      throw new Error("run is ingest, nightly, daily_summary, weekly_summary, weekly_prep, find_tasks, contradictions or meeting_note.");
   }
 }
 
 async function runStatus(): Promise<string> {
-  const [runs, nightly, reviews, prep] = await Promise.all([api.ingestRuns(), api.nightlyStatus(), api.reviewsStatus(), api.weekprepJob()]);
+  const [runs, nightly, reviews, prep, find, contra, cs] = await Promise.all([
+    api.ingestRuns(),
+    api.nightlyStatus(),
+    api.reviewsStatus(),
+    api.weekprepJob(),
+    api.findStatus().catch(() => null),
+    api.contradictionsReport().catch(() => null),
+    api.currentStateStatus().catch(() => null),
+  ]);
+  const f = find?.run;
+  const c = contra?.last;
   const active = runs.filter((r) => r.status === "running" || r.status === "queued");
   const recent = runs.slice(0, 5);
   return [
@@ -800,6 +823,23 @@ async function runStatus(): Promise<string> {
       prep.running
         ? `preparing ${prep.running}`
         : `last ${prep.last ? `${prep.last.startedAt} for ${prep.last.week} (${prep.last.status === "done" ? `${prep.last.count} suggestions` : `${prep.last.status}${prep.last.error ? `: ${prep.last.error}` : ""}`})` : "never"}, next ${prep.next ?? "not scheduled"}`
+    }`,
+    `Find tasks and projects: ${
+      !f
+        ? "never run"
+        : f.status === "running"
+          ? `running (${f.done} of ${f.batches} batches, ${f.found} found)`
+          : `last ${f.startedAt}, ${f.status}${f.error ? ` (${f.error})` : ""}, ${find?.suggestions.length ?? 0} suggestions waiting`
+    }`,
+    `Contradictions check: ${
+      !c?.started
+        ? "never run"
+        : c.running
+          ? `running (${c.doing || "checking"})`
+          : `last ${c.finished ?? c.started}, ${c.contradictions} contradictions${c.error ? ` (${c.error})` : ""}`
+    }`,
+    `Write Current state: ${
+      !cs?.total ? "not run" : `${cs.running ? "running" : "last run"}: ${cs.done} of ${cs.total} pages done, ${cs.written} written`
     }`,
   ].join("\n");
 }
@@ -819,7 +859,12 @@ async function stopRun(a: Args): Promise<string> {
   } else if (run === "nightly") await api.nightlyStop();
   else if (run === "weekly_prep") await api.weekprepStop();
   else if (run === "contradictions") await api.contradictionsStop();
-  else throw new Error("run is ingest, nightly, daily_summary, weekly_summary, weekly_prep or contradictions.");
+  else if (run === "find_tasks") await api.findStop();
+  else if (run === "write_current_state") await api.currentStateStop();
+  else
+    throw new Error(
+      "run is ingest, nightly, daily_summary, weekly_summary, weekly_prep, find_tasks, contradictions or write_current_state.",
+    );
   noted(`stopped the ${run.replace("_", " ")}`);
   return `Stopping the ${run.replace("_", " ")}.`;
 }
@@ -987,6 +1032,8 @@ async function healthIgnore(a: Args): Promise<string> {
   const i = c?.items.find((i) => i.text === text);
   if (!c || !i) return "That issue isn't in Knowledge health: give its text as lint gives it.";
   if (i.safe) return "That issue has a safe fix: use fix_health instead.";
+  if (OWN_ACTIONS.has(c.id))
+    return `${c.title} issues have buttons of their own instead of Ignore: health_issue, start_run ingest or reshape_pages.`;
   await api.healthIgnore(c.id, text);
   told("ignored a Knowledge health issue");
   return "Ignored: it's left out of Knowledge health until its page changes. show_again lists it again.";
@@ -1057,7 +1104,7 @@ async function trash(a: Args): Promise<string> {
   if (action === "restore") {
     const id = str(a, "id");
     if (!id) throw new Error("Give id: the Trash entry to restore, from the list.");
-    const to = await api.trashRestore(id, null);
+    const to = await api.trashRestore(id, str(a, "to")?.trim() || null);
     told(`restored ${to} from the Trash`);
     return `Restored to ${to}.`;
   }
@@ -1088,7 +1135,9 @@ async function savedSearches(a: Args): Promise<string> {
     const rows = await api.smartLists();
     return rows.length ? rows.map((s) => `- ${s.name}: ${s.query}`).join("\n") : "No saved searches.";
   }
-  await api.smartListSave(name, query, (Array.isArray(a.layers) ? a.layers : []).map(String));
+  // search's layer names (notes, sources…) or the app's (note, source…).
+  const layers = (Array.isArray(a.layers) ? a.layers : []).map((l) => String(l).replace(/s$/, ""));
+  await api.smartListSave(name, query, layers);
   told(`saved the search ${name}`);
   return `Saved the search “${name}”.`;
 }
@@ -1236,6 +1285,14 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   "health.ignore": healthIgnore,
   "health.reshape": reshapePages,
   "health.current_state": writeCurrentState,
+  "health.lint": healthLint,
+  "health.issue": healthIssue,
+  contradictions: contradictionsTool,
+  "weekly.step": weeklyStep,
+  chats: chatsTool,
+  task_lists: taskLists,
+  settings: settingsTool,
+  "sources.import": importSources,
   fix_name: fixName,
   trash: trash,
   bookmarks: bookmarks,
@@ -1312,4 +1369,339 @@ export async function startMcpBridge() {
   });
   await invoke("mcp_ready").catch(() => {});
   return off;
+}
+
+// ---- Knowledge health, as its screen shows it
+
+/** lint, while the app is open: the screen's report, ignored issues and dismissed pairs left out. */
+async function healthLint(a: Args): Promise<string> {
+  const r = (await api.healthReport(true)).report;
+  if (!r) throw new Error("Knowledge health has no report yet; try again in a moment.");
+  const page = str(a, "page")?.trim();
+  const out: string[] = [];
+  for (const c of r.checks) {
+    const items = page
+      ? c.items.filter(
+          (i) => i.page === page || i.pages?.includes(page) || (i.page && pageName(i.page).toLowerCase() === page.toLowerCase()),
+        )
+      : c.items;
+    if (!items.length && !(c.ignored && !page)) continue;
+    const counted = ADVISORY.has(c.id) ? ", not counted: only worth a look" : "";
+    const ignored = c.ignored && !page ? `, ${c.ignored} ignored (ignore_issue show_again lists them)` : "";
+    out.push("", `${c.title} (${items.length}${counted}${ignored}; check ${c.id}):`);
+    for (const i of items.slice(0, 40)) out.push(`- ${i.text}${i.safe && c.id !== "page-shape" ? " [safe fix]" : ""}`);
+    if (items.length > 40) out.push(`- …and ${items.length - 40} more`);
+  }
+  return out.length ? `Knowledge health${page ? ` for ${page}` : ""}:\n${out.join("\n")}` : "No issues.";
+}
+
+/** health_issue: the buttons an issue has of its own on Knowledge health. */
+async function healthIssue(a: Args): Promise<string> {
+  const r = (await api.healthReport(true)).report;
+  if (!r) throw new Error("Knowledge health has no report yet; try again in a moment.");
+  const action = str(a, "action");
+  const text = str(a, "item") ?? "";
+  const want = { create: "missing-pages", link_to: "missing-pages", not_duplicates: "duplicates", move_to_trash: "unreferenced-images" }[
+    action ?? ""
+  ];
+  if (!want) throw new Error("action is create, link_to, not_duplicates or move_to_trash.");
+  const c = r.checks.find((x) => x.id === want);
+  const i = c?.items.find((x) => x.text === text);
+  if (!c || !i) return `That isn't an issue under ${c?.title ?? want}: give its text as lint gives it.`;
+  if (action === "create") {
+    const folder = str(a, "folder") === "concepts" ? "concepts" : "entities";
+    const p = await api.healthCreatePage(i.name!, folder);
+    told(`made the page ${pageName(p)}`);
+    return `Made ${p}. ⌘Z in the app undoes it; edit_page fills it in.`;
+  }
+  if (action === "link_to") {
+    const to = str(a, "to")?.trim();
+    if (!to) throw new Error("Give to: the page the links should point at.");
+    const [target] = await api.linksResolve([to]);
+    if (!target) return `There's no page called ${to}.`;
+    const n = await api.healthLinkGhost(i.name!, target, i.pages ?? [], a.unattended === true);
+    noted(`pointed the links to ${i.name} at ${pageName(target)}`);
+    return `Pointed the links to ${i.name} at ${pageName(target)} in ${n} page${n === 1 ? "" : "s"}, each a change in Changes, where the user can revert it.`;
+  }
+  if (action === "not_duplicates") {
+    if (!i.page || !i.pages?.[0]) return "That pair can't be marked.";
+    await api.healthDismiss(i.page, i.pages[0]);
+    noted("marked two pages as not duplicates");
+    return `${pageName(i.page)} and ${pageName(i.pages[0])} won't be listed as possible duplicates again.`;
+  }
+  if (!i.page) return "That image can't be found.";
+  await api.healthTrashImage(i.page);
+  told(`moved ${i.page} to the Trash`);
+  return `Moved ${i.page} to the Trash; trash restores it.`;
+}
+
+/** contradictions: the Contradictions screen's findings, its Mark resolved and Ignore, and Save report as note. */
+async function contradictionsTool(a: Args, r: McpRequest): Promise<string> {
+  const action = str(a, "action") ?? "list";
+  const rep = await api.contradictionsReport();
+  if (action === "save") {
+    if (!rep.last.finished) return "There's no finished check to save; start_run contradictions runs one.";
+    const today = localToday();
+    const base = `Contradictions - ${today}`;
+    for (let n = 1; n < 20; n++) {
+      const path = `${n === 1 ? base : `${base}-${n}`}.md`;
+      const c = sub(a, r, path, "new", `Contradictions report ${today}`, { op: "page", content: reportMarkdown(rep, today) });
+      try {
+        return (await submitAll([c])).message;
+      } catch (e) {
+        if (!/already/i.test(String((e as { message?: string })?.message ?? e))) throw e;
+      }
+    }
+    throw new Error("Couldn't find a free name for the report.");
+  }
+  if (action === "mark") {
+    const id = str(a, "id");
+    const as = str(a, "as");
+    if (!id || !rep.items.some((i) => i.id === id)) throw new Error("Give id: a finding's id from list.");
+    if (as !== "resolved" && as !== "ignored") throw new Error("as is resolved (Mark resolved) or ignored (Ignore).");
+    await api.contradictionsMark(id, as);
+    noted(`marked a contradiction ${as}`);
+    return as === "resolved" ? "Marked resolved." : "Ignored: it won't be flagged again.";
+  }
+  if (action !== "list") throw new Error("action is list, mark or save.");
+  const l = rep.last;
+  const head = l.finished
+    ? `Checked ${l.finished.slice(0, 16).replace("T", " ")}: ${l.pages} pages, ${l.claims} claims, ${l.clashes} clashes, ${l.contradictions} contradictions.`
+    : l.running
+      ? `A check is running: ${l.doing || "checking"}.`
+      : "Not checked yet: start_run contradictions runs the check.";
+  const rows = rep.items.map((i) =>
+    [
+      `- ${i.subject} · ${i.attribute} (id ${i.id}): ${i.verdict ? `${i.verdict.verdict}${i.verdict.severity ? `, ${i.verdict.severity}` : ""}. ${i.verdict.summary}` : "not judged yet"}`,
+      ...i.claims.map(
+        (c) => `  - [[${pageName(c.page)}]]${c.asOf ? ` (as of ${c.asOf})` : ""}: ${c.value}${c.quote ? ` · “${c.quote}”` : ""}`,
+      ),
+    ].join("\n"),
+  );
+  return [head, ...rows].join("\n");
+}
+
+// ---- the weekly review, done
+
+/** weekly_step: Start or Carry on, Next, the notes, and Finish and save. */
+async function weeklyStep(a: Args): Promise<string> {
+  const action = str(a, "action");
+  const { week, st } = await weeklyNow();
+  const save = async (s: WeeklyState | null) => {
+    await api.weeklyStateWrite(s);
+    window.dispatchEvent(new Event(WEEKLY_STATE_CHANGED));
+  };
+  if (action === "start") {
+    if (st) return `The review of ${week} carries on at step ${st.step + 1} of ${STEPS.length}, ${STEPS[st.step].title}.`;
+    await save(fresh(week));
+    void api.weekprepEnsure(week).catch(() => false);
+    noted(`started the weekly review for ${week}`);
+    return `Started the weekly review for ${week}: step 1 of ${STEPS.length}, ${STEPS[0].title}. ${STEPS[0].ask}`;
+  }
+  if (!st) throw new Error("The weekly review isn't started: action start starts it.");
+  if (action === "done") {
+    const to = typeof a.step === "number" ? Math.floor(a.step) - 1 : st.step + 1;
+    const i = Math.max(0, Math.min(STEPS.length - 1, to));
+    await save({ ...st, step: i, done: [...new Set([...st.done, st.step])] });
+    noted(`went on to ${STEPS[i].title} in the weekly review`);
+    return `${STEPS[st.step].title} is done. Now step ${i + 1} of ${STEPS.length}, ${STEPS[i].title}: ${STEPS[i].ask}`;
+  }
+  if (action === "notes") {
+    const line = str(a, "log")?.trim();
+    const text = str(a, "text");
+    if (!line && text === undefined) throw new Error("Give text (the notes in full) or log (a line to add).");
+    await save(line ? { ...st, log: [...st.log, line] } : { ...st, notes: text ?? "" });
+    noted("wrote in the weekly review");
+    return line ? "Added to the review's decisions." : "The review's notes are set.";
+  }
+  if (action === "finish") {
+    const file = await api.weeklyFinish(week, reviewBody({ ...st, done: [...new Set([...st.done, st.step])] }));
+    await save(null);
+    told(`saved the weekly review in ${file}`);
+    return `Saved the review of ${week} in ${file}. ⌘Z in the app undoes it.`;
+  }
+  throw new Error("action is start, done, notes or finish.");
+}
+
+// ---- Ask's chats
+
+async function chatsTool(a: Args): Promise<string> {
+  const action = str(a, "action") ?? "list";
+  const all = await api.chatsList();
+  if (action === "list")
+    return all.length
+      ? all
+          .map(
+            (c) =>
+              `- ${c.title} · ${c.updatedAt.slice(0, 16).replace("T", " ")} · ${c.filename.startsWith("local:") ? "not saved" : `saved as ${c.filename}`}  (${c.filename})`,
+          )
+          .join("\n")
+      : "No chats.";
+  const want = str(a, "chat")?.trim();
+  if (!want) throw new Error("Give chat: its file or title, from list.");
+  const c = all.find((x) => x.filename === want) ?? all.find((x) => x.title.toLowerCase() === want.toLowerCase());
+  if (!c) throw new Error(`No chat “${want}”: list gives them.`);
+  if (action === "read") {
+    const full = await api.chatRead(c.filename);
+    const turns = full.transcript.filter((t) => t.role === "user" || t.role === "assistant");
+    return [`${c.title} (${turns.length} messages):`, ...turns.map((t) => `\n${t.role === "user" ? "User" : "Assistant"}: ${t.text}`)].join(
+      "\n",
+    );
+  }
+  if (action === "rename") {
+    const title = str(a, "title")?.trim();
+    if (!title) throw new Error("Give title: the chat's new title.");
+    await renameSaved(c, title);
+    noted(`renamed the chat “${c.title}” to “${title}”`);
+    return `Renamed “${c.title}” to “${title}”.`;
+  }
+  if (action === "trash") {
+    await trashSaved(c);
+    noted(`moved the chat “${c.title}” to the Trash`);
+    return `Moved “${c.title}” to the Trash.`;
+  }
+  throw new Error("action is list, read, rename or trash.");
+}
+
+// ---- Tasks' saved lists
+
+async function taskLists(a: Args): Promise<string> {
+  const action = str(a, "action") ?? "list";
+  const saved = settings.get().taskLists ?? [];
+  const effortName = (e: string) => EFFORT_LIMITS.find(([v]) => v === e)?.[1].toLowerCase() ?? "";
+  if (action === "list")
+    return saved.length
+      ? saved
+          .map(
+            (l) =>
+              `- ${l.name}: ${viewName(l.view)}${l.context ? `, @${l.context}` : ""}${l.effort ? `, ${effortName(l.effort)}` : ""}${l.group !== "none" ? `, by ${l.group}` : ""}`,
+          )
+          .join("\n")
+      : "No saved lists.";
+  const name = str(a, "name")?.trim();
+  if (!name) throw new Error("Give name: the list's name.");
+  if (action === "remove") {
+    if (!saved.some((l) => l.name === name)) return `There's no saved list “${name}”.`;
+    settings.update({ taskLists: saved.filter((l) => l.name !== name) });
+    await settings.flush();
+    noted(`removed the saved list ${name}`);
+    return `Removed the saved list “${name}”.`;
+  }
+  if (action !== "save") throw new Error("action is list, save or remove.");
+  const asked = str(a, "view") ?? "next";
+  const view = asked === "deferred" ? "scheduled" : asked;
+  if (!VIEWS.some((v) => v.id === view)) throw new Error(`No view “${asked}”. Views: ${VIEWS.map((v) => viewName(v.id)).join(", ")}.`);
+  const effort = a.effort == null ? "" : String(a.effort);
+  if (effort && !EFFORT_LIMITS.some(([v]) => v === effort)) throw new Error("effort is 15, 30 or 60 (minutes), or left out.");
+  const group = str(a, "group") ?? "none";
+  if (!["none", "project", "context", "due"].includes(group)) throw new Error("group is none, project, context or due.");
+  const ctx = str(a, "context");
+  const l = { name, view, context: ctx ? contextName(ctx) : "", effort, group };
+  settings.update({ taskLists: [...saved.filter((x) => x.name !== name), l] });
+  await settings.flush();
+  noted(`saved the task list ${name}`);
+  return `Saved the list “${name}”; it shows under Tasks' saved lists.`;
+}
+
+// ---- Settings
+
+type SettingKind = "bool" | "time" | "text" | "number" | "day" | "theme";
+/** What the settings tool can change, by key: its pane, label, kind and default. The vault, Read-only
+ *  and the excluded folders stay the user's (D-20261006-20). */
+const SETTINGS: [string, string, string, SettingKind, unknown][] = [
+  ["ownerName", "General", "Your name", "text", ""],
+  ["theme", "General", "Appearance (system, light or dark)", "theme", "system"],
+  ["menuBar", "General", "Show in the menu bar", "bool", true],
+  ["menuBarOnly", "General", "Only in the menu bar when the window is closed", "bool", false],
+  ["captureShortcut", "Capture", "Quick capture shortcut", "text", "Control+Alt+Space"],
+  ["spellCheck", "Notes", "Check spelling", "bool", true],
+  ["grammarCheck", "Notes", "Check grammar", "bool", true],
+  ["speechHighlight", "Notes", "Highlight each word (read aloud)", "bool", true],
+  ["templateScripts", "Notes", "User scripts folder", "text", "Templates/scripts"],
+  ["askSuggest", "AI assistants", "Suggest a next message", "bool", true],
+  ["meetingIngest", "AI assistants", "Ingest a meeting note once it's made", "bool", true],
+  ["meetingTrash", "AI assistants", "Then move the transcript to the Trash", "bool", true],
+  ["ingestOnArrival", "AI assistants", "Ingest new sources as they arrive", "bool", false],
+  ["refreshStale", "AI assistants", "Also refresh pages whose sources changed", "bool", false],
+  ["reviewsHere", "Jobs & schedule", "Brainstead runs the daily and weekly summaries", "bool", false],
+  ["reviewsToQueue", "Jobs & schedule", "Hold the summaries for me", "bool", false],
+  ["reviews.dailyEnabled", "Jobs & schedule", "Daily summary", "bool", true],
+  ["reviews.dailyTime", "Jobs & schedule", "Daily summary time", "time", null],
+  ["reviews.weeklyEnabled", "Jobs & schedule", "Weekly summary", "bool", true],
+  ["reviews.weeklyDay", "Jobs & schedule", "Weekly summary day", "day", null],
+  ["reviews.weeklyTime", "Jobs & schedule", "Weekly summary time", "time", null],
+  ["reviews.weeklyReviewDay", "Jobs & schedule", "Weekly review day", "day", "fri"],
+  ["reviews.weeklyReviewTime", "Jobs & schedule", "Weekly review time", "time", "16:00"],
+  ["weekprepEnabled", "Jobs & schedule", "Prepare the weekly review", "bool", true],
+  ["nightlyEnabled", "Jobs & schedule", "Nightly check", "bool", false],
+  ["nightlyTime", "Jobs & schedule", "Nightly check time", "time", "02:10"],
+  ["logDays", "About", "Days of logs kept", "number", null],
+];
+const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+async function settingsTool(a: Args): Promise<string> {
+  const s = settings.get();
+  const sch = { ...DEFAULT_SCHEDULE, ...s.reviews } as Record<string, unknown>;
+  const valueOf = (key: string, def: unknown) => {
+    const v = key.startsWith("reviews.") ? sch[key.slice(8)] : (s as unknown as Record<string, unknown>)[key];
+    return v ?? def;
+  };
+  const action = str(a, "action") ?? "get";
+  if (action === "get")
+    return SETTINGS.map(([k, pane, label, , def]) => `- ${k} · Settings › ${pane} › ${label}: ${JSON.stringify(valueOf(k, def))}`).join(
+      "\n",
+    );
+  if (action !== "set") throw new Error("action is get or set.");
+  const key = str(a, "key");
+  const row = SETTINGS.find(([k]) => k === key);
+  if (!row)
+    throw new Error(
+      `Not a setting this tool changes: ${key}. get lists them; the vault, Read-only and the folders left out are the user's, in the app.`,
+    );
+  const [, pane, label, kind] = row;
+  let v: unknown = a.value;
+  if (kind === "bool") {
+    if (typeof v === "string") v = v === "true" ? true : v === "false" ? false : v;
+    if (typeof v !== "boolean") throw new Error(`${key} is true or false.`);
+  } else if (kind === "time") {
+    if (typeof v !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(v)) throw new Error(`${key} is a time, HH:MM.`);
+  } else if (kind === "day") {
+    v = String(v ?? "")
+      .slice(0, 3)
+      .toLowerCase();
+    if (!DAYS.includes(v as string)) throw new Error(`${key} is a day: mon, tue… sun.`);
+  } else if (kind === "theme") {
+    if (!["system", "light", "dark"].includes(String(v))) throw new Error(`${key} is system, light or dark.`);
+  } else if (kind === "number") {
+    v = Number(v);
+    if (!Number.isFinite(v) || (v as number) < 1) throw new Error(`${key} is a number of 1 or more.`);
+  } else v = String(v ?? "").trim() || undefined;
+  if (key!.startsWith("reviews.")) settings.update({ reviews: { ...DEFAULT_SCHEDULE, ...s.reviews, [key!.slice(8)]: v } });
+  else if (kind === "theme") {
+    settings.update({ theme: v as Settings["theme"], docTheme: undefined });
+    applyTheme(v as Settings["theme"]);
+  } else settings.update({ [key!]: v } as Partial<Settings>);
+  await settings.flush();
+  noted(`set ${label} to ${JSON.stringify(v ?? "")}`);
+  return `Settings › ${pane} › ${label} is now ${JSON.stringify(v ?? "")}.`;
+}
+
+// ---- Sources' Import
+
+async function importSources(a: Args): Promise<string> {
+  const paths = (Array.isArray(a.paths) ? a.paths : []).map(String).filter((p) => p.trim());
+  if (!paths.length) throw new Error("Give paths: the files to add, by their full path.");
+  const r = await api.sourcesImport(paths);
+  const ok = r.filter((x) => x.path).map((x) => x.path!);
+  const bad = r.filter((x) => !x.path);
+  if (ok.length) told(`added ${ok.length} file${ok.length === 1 ? "" : "s"} to Sources`);
+  const toIngest = ok.filter(ingestable).filter((p) => !isTranscriptPath(p));
+  const ingesting = settings.get().ingestOnArrival && toIngest.length ? await api.ingestStart(toIngest, a.unattended === true) : [];
+  return [
+    ok.length ? `Added to Sources: ${ok.join(", ")}.` : "Nothing was added.",
+    ingesting.length ? `Ingesting ${toIngest.length} of them, as new sources are (run ${ingesting.join(", ")}).` : "",
+    bad.length ? `Not added: ${bad.map((x) => `${x.name} (${x.error ?? "it didn't work"})`).join("; ")}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }

@@ -467,7 +467,7 @@ fn push_undo(app: &AppHandle, root: &Path, label: String, changes: &[FileChange]
 
 /// Points a missing page's links at a page that exists: one change per page linking it,
 /// `[[Ghost]]` becoming `[[Page|Ghost]]`, applied at once.
-fn health_link_ghost_now(app: AppHandle, target: String, to: String, pages: Vec<String>) -> Res<usize> {
+fn health_link_ghost_now(app: AppHandle, target: String, to: String, pages: Vec<String>, unattended: bool) -> Res<usize> {
     let root = root(&app)?;
     let to_name = brainstead_core::filename::stem(&to).to_string();
     let mut n = 0;
@@ -478,7 +478,12 @@ fn health_link_ghost_now(app: AppHandle, target: String, to: String, pages: Vec<
         if after == before {
             continue;
         }
-        let origin = Origin { kind: "lint".into(), label: Some("Missing page".into()), ..Default::default() };
+        let origin = Origin {
+            kind: "lint".into(),
+            label: Some("Missing page".into()),
+            trigger: unattended.then(|| "scheduled".into()),
+            ..Default::default()
+        };
         let title = format!("Link [[{target}]] to {to_name}");
         let s = crate::changes::Submit::new(
             &page,
@@ -557,8 +562,8 @@ pub async fn health_create_page(app: AppHandle, name: String, folder: String) ->
 }
 
 #[tauri::command]
-pub async fn health_link_ghost(app: AppHandle, target: String, to: String, pages: Vec<String>) -> Res<usize> {
-    blocking(move || health_link_ghost_now(app, target, to, pages)).await
+pub async fn health_link_ghost(app: AppHandle, target: String, to: String, pages: Vec<String>, unattended: Option<bool>) -> Res<usize> {
+    blocking(move || health_link_ghost_now(app, target, to, pages, unattended.unwrap_or(false))).await
 }
 
 #[cfg(test)]
