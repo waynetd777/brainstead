@@ -388,8 +388,8 @@ pub fn tools() -> Vec<Value> {
             "Lists the bookmarks, or with page, bookmarks it or takes its bookmark off, or with keep, keeps a bookmark as triage's Keep does (needs the app).",
             schema(json!({"page": {"type": "string", "description": "A note's path to bookmark or unbookmark."}, "keep": {"type": "string", "description": "A bookmark's target to keep: it won't need triage for two weeks."}}), &[])),
         tool("saved_searches", "Saved searches", Change,
-            "Lists the saved searches, or with name and query, saves one, as Search's Save does (needs the app); saving under a name that's taken replaces it.",
-            schema(json!({"name": {"type": "string"}, "query": {"type": "string"}, "layers": {"type": "array", "items": {"type": "string", "enum": ["notes", "wiki", "sources", "templates"]}, "description": "Only these parts of the vault, as search's layers; all when left out."}}), &[])),
+            "Lists the saved searches, or with name and query saves one, as Search's Save search does (a name that's taken is refused), or with name and delete deletes one, as its x does (needs the app). Undoable with ⌘Z in the app.",
+            schema(json!({"name": {"type": "string"}, "query": {"type": "string"}, "delete": {"type": "boolean", "description": "Delete the saved search called name."}, "layers": {"type": "array", "items": {"type": "string", "enum": ["notes", "wiki", "sources", "templates"]}, "description": "Only these parts of the vault, as search's layers; all when left out."}}), &[])),
         // What agents changed.
         tool("changes", "Changes", Destroy,
             "What assistants and Brainstead's runs changed, and the changes held for the user (needs the app). list shows the held changes and the latest made, by run; show gives one change's diff, quotes and flags; accept makes a held change (on the page as it is now) and reject turns it down; accept_run and reject_run do every held change in a run (group from list); revert undoes a change that was made, also after later edits, and says when its lines have been edited since; revert_run reverts every change a run made (Changes' Revert all). accept and accept_run work only while the user is there (never with unattended) and only for a change held because a check failed: one held because it changes a template, adds code that runs, changes a system note's header, renames or trashes a template (or rewrites links in one), or comes from a job set to hold its changes is the user's to accept, in the app. history reads how long Changes keeps its history (Settings › AI assistants › Keep the history of agent changes), and with days or mb sets it. Accept, reject, revert or change the history only as the user asked.",
@@ -475,11 +475,12 @@ pub fn tools() -> Vec<Value> {
                 "folder": {"type": "string", "enum": ["entities", "concepts"], "description": "For create: default entities."}
             }), &["action", "item"])),
         tool("contradictions", "Contradictions", Change,
-            "The Contradictions screen (needs the app): list gives the last check's findings, each with its id, the claims that clash (page, value, as-of date and quote) and the model's verdict; mark settles one as its buttons do (resolved: Mark resolved; ignored: Ignore, not a real contradiction, so it isn't flagged again); save writes the report as a new note, Contradictions - YYYY-MM-DD, as Save report as note does. start_run contradictions runs the check again. Mark only as the user asked.",
+            "The Contradictions screen (needs the app): list gives the last check's findings still to decide (with all, every one), each with its id, the claims that clash (page, value, as-of date and quote) and the model's verdict; mark settles one as its buttons do (resolved: Mark resolved; ignored: Ignore, not a real contradiction, so it isn't flagged again); save writes the report as a new note, Contradictions - YYYY-MM-DD, as Save report as note does. start_run contradictions runs the check again. Mark only as the user asked.",
             schema(json!({
                 "action": {"type": "string", "enum": ["list", "mark", "save"]},
                 "id": {"type": "string", "description": "For mark: the finding's id from list."},
-                "as": {"type": "string", "enum": ["resolved", "ignored"], "description": "For mark."}
+                "as": {"type": "string", "enum": ["resolved", "ignored"], "description": "For mark."},
+                "all": {"type": "boolean", "description": "For list: every finding, also those not a conflict, superseded, resolved or ignored; else only those to decide."}
             }), &[])),
         tool("page_shape", "Page shape", Read,
             "Knowledge health's Page shape check: which wiki entity and concept pages aren't in the page shape (opening text, Current state, topical sections, a Timeline of `### YYYY-MM-DD — title` entries newest first, each with a Source: [[…]] line, then See also), which of them Reshape pages can do by itself and why the rest need the user. With page, that page's report: the headings it would rewrite and the lines it would add.",

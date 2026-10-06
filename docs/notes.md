@@ -56,7 +56,7 @@ A new vault comes with example templates that each show a few of these: Meeting,
 <a href="images/index.md#notes"><picture><source media="(prefers-color-scheme: dark)" srcset="images/search-dark.png"><img alt="Search: results with their best passage and the matches marked, the layer chips, the date range and saved searches" src="images/search-light.png"></picture></a>
 
 - **⌘K** opens a box over any screen: notes, wiki pages and sources, open tasks, screens and commands, **Search everything**, **Ask** and **Capture … as a task**.
-- **Search** (⌘⇧F) searches every note, wiki page and source's text. Words match in any form; `+word`, `-word`, `"exact phrase"`, `tag:hiring`, `since:2026-09` and `before:2026-10-01` narrow it. Choose the layers, a date range and the order; **Save search** keeps one for later.
+- **Search** (⌘⇧F) searches every note, wiki page and source's text. Words match in any form; `+word`, `-word`, `"exact phrase"`, `tag:hiring`, `since:2026-09` and `before:2026-10-01` narrow it. Choose the layers, a date range and the order; **Save search** keeps one for later, under Saved searches, where its x deletes it.
 - **Notes**, **Wiki** and **Sources** list their files, filtered as you type, and sorted; Notes can also be grouped by type.
 
 ## System notes

@@ -113,6 +113,17 @@ pub fn add_smart_list(text: &str, name: &str, query: &str, layers: &[String]) ->
     Ok(crate::write::join_lines(&lines, &eol, trailing || text.is_empty()))
 }
 
+/// The smart lists note without the saved search of that name (any case); every other line as it was.
+pub fn remove_smart_list(text: &str, name: &str) -> Result<String> {
+    let (mut lines, eol, trailing) = crate::write::split_lines(text);
+    let at = lines
+        .iter()
+        .position(|l| SMART.captures(l).is_some_and(|c| c[1].trim().eq_ignore_ascii_case(name.trim())))
+        .ok_or_else(|| format!("There's no saved search called {}.", name.trim()))?;
+    lines.remove(at);
+    Ok(crate::write::join_lines(&lines, &eol, trailing))
+}
+
 pub fn parse_smart_lists(text: &str) -> Vec<SmartList> {
     text.lines()
         .filter_map(|l| {
@@ -415,6 +426,8 @@ mod tests {
         assert_eq!(parse_smart_lists(&a)[1].layers, ["wiki"]);
         assert!(add_smart_list(&a, "launch", "x", &[]).unwrap_err().contains("already"));
         assert!(add_smart_list(&a, "X", "", &[]).is_err());
+        assert_eq!(remove_smart_list(&a, "launch").unwrap(), t);
+        assert!(remove_smart_list(t, "Launch").unwrap_err().contains("no saved search"));
     }
     use crate::vault::Vault;
     use std::path::PathBuf;

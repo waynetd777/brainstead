@@ -168,19 +168,34 @@ export function SearchScreen() {
           <div className="sect static">Saved searches</div>
           {lists.length === 0 && <p className="faint pad">None yet: Save search keeps one here (in Me. Smart Lists.md).</p>}
           {lists.map((l) => (
-            <button
-              key={l.name}
-              type="button"
-              className={`tnode ${q === l.query ? "on" : ""}`}
-              title={l.query}
-              onClick={() => {
-                setQ(l.query);
-                setLayers(l.layers.length ? l.layers : LAYERS);
-              }}
-            >
-              <Icon name="search" size={13} />
-              <span className="ell">{l.name}</span>
-            </button>
+            <div key={l.name} className={`tnode saved ${q === l.query ? "on" : ""}`}>
+              <button
+                type="button"
+                className="grow ell"
+                title={l.query}
+                onClick={() => {
+                  setQ(l.query);
+                  setLayers(l.layers.length ? l.layers : LAYERS);
+                }}
+              >
+                <Icon name="search" size={13} />
+                {l.name}
+              </button>
+              <button
+                type="button"
+                className="ibtn xs"
+                aria-label={`Delete “${l.name}”`}
+                title={`Delete the saved search “${l.name}” from Me. Smart Lists.md`}
+                onClick={() =>
+                  void api
+                    .smartListDelete(l.name)
+                    .then(() => toast(`Deleted “${l.name}”`, { label: "Undo", kbd: "⌘Z", run: () => void undoLast() }, "ok"))
+                    .catch(reportEditError)
+                }
+              >
+                <Icon name="x" size={11} />
+              </button>
+            </div>
           ))}
         </nav>
         <div className="spage">

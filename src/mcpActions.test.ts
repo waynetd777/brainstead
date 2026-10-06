@@ -409,7 +409,8 @@ describe("MCP actions", () => {
 
     it("lint gives the screen's report: counted or not, safe fixes and ignored issues", async () => {
       const out = (await run("health.lint")) as string;
-      expect(out).toMatch(/Orphan pages \(1, 2 ignored .*; check orphans\)/);
+      expect(out).toMatch(/Orphan pages \(1; check orphans\)/);
+      expect(out).toMatch(/\n\nIgnored, so not listed: Orphan pages 2\./);
       expect(out).toMatch(/Stale pages \(1, not counted/);
       expect(out).toMatch(/Acme: updated is old \[safe fix\]/);
       expect(await run("health.lint", { page: "Lena" })).toMatch(/^Knowledge health for Lena:\n\nOrphan pages \(1; check orphans\)/);
@@ -495,7 +496,18 @@ describe("MCP actions", () => {
         ],
       };
       answers.contradictions_report = () => rep;
-      expect(await run("contradictions")).toMatch(/Orbit App · launch date \(id c1\): contradiction, high/);
+      rep.items.push({
+        id: "c2",
+        subject: "Maya",
+        attribute: "role",
+        claims: [],
+        verdict: { id: "c2", verdict: "compatible", severity: "low", summary: "Same role.", correct: "", fix: "", patch: null, judged: "" },
+      });
+      const open = (await run("contradictions")) as string;
+      expect(open).toMatch(/ 1 to decide; 1 more not a conflict/);
+      expect(open).toMatch(/Orbit App · launch date \(id c1\): contradiction, high/);
+      expect(open).not.toMatch(/Maya/);
+      expect(await run("contradictions", { all: true })).toMatch(/Maya · role/);
       await run("contradictions", { action: "mark", id: "c1", as: "resolved" });
       expect(calls.find(([c]) => c === "contradictions_mark")![1]).toEqual({ id: "c1", verdict: "resolved" });
       await expect(run("contradictions", { action: "mark", id: "c1", as: "fixed" })).rejects.toThrow(/resolved/);
@@ -573,6 +585,11 @@ describe("MCP actions", () => {
       await expect(run("settings", { action: "set", key: "readOnly", value: false })).rejects.toThrow(/the user's/);
       await expect(run("settings", { action: "set", key: "nightlyTime", value: "25:00" })).rejects.toThrow(/HH:MM/);
       await expect(run("settings", { action: "set", key: "spellCheck", value: "maybe" })).rejects.toThrow(/true or false/);
+    });
+
+    it("deletes a saved search", async () => {
+      expect(await run("saved_searches", { name: "Launch", delete: true })).toBe("Deleted the saved search “Launch”.");
+      expect(calls.find(([c]) => c === "smart_list_delete")![1]).toEqual({ name: "Launch" });
     });
 
     it("imports files into Sources", async () => {

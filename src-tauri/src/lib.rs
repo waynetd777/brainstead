@@ -770,6 +770,7 @@ pub fn run() {
             activity_day,
             listnotes::bookmark_toggle,
             listnotes::smart_list_save,
+            listnotes::smart_list_delete,
             ingest::fixname_plan,
             ingest::fixname_apply,
             ingest::ingest_start,

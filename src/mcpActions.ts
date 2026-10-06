@@ -1131,6 +1131,12 @@ async function bookmarks(a: Args): Promise<string> {
 async function savedSearches(a: Args): Promise<string> {
   const name = str(a, "name");
   const query = str(a, "query");
+  if (a.delete === true) {
+    if (!name) throw new Error("Give name: the saved search to delete.");
+    await api.smartListDelete(name);
+    told(`deleted the saved search ${name}`);
+    return `Deleted the saved search “${name}”.`;
+  }
   if (!name || !query) {
     const rows = await api.smartLists();
     return rows.length ? rows.map((s) => `- ${s.name}: ${s.query}`).join("\n") : "No saved searches.";
@@ -1379,20 +1385,23 @@ async function healthLint(a: Args): Promise<string> {
   if (!r) throw new Error("Knowledge health has no report yet; try again in a moment.");
   const page = str(a, "page")?.trim();
   const out: string[] = [];
+  const quiet: string[] = [];
   for (const c of r.checks) {
     const items = page
       ? c.items.filter(
           (i) => i.page === page || i.pages?.includes(page) || (i.page && pageName(i.page).toLowerCase() === page.toLowerCase()),
         )
       : c.items;
-    if (!items.length && !(c.ignored && !page)) continue;
+    if (c.ignored && !page) quiet.push(`${c.title} ${c.ignored}`);
+    if (!items.length) continue;
     const counted = ADVISORY.has(c.id) ? ", not counted: only worth a look" : "";
-    const ignored = c.ignored && !page ? `, ${c.ignored} ignored (ignore_issue show_again lists them)` : "";
-    out.push("", `${c.title} (${items.length}${counted}${ignored}; check ${c.id}):`);
+    out.push("", `${c.title} (${items.length}${counted}; check ${c.id}):`);
     for (const i of items.slice(0, 40)) out.push(`- ${i.text}${i.safe && c.id !== "page-shape" ? " [safe fix]" : ""}`);
     if (items.length > 40) out.push(`- …and ${items.length - 40} more`);
   }
-  return out.length ? `Knowledge health${page ? ` for ${page}` : ""}:\n${out.join("\n")}` : "No issues.";
+  const ignored = quiet.length ? `Ignored, so not listed: ${quiet.join(", ")}. ignore_issue with show_again lists a check's again.` : "";
+  if (!out.length) return ["No issues.", ignored].filter(Boolean).join(" ");
+  return [`Knowledge health${page ? ` for ${page}` : ""}:`, ...out, ...(ignored ? ["", ignored] : [])].join("\n");
 }
 
 /** health_issue: the buttons an issue has of its own on Knowledge health. */
@@ -1465,12 +1474,22 @@ async function contradictionsTool(a: Args, r: McpRequest): Promise<string> {
   }
   if (action !== "list") throw new Error("action is list, mark or save.");
   const l = rep.last;
-  const head = l.finished
-    ? `Checked ${l.finished.slice(0, 16).replace("T", " ")}: ${l.pages} pages, ${l.claims} claims, ${l.clashes} clashes, ${l.contradictions} contradictions.`
-    : l.running
-      ? `A check is running: ${l.doing || "checking"}.`
-      : "Not checked yet: start_run contradictions runs the check.";
-  const rows = rep.items.map((i) =>
+  const head = [
+    l.finished
+      ? `Checked ${l.finished.slice(0, 16).replace("T", " ")}: ${l.pages} pages, ${l.claims} claims, ${l.clashes} clashes, ${l.contradictions} contradictions.`
+      : l.running
+        ? `A check is running: ${l.doing || "checking"}.`
+        : "Not checked yet: start_run contradictions runs the check.",
+  ];
+  // The ones to decide: a real contradiction or an unclear one, not yet resolved or ignored.
+  const settled = new Set(["compatible", "evolution", "resolved", "ignored"]);
+  const shown = a.all === true ? rep.items : rep.items.filter((i) => !i.verdict || !settled.has(i.verdict.verdict));
+  const left = rep.items.length - shown.length;
+  if (rep.items.length)
+    head.push(
+      ` ${shown.length} to decide${left ? `; ${left} more not a conflict, newer superseding older, resolved or ignored (all lists them)` : ""}.`,
+    );
+  const rows = shown.map((i) =>
     [
       `- ${i.subject} · ${i.attribute} (id ${i.id}): ${i.verdict ? `${i.verdict.verdict}${i.verdict.severity ? `, ${i.verdict.severity}` : ""}. ${i.verdict.summary}` : "not judged yet"}`,
       ...i.claims.map(
@@ -1478,7 +1497,7 @@ async function contradictionsTool(a: Args, r: McpRequest): Promise<string> {
       ),
     ].join("\n"),
   );
-  return [head, ...rows].join("\n");
+  return [head.join(""), ...rows].join("\n");
 }
 
 // ---- the weekly review, done
@@ -1635,7 +1654,7 @@ const SETTINGS: [string, string, string, SettingKind, unknown][] = [
   ["weekprepEnabled", "Jobs & schedule", "Prepare the weekly review", "bool", true],
   ["nightlyEnabled", "Jobs & schedule", "Nightly check", "bool", false],
   ["nightlyTime", "Jobs & schedule", "Nightly check time", "time", "02:10"],
-  ["logDays", "About", "Days of logs kept", "number", null],
+  ["logDays", "About", "Keep logs for (days: 7, 14, 30 or 90)", "number", 14],
 ];
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
@@ -1674,7 +1693,7 @@ async function settingsTool(a: Args): Promise<string> {
     if (!["system", "light", "dark"].includes(String(v))) throw new Error(`${key} is system, light or dark.`);
   } else if (kind === "number") {
     v = Number(v);
-    if (!Number.isFinite(v) || (v as number) < 1) throw new Error(`${key} is a number of 1 or more.`);
+    if (![7, 14, 30, 90].includes(v as number)) throw new Error(`${key} is 7, 14, 30 or 90.`);
   } else v = String(v ?? "").trim() || undefined;
   if (key!.startsWith("reviews.")) settings.update({ reviews: { ...DEFAULT_SCHEDULE, ...s.reviews, [key!.slice(8)]: v } });
   else if (kind === "theme") {

@@ -965,6 +965,7 @@ export const api = {
   /** Bookmarks the note or takes its bookmark away; whether it's bookmarked now. */
   bookmarkToggle: (path: string) => invoke<boolean>("bookmark_toggle", { path }),
   smartListSave: (name: string, query: string, layers: string[]) => invoke<void>("smart_list_save", { name, query, layers }),
+  smartListDelete: (name: string) => invoke<void>("smart_list_delete", { name }),
   /** Quits (⌘Q, once unsaved edits have been dealt with). */
   appQuit: () => invoke<void>("app_quit"),
   onQuitRequested: (f: () => void): Promise<UnlistenFn> => listen("quit-requested", () => f()),

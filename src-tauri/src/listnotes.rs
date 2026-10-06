@@ -86,6 +86,17 @@ pub async fn bookmark_remove(app: AppHandle, target: String) -> Res<()> {
     .map_err(|e| EditError::from(e.to_string()))?
 }
 
+/// Deletes a saved search from the smart lists note.
+#[tauri::command]
+pub async fn smart_list_delete(app: AppHandle, name: String) -> Res<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let label = format!("Deleted the saved search “{}”", name.trim());
+        save(&app, SMART_LISTS, |t| lists::remove_smart_list(t, &name), label)
+    })
+    .await
+    .map_err(|e| EditError::from(e.to_string()))?
+}
+
 /// Saves a search as a smart list.
 #[tauri::command]
 pub async fn smart_list_save(app: AppHandle, name: String, query: String, layers: Vec<String>) -> Res<()> {
