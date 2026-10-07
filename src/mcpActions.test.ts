@@ -1557,6 +1557,7 @@ describe("MCP actions", () => {
         excluded: [entry("v2", "superseded")],
       };
       answers.doc_check = () => result;
+      answers.canonical_register = () => ({ exists: true, problems: [], entries: [entry("v3", "canonical")] });
       const out = (await run("doccheck.run", { document: "sources/Orbit plan.pdf", save: true })) as string;
       // In the screen's words, not the internal ones.
       expect(out).toContain("Checked against Pricing policy v3 (in force).\nNot used: Pricing policy v2 (Superseded).");
@@ -1867,6 +1868,226 @@ describe("MCP actions", () => {
       const g = (await run("glance")) as string;
       expect(g).toContain("Notes by type: Meeting 12");
       expect(g).toContain("Most linked: Orbit App (wiki/entities/Orbit App.md, 9 links)");
+    });
+  });
+
+  describe("the fifth audit's fixes", () => {
+    it("builds a meeting note's name and date as the screen does, and refuses one without them", async () => {
+      const t = (inferred: Record<string, unknown>) => ({ path: "sources/Teams. Transcript. Offsite.vtt", done: null, inferred });
+      answers.ingest_runs = () => [];
+      answers.meeting_draft = () => ["m1"];
+      const start = { run: "meeting_note", transcript: "sources/Teams. Transcript. Offsite.vtt" };
+      // No name read from it: the topic isn't taken for one, as on the screen.
+      answers.meeting_transcripts = () => [t({ type: "Meeting", topic: "Offsite", date: "2026-10-06" })];
+      await expect(run("run.start", start)).rejects.toThrow(/needs a name and a date/);
+      // No date: not today's.
+      answers.meeting_transcripts = () => [t({ type: "Meeting", name: "Offsite" })];
+      await expect(run("run.start", start)).rejects.toThrow(/needs a name and a date/);
+      await expect(run("run.start", { ...start, date: "6 Oct" })).rejects.toThrow(/needs a name and a date/);
+      expect(calls.some(([c]) => c === "meeting_draft")).toBe(false);
+      expect(await run("run.start", { ...start, date: "2026-10-06" })).toMatch(/^Drafting the Meeting note “Offsite” for 2026-10-06/);
+      expect(calls.find(([c]) => c === "meeting_draft")![1]!.items).toEqual([
+        [start.transcript, { type: "Meeting", name: "Offsite", date: "2026-10-06" }],
+      ]);
+    });
+
+    it("refuses to ingest a wiki page or a template, as the file menu offers no Ingest on them", async () => {
+      answers.ingest_start = () => ["r1"];
+      for (const p of ["wiki/entities/Orbit App.md", "Templates/Meeting.md"])
+        await expect(run("run.start", { run: "ingest", sources: ["sources/Plan.pdf", p] })).rejects.toThrow(/can't be ingested/);
+      expect(calls.some(([c]) => c === "ingest_start")).toBe(false);
+    });
+
+    it("orders a project's Next actions, as dragging on the project's page does", async () => {
+      const project = "Projects/Project. Orbit App launch.md";
+      const task = (line: number, text: string, rank: number | null, tags: string[] = []) =>
+        row({ path: project, line, lineText: `- [ ] ${text}`, text, rank, tags, project });
+      answers.projects_list = () => [{ name: "Orbit App launch", path: project, status: "active" }];
+      answers.tasks_all = () => [
+        task(1, "Ask Maya", 2048),
+        task(2, "Wait for Lena", 1536, ["waiting-for"]),
+        task(3, "Book the room", 1024),
+        task(4, "Call Lena", 3072),
+      ];
+      answers.change_task_line = (a) => `${a!.line} ^rank-${JSON.stringify(a!.edit)}`;
+      answers.changes_submit_many = outcomes(true);
+      const out = (await run("task.move", {
+        task: `${project}:5`,
+        text: "Call Lena",
+        before: `${project}:2`,
+        project: "Orbit App launch",
+      })) as string;
+      // In the project's order (Book the room, Ask Maya, Call Lena), ahead of Ask Maya: after Book the room.
+      expect(calls.find(([c]) => c === "change_task_line")![1]!.edit).toEqual({ op: "rank", prev: 1024, next: 2048 });
+      expect(out).toContain("in Orbit App launch's Next actions");
+      // A waiting task isn't in the project's Next actions.
+      await expect(
+        run("task.move", { task: `${project}:5`, text: "Call Lena", after: `${project}:3`, project: "Orbit App launch" }),
+      ).rejects.toThrow(/aren't both in Orbit App launch's Next actions/);
+    });
+
+    it("checks a new note's folder and date with a template too", async () => {
+      answers.files_list = () => [{ path: "Templates/Idea.md" }];
+      answers.doc_read = () => ({ content: "# Idea\n" });
+      answers.changes_submit_many = outcomes(true);
+      // The server checks before it asks the app (src-tauri/mcp/src/tests.rs); the app still makes it.
+      expect(await run("note.from_template", { template: "Idea", type: "Idea", title: "Venue" })).toMatch(/Changed Idea\. Venue\.md/);
+    });
+
+    it("starts the weekly review over and prepares its suggestions, as Start over does", async () => {
+      answers.weekly_state_read = () => null;
+      answers.weekprep_ensure = () => true;
+      const out = (await run("weekly.start_over")) as string;
+      expect(calls.find(([c]) => c === "weekprep_ensure")![1]!.week).toMatch(/^\d{4}-W\d{2}$/);
+      expect(out).toMatch(/Its suggestions are being prepared/);
+    });
+
+    it("checks against the register's first governing document when none is named, as the picker starts", async () => {
+      const entry = (key: string, version: string, status: string) => ({
+        key,
+        title: `${key} policy`,
+        version,
+        status,
+        path: `${key} ${version}.md`,
+        exists: true,
+        aliases: [],
+      });
+      answers.canonical_register = () => ({
+        exists: true,
+        problems: [],
+        entries: [entry("pricing", "v2", "superseded"), entry("brand", "v1", "canonical"), entry("pricing", "v3", "canonical")],
+      });
+      answers.doc_check = () => ({
+        verdict: "Aligned",
+        summary: "",
+        findings: [],
+        against: entry("pricing", "v3", "canonical"),
+        excluded: [],
+      });
+      await run("doccheck.run", { document: "sources/Orbit plan.pdf" });
+      expect(calls.find(([c]) => c === "doc_check")![1]).toMatchObject({ doc: "pricing", mode: "standard" });
+      answers.canonical_register = () => ({ exists: true, problems: [], entries: [] });
+      await expect(run("doccheck.run", { document: "sources/Orbit plan.pdf" })).rejects.toThrow(/Add a governing document/);
+    });
+
+    it("opens Graph around a page", async () => {
+      answers.links_resolve = () => ["wiki/entities/Orbit App.md"];
+      expect(await run("open", { screen: "graph", page: "Orbit App" })).toBe("Brainstead is open on Graph, around Orbit App.");
+    });
+
+    it("saves a search only as Save search allows: not a query saved already, and the screen's layers", async () => {
+      answers.smart_lists = () => [{ name: "Launch", query: "soft launch", layers: [] }];
+      await expect(run("saved_searches", { name: "Again", query: "soft launch" })).rejects.toThrow(/saved already, as “Launch”/);
+      await expect(run("saved_searches", { name: "T", query: "budget", layers: ["templates"] })).rejects.toThrow(/notes, wiki and sources/);
+      await run("saved_searches", { name: "Budget", query: "budget", layers: ["notes", "wiki", "sources"] });
+      await run("saved_searches", { name: "Budget wiki", query: "budget wiki", layers: ["wiki"] });
+      expect(calls.filter(([c]) => c === "smart_list_save").map(([, a]) => a!.layers)).toEqual([[], ["wiki"]]);
+    });
+
+    it("gives a day's log entries beside its files, and searches as the screen does", async () => {
+      answers.activity = () => ({
+        log: [
+          { date: "2026-10-02", time: "10:00", action: "ingest", title: "Orbit", description: "two pages" },
+          { date: "2026-10-02", time: "09:00", action: "trash", title: "Idea. Old", description: "" },
+          { date: "2026-10-01", time: "09:30", action: "ingest", title: "Hub Platform", description: "" },
+        ],
+      });
+      answers.activity_day = () => [{ path: "wiki/entities/Orbit App.md" }];
+      expect(await run("activity", { date: "2026-10-02" })).toBe(
+        "3 files changed and entries in log.md on 2026-10-02:\n- wiki/entities/Orbit App.md\n- 2026-10-02 ingest Orbit\n- 2026-10-02 trash Idea. Old",
+      );
+      // The query narrows the entries, not the files; the date isn't searched, as on the screen.
+      expect(await run("activity", { date: "2026-10-02", query: "pages" })).toMatch(
+        /:\n- wiki\/entities\/Orbit App\.md\n- 2026-10-02 ingest Orbit$/,
+      );
+      expect(await run("activity", { query: "2026-10-01" })).toMatch(/^0 entries/);
+    });
+
+    it("won't save a contradictions report while a check runs", async () => {
+      answers.contradictions_report = () => ({ last: { finished: "2026-10-05T10:05", running: true, failures: [] }, items: [] });
+      await expect(run("contradictions", { action: "save" })).rejects.toThrow(/check is running/);
+    });
+
+    it("says ⌘Z undoes an accepted suggestion, as Found's toast does", async () => {
+      answers.find_decide = () => "Added “Book the room” to Orbit App launch. Revert it in Changes.";
+      expect(await run("suggestions", { action: "accept", id: "s1" })).toBe(
+        "Added “Book the room” to Orbit App launch. ⌘Z in the app undoes it (Undo, as Found's toast offers), and it's in Changes too.",
+      );
+    });
+
+    it("names Mark complete for a completed project", async () => {
+      answers.projects_list = () => [{ name: "Orbit App launch", path: "Project. Orbit App launch.md", status: "active" }];
+      answers.changes_submit_many = outcomes(true);
+      expect(await run("project.update", { project: "Orbit App launch", status: "completed" })).toMatch(
+        /^Set status Completed \(Mark complete\) for Orbit App launch\./,
+      );
+    });
+
+    it("refuses Only in the menu bar while Show in the menu bar is off", async () => {
+      settings.update({ menuBar: false });
+      await expect(run("settings", { action: "set", key: "menuBarOnly", value: true })).rejects.toThrow(/Show in the menu bar/);
+      settings.update({ menuBar: true });
+    });
+
+    it("reads a source's Provenance card", async () => {
+      answers.source_provenance = () => ({
+        sha256: "ab12",
+        size: 2048,
+        mtime: Date.parse("2026-10-01T10:00:00Z"),
+        chunks: 4,
+        citers: [
+          {
+            path: "wiki/entities/Orbit App.md",
+            title: "Orbit App",
+            listed: true,
+            passages: [{ line: 3, anchor: "page=2", context: "Launch is in May [[Orbit plan.pdf#page=2]] ^q1" }],
+          },
+        ],
+        lastRun: { id: "r1", finished: "2026-10-02T10:00:00Z", status: "done", model: "claude:sonnet" },
+      });
+      const out = (await run("source.provenance", { source: "sources/Orbit plan.pdf" })) as string;
+      expect(out).toMatch(/^sources\/Orbit plan\.pdf: Ingested 2 Oct 2026 \(run r1, sonnet\)\./);
+      expect(out).toContain("Text: 4 passages indexed, searchable · SHA-256 ab12.");
+      expect(out).toContain(
+        "Cited by 1 page, 1 passage:\n- Orbit App (wiki/entities/Orbit App.md): 1 passage\n  - “Launch is in May” at “page=2”",
+      );
+      answers.source_provenance = () => null;
+      await expect(run("source.provenance", { source: "sources/Gone.pdf" })).rejects.toThrow(/no source at/);
+    });
+
+    it("gives Knowledge health's summary and trend", async () => {
+      const report = {
+        checks: [
+          { id: "orphans", title: "Orphan pages", classic: true, items: [{ text: "Lena", page: "wiki/entities/Lena.md", safe: false }] },
+        ],
+      };
+      answers.health_report = () => ({
+        report,
+        history: [
+          ["2026-10-01", { total: 4, decisions: 3 }],
+          ["2026-10-06", { total: 1, decisions: 1 }],
+        ],
+        ranAt: null,
+      });
+      expect(await run("health.lint")).toMatch(
+        /^Knowledge health:\nNeed a decision: 1; nothing safe to fix\. Trend: 1 Oct: 3 → 6 Oct: 1 \(1 Oct to 6 Oct\. Highest: 3\.\)/,
+      );
+      answers.health_report = () => ({ report, history: [], ranAt: null });
+      expect(await run("health.lint")).toContain("The trend shows after a second day.");
+    });
+
+    it("gives AI assistants' Terminal commands and the skills Brainstead does now", async () => {
+      answers.ask_clis = () => [{ cli: "claude", path: "/usr/local/bin/claude", version: "2.1.0", models: [] }];
+      answers.app_info = () => ({ version: "1.0.2", build: "1", dataDir: "/tmp/x", exe: "/Applications/Brainstead.app/brainstead" });
+      answers.skills_list = () => [
+        { name: "triage", description: "", source: "vault", opens: "triage" },
+        { name: "notes", description: "", source: "vault" },
+      ];
+      const out = (await run("assistants.found", { look_again: true })) as string;
+      expect(out).toContain('- Claude Code: claude mcp add -s user brainstead -- "/Applications/Brainstead.app/brainstead" --mcp');
+      expect(out).toContain("Skills Brainstead does now");
+      expect(out).toContain("- /triage: Bookmarks triage");
+      expect(out).not.toContain("/notes");
     });
   });
 

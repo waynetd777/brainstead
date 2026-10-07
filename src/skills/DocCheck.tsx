@@ -70,6 +70,15 @@ export function findingsMarkdown(name: string, r: CheckResult): string {
   return lines.join("\n");
 }
 
+/** The governing documents the picker offers, one per key (its version in force where the register
+ *  has one), in the register's order: the first is chosen until the user picks another (doc_check
+ *  without governing_document takes it too). */
+export function governingDocs(reg: CanonicalRegister | null): CanonicalEntry[] {
+  const m = new Map<string, CanonicalEntry>();
+  for (const e of reg?.entries ?? []) if (!m.has(e.key) || e.status === "canonical") m.set(e.key, e);
+  return [...m.values()];
+}
+
 export function DocCheckScreen() {
   const here = useStore(place).place;
   const [reg, setReg] = useState<CanonicalRegister | null>(null);
@@ -95,11 +104,7 @@ export function DocCheckScreen() {
       .then((f) => setSources(f.sort((a, b) => b.mtime - a.mtime)))
       .catch(() => {});
   }, []);
-  const docs = useMemo(() => {
-    const m = new Map<string, CanonicalEntry>();
-    for (const e of reg?.entries ?? []) if (!m.has(e.key) || e.status === "canonical") m.set(e.key, e);
-    return [...m.values()];
-  }, [reg]);
+  const docs = useMemo(() => governingDocs(reg), [reg]);
   useEffect(() => {
     if (!doc && docs.length) setDoc(docs[0].key);
   }, [docs]); // eslint-disable-line react-hooks/exhaustive-deps

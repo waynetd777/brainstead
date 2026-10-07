@@ -19,7 +19,8 @@ import { Dialog, fmtCount, SearchBox, Seg, useDebounced } from "./ui";
 import { reportEditError, undoLast } from "./taskModel";
 import { toast } from "./Toast";
 
-const LAYERS: Layer[] = ["note", "wiki", "source"];
+/** The parts of the vault Search filters on (and a saved search keeps; saved_searches takes the same). */
+export const LAYERS: Layer[] = ["note", "wiki", "source"];
 
 /** Results for a query that's already debounced (see useDebounced). */
 export function useSearch(q: string, layers: Layer[], limit = 200): SearchResults | null {

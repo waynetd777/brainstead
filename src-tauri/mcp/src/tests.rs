@@ -415,6 +415,17 @@ fn create_note_sends_a_named_note() {
     assert!(refused(&f.ctx, "create_note", json!({"title": "##", "content": "x"})).contains("title"));
     let exists = refused(&f.ctx, "create_note", json!({"type": "Project", "title": "Garden", "content": "x"}));
     assert!(exists.contains("exists already") && exists.contains("edit_page"), "{exists}");
+    // From a template, the same checks, before the app is asked to run it.
+    let tpl = |extra: Value| {
+        let mut a = json!({"title": "Venue", "template": "Idea"});
+        a.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        refused(&f.ctx, "create_note", a)
+    };
+    assert!(tpl(json!({"folder": "wiki/entities"})).contains("edit_page"));
+    assert!(tpl(json!({"folder": "Nowhere"})).contains("no folder"));
+    tpl(json!({"folder": "../out"}));
+    assert!(tpl(json!({"date": "3 Oct"})).contains("YYYY-MM-DD"));
+    assert!(tpl(json!({"title": "##"})).contains("title"));
 }
 
 #[test]
@@ -831,6 +842,7 @@ fn the_re_audits_tools_and_arguments_go_to_the_app() {
         ("capture_extensions", json!({}), "capture.status"),
         ("glance", json!({}), "glance"),
         ("list_assistants", json!({"look_again": true}), "assistants.found"),
+        ("provenance", json!({"source": "sources/Roadmap Update 2026-09-18.md"}), "source.provenance"),
         ("doc_check", json!({"start_register": true}), "doccheck.register"),
         ("doc_check", json!({"document": "sources/Roadmap Update 2026-09-18.md", "save": true}), "doccheck.run"),
     ] {
@@ -863,6 +875,8 @@ fn the_re_audits_tools_and_arguments_go_to_the_app() {
         ("search", "order"),
         ("activity", "order"),
         ("create_note", "test_run"),
+        ("move_task", "project"),
+        ("provenance", "source"),
         ("moving_over", "item"),
     ] {
         assert!(props(tool_name).get(arg).is_some(), "{tool_name} takes {arg}");

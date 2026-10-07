@@ -1028,7 +1028,7 @@ function Assistants() {
   );
 }
 
-const SCREEN_NAME: Record<string, string> = {
+export const SCREEN_NAME: Record<string, string> = {
   sources: "Sources (Ingest)",
   fixname: "Fix a name everywhere (⌘K)",
   contradictions: "Contradictions (Knowledge health)",
@@ -1039,14 +1039,16 @@ const SCREEN_NAME: Record<string, string> = {
   doccheck: "Doc check",
 };
 
+/** The vault's skills that Brainstead now does on its own screens (list_assistants lists them too). */
+export const handedOver = async (): Promise<Skill[]> => (await api.skillsList()).filter((x) => x.opens);
+
 /** The vault's skills that Brainstead now does on its own screens. */
 function HandedOver() {
   const [skills, setSkills] = useState<Skill[]>([]);
   useEffect(
     () =>
-      void api
-        .skillsList()
-        .then((s) => setSkills(s.filter((x) => x.opens)))
+      void handedOver()
+        .then(setSkills)
         .catch(() => {}),
     [],
   );
@@ -1073,6 +1075,19 @@ function HandedOver() {
   );
 }
 
+/** Each CLI's own command to register Brainstead's server for all its sessions (its user config). */
+const ADD_COMMAND: Record<CliName, (exe: string) => string> = {
+  claude: (exe) => `claude mcp add -s user brainstead -- "${exe}" --mcp`,
+  codex: (exe) => `codex mcp add brainstead -- "${exe}" --mcp`,
+  copilot: (exe) => `copilot mcp add brainstead -- "${exe}" --mcp`,
+  antigravity: (exe) => `agy mcp add brainstead -- "${exe}" --mcp`,
+};
+
+/** The commands Brainstead's tools pane shows, [assistant, command], for the assistants found on
+ *  this computer (list_assistants gives the same). */
+export const terminalCommands = (found: { cli: CliName; path: string | null }[], exe: string): [string, string][] =>
+  found.filter((c) => c.path).map((c) => [CLI_LABEL[c.cli], ADD_COMMAND[c.cli](exe)]);
+
 /** Brainstead's MCP server: what Ask gives each CLI, and how to add it to one in Terminal. */
 function McpGroup() {
   const [info, setInfo] = useState<AppInfo | null>(null);
@@ -1088,13 +1103,7 @@ function McpGroup() {
   // for the assistants found on this computer.
   const found = useStore(clis);
   useEffect(() => void findClis(), []);
-  const add: Record<CliName, (exe: string) => string> = {
-    claude: (exe) => `claude mcp add -s user brainstead -- "${exe}" --mcp`,
-    codex: (exe) => `codex mcp add brainstead -- "${exe}" --mcp`,
-    copilot: (exe) => `copilot mcp add brainstead -- "${exe}" --mcp`,
-    antigravity: (exe) => `agy mcp add brainstead -- "${exe}" --mcp`,
-  };
-  const cmds: [string, string][] = info && found ? found.filter((c) => c.path).map((c) => [CLI_LABEL[c.cli], add[c.cli](info.exe)]) : [];
+  const cmds = info && found ? terminalCommands(found, info.exe) : [];
   return (
     <section className="sgroup">
       <h2 className="h3">Brainstead's tools</h2>

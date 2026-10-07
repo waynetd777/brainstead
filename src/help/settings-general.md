@@ -24,7 +24,7 @@ The rest you tick yourself: the other app's summaries switched off, its browser 
 
 ## Start at login, and the menu bar
 - **Show in the menu bar** (on by default) puts Brainstead's icon and its small window in the menu bar.
-- **Only in the menu bar when the window is closed** takes Brainstead out of the Dock when you close its window.
+- **Only in the menu bar when the window is closed** takes Brainstead out of the Dock when you close its window. It's there only while **Show in the menu bar** is on, and an assistant can't turn it on otherwise.
 - **Open at login** starts Brainstead when you log in. It only appears when macOS can manage it for this copy of the app (the installed app, not one run from a folder), and the menu-bar window has the same switch. It's the switch in System Settings › General › Login Items too: if macOS asks you to approve it, System Settings opens there, and until you do it shows as off.
 
 What the two together do is in [The menu bar](help:menubar).

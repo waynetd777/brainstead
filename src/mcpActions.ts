@@ -29,6 +29,7 @@ import {
   FixNameRequest,
   InboxItem,
   LogEntry,
+  NoteSpec,
   ProjectRow,
   ReviewRun,
   Settings,
@@ -41,11 +42,23 @@ import {
   WeekPrepSuggestion,
 } from "./api";
 import { ACTION as FIX_ACTION, chosenRows, startUnticked } from "./FixName";
-import { contextName, projectFlag, projectName } from "./gtd";
+import { contextName, projectFlag, projectName, ProjectStatus, projectTasks, STATUS_LABEL } from "./gtd";
 import { captureStamp, prepareCapture } from "./Capture";
 import { bandOf, inboxRows, taskLine, unclarified } from "./Inbox";
 import { appendAsReference, newReferenceNote, settleInboxItem } from "./inboxActions";
-import { ADVISORY, byRun, fixOf, makePage, originLabel, OWN_ACTIONS, pageName, safeFixes } from "./knowledge";
+import {
+  ADVISORY,
+  byRun,
+  decisions,
+  fixOf,
+  makePage,
+  originLabel,
+  OWN_ACTIONS,
+  pageName,
+  safeFixes,
+  trendLabels,
+  trendShown,
+} from "./knowledge";
 import { localToday } from "./md/taskQuery";
 import { composeFilename } from "./notes/filename";
 import { Ask, Env, freeName, runTemplate, StopRun } from "./notes/templater";
@@ -76,15 +89,18 @@ import { loadVoices, speechSettingsChanged, voiceLabel, voices } from "./speech/
 import { applyReadSize, applyTheme, READ_SIZE, settings } from "./store";
 import { nav, Screen, SettingsPane } from "./nav";
 import { DEFAULT_SCHEDULE, DEFAULT_WEEKLY_REVIEW } from "./Jobs";
-import { foundDetail, INSTALL, languageName, scriptsFolder } from "./Settings";
+import { foundDetail, handedOver, INSTALL, languageName, SCREEN_NAME, scriptsFolder, terminalCommands } from "./Settings";
 import { choice, prepStep, WEEKLY_STATE_CHANGED } from "./weeklyPrep";
-import { draftNotes, followThrough, isTranscriptPath, noteFile, specOf } from "./meetingFlow";
-import { DONE as MEETING_DONE, noteExists, TYPES as MEETING_TYPES } from "./Meeting";
+import { draftNotes, followThrough, isTranscriptPath, noteFile, specOf, specOk } from "./meetingFlow";
+import { DONE as MEETING_DONE, needsDate, noteExists, TYPES as MEETING_TYPES } from "./Meeting";
 import { reportMarkdown } from "./Contradictions";
 import { checklist, isDone, isRetired, STOP_FIRST } from "./Switchover";
-import { ingestable } from "./Lists";
+import { canIngest, ingestable } from "./Lists";
+import { LAYERS as SEARCH_LAYERS } from "./Search";
+import { fmtDay } from "./FileList";
+import { passageText, PASSAGES_SHOWN } from "./Provenance";
 import { offerFollowUp } from "./Ingest";
-import { findingsMarkdown, findingsNote, REGISTER, REGISTER_STUB, STATUS as REGISTER_STATUS } from "./skills/DocCheck";
+import { findingsMarkdown, findingsNote, governingDocs, REGISTER, REGISTER_STUB, STATUS as REGISTER_STATUS } from "./skills/DocCheck";
 import { LABEL as TRIAGE } from "./skills/Triage";
 import { ANSWERED, replyTask } from "./skills/Reply";
 import { actionLabel, actionsIn, filterLog, rankLog } from "./activityModel";
@@ -504,7 +520,7 @@ async function editTask(a: Args, r: McpRequest): Promise<string> {
 const RANK_SPACING = 1024;
 
 /** move_task: the drag in a manual list, as the Tasks screen does it (taskModel's rankBetween): in
- *  the list both tasks are in, between its real neighbours there, or the whole list renumbered when
+ *  the list both tasks are in (or, with project, the project page's Next actions), between its real neighbours there, or the whole list renumbered when
  *  some rows have no rank or there's no room. Every line it changes is one change, made together. */
 async function moveTask(a: Args, r: McpRequest): Promise<string> {
   const all = await api.tasksAll();
@@ -515,14 +531,28 @@ async function moveTask(a: Args, r: McpRequest): Promise<string> {
   if (!after && !before) throw new Error("Give after or before: the id of the task it should follow or come ahead of.");
   const other = (after ?? before)!;
   if (other === t) throw new Error("A task can't move next to itself.");
-  // The manual list they're both in, as the screen drags within one list.
-  const today = localToday();
-  const inbox = await api.inboxList();
-  const lists = VIEWS.filter((v) => v.manual).map((v) => ({ v, rows: viewRows(all, v, today, v.id === "next" ? inbox : null) }));
-  const list = lists.find((l) => l.rows.includes(t) && (!after || l.rows.includes(after)) && (!before || l.rows.includes(before)));
+  const both = (rows: TaskRow[]) => rows.includes(t) && (!after || rows.includes(after)) && (!before || rows.includes(before));
+  // With project, the project page's Next actions (gtd.ts projectTasks, in its dragged order);
+  // else the Tasks screen's manual list they're both in, as the screen drags within one list.
+  let list: { v: { label: string }; rows: TaskRow[] } | undefined;
+  const project = str(a, "project");
+  if (project) {
+    const path = await projectPath(project);
+    const rows = projectTasks(all, path).next;
+    if (!both(rows))
+      throw new Error(
+        `Those tasks aren't both in ${projectName(path)}'s Next actions (open tasks not waiting for or someday / maybe): list_tasks with project shows them.`,
+      );
+    list = { v: { label: `${projectName(path)}'s Next actions` }, rows };
+  } else {
+    const today = localToday();
+    const inbox = await api.inboxList();
+    const lists = VIEWS.filter((v) => v.manual).map((v) => ({ v, rows: viewRows(all, v, today, v.id === "next" ? inbox : null) }));
+    list = lists.find((l) => both(l.rows));
+  }
   if (!list)
     throw new Error(
-      "Those tasks aren't in one list with a manual order (Next actions, Follow-ups, Waiting for, Someday / maybe): move a task next to one in its own list.",
+      "Those tasks aren't in one list with a manual order (Next actions, Follow-ups, Waiting for, Someday / maybe): move a task next to one in its own list, or give project to order a project's Next actions.",
     );
   const rest = list.rows.filter((x) => x !== t);
   const at = after ? rest.indexOf(after) + 1 : rest.indexOf(before!);
@@ -916,8 +946,10 @@ async function updateProject(a: Args, r: McpRequest): Promise<string> {
     if (!has(a, k)) continue;
     const v = a[k] ? String(a[k]).trim() : null;
     if (k === "status") {
-      set.push([prop, statusIn({ status: v })!]);
-      said.push(`${words} ${v}`);
+      const st = statusIn({ status: v })!;
+      set.push([prop, st]);
+      // In the screen's words: Mark complete, or the tab it moves to.
+      said.push(`${words} ${STATUS_LABEL[st as ProjectStatus]}${st === "done" ? " (Mark complete)" : ""}`);
       continue;
     }
     if (v?.includes("\n")) throw new Error(`${words[0].toUpperCase()}${words.slice(1)} is one line.`);
@@ -1256,11 +1288,16 @@ async function startRun(a: Args): Promise<string> {
     case "ingest": {
       const sources = (Array.isArray(a.sources) ? a.sources : []).map(String);
       if (!sources.length) throw new Error("Give sources: the paths in sources/ to ingest.");
-      // Only what an ingest can read, as the screens offer Ingest only on those.
+      // Only what the file menu offers Ingest on: what an ingest can read, and not a wiki page or a template.
       const cant = sources.filter((p) => !ingestable(p));
       if (cant.length)
         throw new Error(
           `An ingest can't read ${cant.join(", ")}: it takes notes and text, PDFs, Office files (Word, PowerPoint, Excel) and images.`,
+        );
+      const own = sources.filter((p) => !canIngest(p));
+      if (own.length)
+        throw new Error(
+          `${own.join(", ")} can't be ingested: wiki pages are what an ingest writes, and Templates/ holds the app's templates, so the file menu doesn't offer Ingest on them.`,
         );
       const ids = await api.ingestStart(sources, unattended);
       noted(`started ingesting ${sources.length} source${sources.length === 1 ? "" : "s"}`);
@@ -1298,18 +1335,23 @@ async function startRun(a: Args): Promise<string> {
               .join(", ") || "none"
           }.`,
         );
-      if (t.inferred.dateCheck && !str(a, "date"))
+      const type = str(a, "type");
+      if (type && !MEETING_TYPES.includes(type)) throw new Error(`type is ${MEETING_TYPES.join(", ")}, as the screen offers them.`);
+      // The note's name and date as the screen builds them, from what's given over what was read.
+      const edits: Partial<NoteSpec> = {};
+      if (type) edits.type = type;
+      if (str(a, "name") !== undefined) edits.name = str(a, "name");
+      if (str(a, "date") !== undefined) edits.date = str(a, "date");
+      if (needsDate(t, edits))
         throw new Error(
           `The date in ${t.path}'s name (${t.inferred.date}) is the day it was captured, which may not be the meeting's: ask the user for the meeting date and give it as date.`,
         );
-      const type = str(a, "type");
-      if (type && !MEETING_TYPES.includes(type)) throw new Error(`type is ${MEETING_TYPES.join(", ")}, as the screen offers them.`);
-      const spec = {
-        type: type ?? t.inferred.type ?? "Meeting",
-        name: str(a, "name") ?? t.inferred.name ?? t.inferred.topic ?? "",
-        date: str(a, "date") ?? t.inferred.date ?? localToday(),
-      };
-      if (!spec.name) throw new Error("Give name: who the 1-1 was with, or the meeting's name.");
+      const spec = specOf(t, edits);
+      // As Draft the note refuses: a name, and a date as YYYY-MM-DD.
+      if (!specOk(spec))
+        throw new Error(
+          `${t.path} needs a name and a date: give name (who the 1-1 was with, or the meeting's name) and date (YYYY-MM-DD) as the user confirms them.`,
+        );
       // As the screen's Draft the note waits: not while one is being drafted, nor over a note there already.
       if (
         (await api.ingestRuns()).some(
@@ -1317,7 +1359,7 @@ async function startRun(a: Args): Promise<string> {
         )
       )
         throw new Error(`A note is being drafted from ${t.path} already; run_status shows how it's going.`);
-      if (noteExists(t, spec))
+      if (noteExists(t, edits))
         throw new Error(
           `${noteFile(spec)} exists already: the user can open it to fill it in, or give another name or date for a new note.`,
         );
@@ -1574,14 +1616,16 @@ async function weeklySuggestion(a: Args): Promise<string> {
 }
 
 /** The weekly review's Start over: its progress, notes, decisions and handled suggestions dropped,
- *  from step 1 for this week. */
+ *  from step 1 for this week, and the week's suggestions prepared if it has none, as starting the
+ *  review on the screen prepares them (weekprepEnsure). */
 async function weeklyStartOver(): Promise<string> {
   const week = reviewWeek(localToday());
   const saved = await api.weeklyStateRead().catch(() => null);
-  await api.weeklyStateWrite({ week, step: 0, done: [], log: [], notes: "", startedAt: Date.now() });
+  await api.weeklyStateWrite(fresh(week));
   window.dispatchEvent(new Event(WEEKLY_STATE_CHANGED));
+  const preparing = await api.weekprepEnsure(week).catch(() => false);
   noted(`started the weekly review over for ${week}`);
-  return `Started the weekly review over for ${week}: it's at step 1 of ${STEPS.length}${saved ? `; the review of ${saved.week} that was paused on step ${saved.step + 1} is dropped` : ""}. What it changed in the vault stays.`;
+  return `Started the weekly review over for ${week}: it's at step 1 of ${STEPS.length}${saved ? `; the review of ${saved.week} that was paused on step ${saved.step + 1} is dropped` : ""}. What it changed in the vault stays.${preparing ? " Its suggestions are being prepared (run_status shows how it's going)." : ""}`;
 }
 
 /** Settings › General › Moving over: its checklist as the screen shows it, a tick on the lines the
@@ -1840,8 +1884,17 @@ async function savedSearches(a: Args): Promise<string> {
         )
       : "No saved searches.";
   }
+  // As Save search allows it: a query of two letters or more, not one saved already, and only the
+  // screen's layers (notes, wiki, sources), all of them kept as none.
+  if (query.length < 2) throw new Error("A saved search needs a query of two letters or more, as Save search does.");
+  const lists = await api.smartLists();
+  const same = lists.find((l) => l.query === query);
+  if (same) throw new Error(`That search is saved already, as “${same.name}”.`);
   // search's layer names (notes, sources…) or the app's (note, source…).
-  const layers = (Array.isArray(a.layers) ? a.layers : []).map((l) => String(l).replace(/s$/, ""));
+  const want = [...new Set((Array.isArray(a.layers) ? a.layers : []).map((l) => String(l).replace(/s$/, "")))];
+  const bad = want.filter((l) => !(SEARCH_LAYERS as string[]).includes(l));
+  if (bad.length) throw new Error(`A saved search's layers are notes, wiki and sources, as Search's filters are (not ${bad.join(", ")}).`);
+  const layers = want.length === SEARCH_LAYERS.length ? [] : want;
   await api.smartListSave(name, query, layers);
   told(`saved the search ${name}`);
   return `Saved the search “${name}”.`;
@@ -1849,42 +1902,52 @@ async function savedSearches(a: Args): Promise<string> {
 
 async function activity(a: Args): Promise<Listing> {
   const date = str(a, "date");
-  if (date) {
-    const line = (f: { path: string }) => `- ${f.path}`;
-    return listed(a, await api.activityDay(date), {
-      text: line,
-      noun: [`file changed on ${date}`, `files changed on ${date}`],
-      def: 80,
-      line,
-      item: (f) => ({ date, path: f.path }),
-      empty: `Nothing changed on ${date}.`,
-    });
-  }
   const { log: all } = await api.activity();
   const full = (e: LogEntry) =>
     `- ${e.date}${e.time ? ` ${e.time}` : ""} ${e.action} ${e.title}${e.description ? ` — ${e.description}` : ""}`;
+  const short = (e: LogEntry) => (a.detail === true ? full(e) : `- ${e.date} ${e.action} ${e.title}`);
+  const entryItem = (e: LogEntry) => ({ date: e.date, time: e.time, action: e.action, title: e.title, description: e.description });
   // The screen's action chips: an action as the log names it or as its chip says it.
   const actions = actionsIn(all);
   const want = str(a, "action")?.toLowerCase();
   const action = want ? actions.find((x) => x.toLowerCase() === want || actionLabel(x).toLowerCase() === want) : undefined;
   if (want && !action) throw new Error(`No “${want}” entries in log.md. Its actions: ${actions.join(", ") || "none"}.`);
-  const filtered = action ? filterLog(all, { action, day: null, q: "" }) : all;
   // The screen's order while searching: Best match (its default) or Latest; newest first otherwise.
   const order = str(a, "order") ?? "best_match";
   if (order !== "best_match" && order !== "latest") throw new Error("order is best_match or latest, as the Activity screen's are.");
   const query = str(a, "query");
+  // The entries the screen shows: its action chip, the day picked, and its search (filterLog).
+  const filtered = filterLog(all, { action: action ?? null, day: date ?? null, q: "" });
   const log = query && order === "best_match" ? rankLog(filtered, query) : filtered;
+  const matches = (e: LogEntry, q: string) => filterLog([e], { action: null, day: null, q }).length > 0;
+  if (date) {
+    // A day picked, as on the screen: the files changed that day, then that day's entries in log.md
+    // (which the action and query narrow, as they narrow the screen's list; the files stay).
+    type Row = { file: string } | { entry: LogEntry };
+    const files = (await api.activityDay(date)).map((f): Row => ({ file: f.path }));
+    const rows: Row[] = [...files, ...log.map((e): Row => ({ entry: e }))];
+    return listed(a, rows, {
+      text: (r) => ("file" in r ? r.file : r.entry.title),
+      match: (r, q) => "file" in r || matches(r.entry, q),
+      noun: [`file changed or entry in log.md on ${date}`, `files changed and entries in log.md on ${date}`],
+      def: 80,
+      line: (r) => ("file" in r ? `- ${r.file}` : short(r.entry)),
+      item: (r) => ("file" in r ? { date, path: r.file } : entryItem(r.entry)),
+      empty: `Nothing changed on ${date}.`,
+    });
+  }
   return listed(a, log, {
-    // query's words in the entry's title, description or action, as the screen's search looks, or its date.
-    text: (e) => `${e.date}\n${e.title}\n${e.description}\n${e.action}\n${actionLabel(e.action)}`,
+    text: (e) => e.title,
+    // query's words in the entry's title, description or action's label, as the screen's search looks.
+    match: matches,
     noun:
       query && order === "best_match"
         ? ["entry in log.md, best match first", "entries in log.md, best match first"]
         : ["entry in log.md, newest first", "entries in log.md, newest first"],
     def: 30,
     // Short: the day, what and which; detail adds the time and the description.
-    line: (e) => (a.detail === true ? full(e) : `- ${e.date} ${e.action} ${e.title}`),
-    item: (e) => ({ date: e.date, time: e.time, action: e.action, title: e.title, description: e.description }),
+    line: short,
+    item: entryItem,
     empty: "log.md is empty.",
   });
 }
@@ -1985,12 +2048,54 @@ async function assistantsFound(a: Args): Promise<string> {
   await findClis(a.look_again === true);
   const found = clis.get() ?? [];
   const n = found.filter((c) => c.path).length;
+  // The pane's other groups: Brainstead's tools' Terminal commands, and Skills Brainstead does now.
+  const [info, skills] = await Promise.all([api.appInfo().catch(() => null), handedOver().catch(() => [])]);
+  const cmds = info ? terminalCommands(found, info.exe) : [];
   return [
     `Found on this computer (Settings › AI assistants)${a.look_again === true ? ", looked for again just now" : ""}: ${n ? `${n} assistant${n === 1 ? "" : "s"}` : "no assistants"}.`,
     ...found.map(
       (c) =>
         `- ${CLI_LABEL[c.cli]}${c.version ? ` · ${c.version}` : ""}: ${foundDetail(c)}${c.path ? "" : ` How to install: ${INSTALL[c.cli]}`}`,
     ),
+    "",
+    cmds.length
+      ? "Brainstead's tools from an assistant in Terminal: run its command once, and it registers Brainstead for all its sessions:"
+      : "Brainstead's tools from Terminal: no assistant is installed yet, so there's no command to show.",
+    ...cmds.map(([name, cmd]) => `- ${name}: ${cmd}`),
+    ...(skills.length
+      ? [
+          "",
+          "Skills Brainstead does now (picking one in Ask opens its screen; the vault's own copies keep working):",
+          ...skills.map((s) => `- /${s.name}: ${SCREEN_NAME[s.opens!] ?? s.opens}`),
+        ]
+      : []),
+  ].join("\n");
+}
+
+/** A source's Provenance card, as Sources shows it: ingested or not and by which run, its size and
+ *  date, what the index holds, and the pages citing it with the passages they quote. */
+async function provenance(a: Args): Promise<string> {
+  const source = (str(a, "source") ?? "").replace(/^\[\[|\]\]$/g, "");
+  if (!source) throw new Error("Give source: the source's path in the vault, as pending_sources gives it.");
+  const p = await api.sourceProvenance(source);
+  if (!p) throw new Error(`There's no source at ${source} in the index: pending_sources lists the sources.`);
+  const run = p.lastRun;
+  const passages = p.citers.reduce((n, c) => n + c.passages.length, 0);
+  const state = p.citers.length
+    ? run?.finished
+      ? `Ingested ${fmtDay(Date.parse(run.finished))}`
+      : "Cited in the wiki"
+    : "Not ingested yet";
+  const ran = run ? ` (run ${run.id}${run.status === "done" ? "" : `, ${run.status}`}, ${run.model.replace(/^[a-z]+:/, "")})` : "";
+  return [
+    `${source}: ${state}${ran}.`,
+    `Size ${fmtBytes(p.size)} · changed ${fmtDay(p.mtime)}.`,
+    `Text: ${p.chunks ? `${p.chunks} passage${p.chunks === 1 ? "" : "s"} indexed, searchable` : "none read yet"} · SHA-256 ${p.sha256}.`,
+    `Cited by ${p.citers.length} page${p.citers.length === 1 ? "" : "s"}${passages ? `, ${passages} passage${passages === 1 ? "" : "s"}` : ""}${p.citers.length ? ":" : ". No wiki page cites it yet: start_run ingest has the wiki take it in."}`,
+    ...p.citers.flatMap((c) => [
+      `- ${c.title} (${c.path}): ${c.passages.length ? `${c.passages.length} passage${c.passages.length === 1 ? "" : "s"}` : "in its sources"}`,
+      ...c.passages.slice(0, PASSAGES_SHOWN).map((x) => `  - “${passageText(x.context)}”${x.anchor ? ` at “${x.anchor}”` : ""}`),
+    ]),
   ].join("\n");
 }
 
@@ -2065,8 +2170,9 @@ async function suggestions(a: Args): Promise<string> {
     if (str(a, "text")) edit.text = str(a, "text");
     if (str(a, "done_looks_like")) edit.outcome = str(a, "done_looks_like");
     const m = await api.findDecide(id, "accept", Object.keys(edit).length ? edit : null);
-    noted("accepted a suggested task or project");
-    return m ?? "Made it.";
+    // With Undo ⌘Z, as Found's toast offers it.
+    told("accepted a suggested task or project");
+    return `${(m ?? "Made it.").replace(/ Revert it in Changes\.$/, "")} ⌘Z in the app undoes it (Undo, as Found's toast offers), and it's in Changes too.`;
   }
   if (action === "skip") {
     await api.findDecide(id, "skip", null);
@@ -2101,7 +2207,14 @@ async function docCheckRegister(a: Args, r: McpRequest): Promise<unknown> {
 /** Doc check's Check; with save, its Save as note: the findings as a new note, through Changes. */
 async function docCheck(a: Args, r: McpRequest): Promise<unknown> {
   const document = str(a, "document") ?? "";
-  const result = await api.docCheck(document, str(a, "governing_document") ?? "", a.mode === "earlier_feedback" ? "callouts" : "standard");
+  const mode = a.mode === "earlier_feedback" ? "callouts" : "standard";
+  // Against the version in force with no governing document named: the picker's first, as the screen starts with.
+  let governing = str(a, "governing_document") ?? "";
+  if (!governing && mode === "standard") {
+    governing = governingDocs(await api.canonicalRegister())[0]?.key ?? "";
+    if (!governing) throw new Error(`Add a governing document to the register (${REGISTER}) first, as the screen asks.`);
+  }
+  const result = await api.docCheck(document, governing, mode);
   // In the screen's words (Conflict, Not covered, In force…), as Copy findings gives them.
   const name = document.split("/").pop() ?? document;
   const found = findingsMarkdown(name, result);
@@ -2241,6 +2354,7 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   status: status,
   "index.rebuild": rebuildIndex,
   "assistants.found": assistantsFound,
+  "source.provenance": provenance,
   "capture.status": captureExtensions,
   glance: glanceTool,
   automated: automated,
@@ -2320,9 +2434,21 @@ export async function startMcpBridge() {
 
 /** lint, while the app is open: the screen's report, ignored issues and dismissed pairs left out. */
 async function healthLint(a: Args): Promise<string> {
-  const r = (await api.healthReport(true)).report;
+  const view = await api.healthReport(true);
+  const r = view.report;
   if (!r) throw new Error("Knowledge health has no report yet; try again in a moment.");
   const page = str(a, "page")?.trim();
+  // The screen's summary card: Need a decision, what's safe to fix, and the trend's ends.
+  const need = decisions(r);
+  const safe = safeFixes(r).length;
+  const trend = trendShown(view.history)
+    ? (({ from, to, tip }) => ` Trend: ${from} → ${to} (${tip.replace(/^Issues needing a decision each day, /, "")})`)(
+        trendLabels(view.history),
+      )
+    : view.history.length < 2
+      ? " The trend shows after a second day."
+      : "";
+  const summary = page ? "" : `Need a decision: ${need}; ${safe ? `${safe} more are safe to fix` : "nothing safe to fix"}.${trend}`;
   const out: string[] = [];
   const quiet: string[] = [];
   for (const c of r.checks) {
@@ -2339,8 +2465,10 @@ async function healthLint(a: Args): Promise<string> {
     if (items.length > 40) out.push(`- …and ${items.length - 40} more`);
   }
   const ignored = quiet.length ? `Ignored, so not listed: ${quiet.join(", ")}. ignore_issue with show_again lists a check's again.` : "";
-  if (!out.length) return ["No issues.", ignored].filter(Boolean).join(" ");
-  return [`Knowledge health${page ? ` for ${page}` : ""}:`, ...out, ...(ignored ? ["", ignored] : [])].join("\n");
+  if (!out.length) return ["No issues.", summary, ignored].filter(Boolean).join(" ");
+  return [`Knowledge health${page ? ` for ${page}` : ""}:`, ...(summary ? [summary] : []), ...out, ...(ignored ? ["", ignored] : [])].join(
+    "\n",
+  );
 }
 
 /** health_issue: the buttons an issue has of its own on Knowledge health. */
@@ -2388,6 +2516,9 @@ async function contradictionsTool(a: Args, r: McpRequest): Promise<string> {
   const action = str(a, "action") ?? "list";
   const rep = await api.contradictionsReport();
   if (action === "save") {
+    // As the screen offers Save report as note: a finished check, and none running.
+    if (rep.last.running)
+      throw new Error("A contradictions check is running: save its report once it's finished (run_status shows how it's going).");
     if (!rep.last.finished) return "There's no finished check to save; start_run contradictions runs one.";
     const today = localToday();
     const base = `Contradictions - ${today}`;
@@ -2786,6 +2917,11 @@ async function settingsTool(a: Args): Promise<string> {
         : `Not a setting this tool changes: ${key}. list_settings lists them; the vault, Read-only and the folders left out are the user's, in the app.`,
     );
   const [, pane, label, kind, , choices, none] = row;
+  // The screen shows Only in the menu bar… only while Show in the menu bar is on.
+  if (key === "menuBarOnly" && s.menuBar === false)
+    throw new Error(
+      "Only in the menu bar when the window is closed is there only while Show in the menu bar (menuBar) is on: turn that on first.",
+    );
   let v: unknown = a.value;
   if (v === null) {
     if (!none) throw new Error(`${key} has no default choice to go back to: give a value.`);
@@ -2988,11 +3124,14 @@ async function openApp(a: Args): Promise<string> {
   }
   await invoke("main_show", { screen: null });
   const lines = (Array.isArray(a.lines) ? a.lines : []).map((l) => String(l).trim()).filter(Boolean);
-  if (path) nav.go({ screen: "doc", path, ...(lines.length ? { lines } : {}) });
+  // Graph with a page opens around it, as a note's Graph button (openGraph) does.
+  if (path && screen === "graph") nav.go({ screen, path });
+  else if (path) nav.go({ screen: "doc", path, ...(lines.length ? { lines } : {}) });
   else if (screen === "settings") nav.go({ screen, pane: (str(a, "pane") as SettingsPane | undefined) ?? "general" });
   else if (screen === "search") nav.go({ screen, q: str(a, "query") ?? "" });
   else if (screen && file) nav.go({ screen, path: file });
   else if (screen) nav.go(screen);
+  if (path && screen === "graph") return `Brainstead is open on Graph, around ${pageName(path)}.`;
   if (path) return `Brainstead is open on ${pageName(path)}.`;
   return `Brainstead is open${name ? ` on ${name.replace(/_/g, " ")}` : ""}${file ? ` with ${file}` : ""}.`;
 }

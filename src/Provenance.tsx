@@ -18,6 +18,14 @@ import { useVaultVersion } from "./state";
 import { fmtBytes } from "./ui";
 import { plainText } from "./md/plainText";
 
+/** A citing passage as the card quotes it: plain text, without its links to the source or its
+ *  block id (the provenance tool quotes it the same way). */
+export const passageText = (context: string) =>
+  plainText(context.replace(/\[\[([^\]|#]+)(#[^\]|]*)?(\|[^\]]*)?\]\]/g, "").replace(/\s*\^[\w-]+$/, "")).replace(/\s+([.,;:])/g, "$1");
+
+/** How many of a page's passages the card quotes. */
+export const PASSAGES_SHOWN = 3;
+
 export function ProvenanceCard({ file }: { file: FileSummary }) {
   const [p, setP] = useState<Provenance | null>(null);
   const v = useVaultVersion();
@@ -82,7 +90,7 @@ export function ProvenanceCard({ file }: { file: FileSummary }) {
               {c.passages.length ? `${c.passages.length} passage${c.passages.length === 1 ? "" : "s"}` : "in its sources"}
             </span>
           </button>
-          {c.passages.slice(0, 3).map((x) => (
+          {c.passages.slice(0, PASSAGES_SHOWN).map((x) => (
             <button
               key={x.line}
               type="button"
@@ -90,12 +98,7 @@ export function ProvenanceCard({ file }: { file: FileSummary }) {
               title={`Open ${c.title}, the page that quotes this`}
               onClick={() => openDoc(c.path)}
             >
-              <span>
-                {plainText(x.context.replace(/\[\[([^\]|#]+)(#[^\]|]*)?(\|[^\]]*)?\]\]/g, "").replace(/\s*\^[\w-]+$/, "")).replace(
-                  /\s+([.,;:])/g,
-                  "$1",
-                )}
-              </span>
+              <span>{passageText(x.context)}</span>
               {x.anchor && <span className="faint small">at “{x.anchor}”</span>}
             </button>
           ))}

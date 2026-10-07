@@ -533,6 +533,10 @@ export function sourceStatus(r: SourceRow, changed: Set<string>): "new" | "chang
  *  is drawn, not photographed). Matches `kind_of` in src-tauri/core/src/extract.rs. */
 export const ingestable = (path: string) => /\.(md|txt|pdf|docx|pptx|xlsx)$/i.test(path) || (IMAGE_EXT.test(path) && !/\.svg$/i.test(path));
 
+/** A file the file menu offers Ingest on (start_run ingest takes the same): one an ingest can read,
+ *  and not a wiki page or a template, which are the wiki's and the app's own. */
+export const canIngest = (path: string) => ingestable(path) && !path.startsWith("wiki/") && !path.startsWith("Templates/");
+
 /** The folder a source sits in under sources/, or "" for one at the top. */
 export const sourceFolder = (path: string) =>
   path

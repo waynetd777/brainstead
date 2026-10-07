@@ -15,14 +15,14 @@ An active project is flagged **Stuck** (red) when it has no next action, and **Q
 ## Work on a project
 Click a project to open it on the right. **Done looks like** (the outcome) and **Area** are edited in place: click, type and press `↩`.
 
-**Next actions** lists its open tasks, without the project's own chip. Tick them, drag them into order, use each task's ⋯ menu, or use the task-list keys. Type in **Add a next action** and press `↩` to add one under the note's `## Next actions` heading; `@calls`, `effort:15m` and `due:fri` work there as in capture. **Waiting for** and **Someday / maybe** list those tasks when there are any, and each waiting-for has **Draft nudge**, which asks [Ask](app:ask) for a follow-up to copy into Outlook or Teams.
+**Next actions** lists its open tasks, without the project's own chip. Tick them, drag them into order (an assistant can move one in this order too), use each task's ⋯ menu, or use the task-list keys. Type in **Add a next action** and press `↩` to add one under the note's `## Next actions` heading; `@calls`, `effort:15m` and `due:fri` work there as in capture. **Waiting for** and **Someday / maybe** list those tasks when there are any, and each waiting-for has **Draft nudge**, which asks [Ask](app:ask) for a follow-up to copy into Outlook or Teams.
 
 The side shows the project note, notes that link it, wiki pages it links, recent activity and what's done; a cancelled task there is struck through and marked Cancelled.
 
 ## Change its status
 The buttons under the tasks change the note's status property and nothing else:
 
-- **Mark complete** moves it to Completed.
+- **Mark complete** moves it to Completed (an assistant's change says Mark complete too).
 - **Put on hold** moves an active project to On hold.
 - **Someday** parks it on Someday.
 - **Make active** brings it back to Active.

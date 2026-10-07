@@ -25,4 +25,4 @@ When the judge has a fix, it is made to the page that's wrong, and listed in [Ch
 ## Keep a record
 **Save report as note** saves the findings as a new note, `Contradictions - <date>.md`, with each clash's claims, verdict and fix.
 
-An assistant can read the findings (those still to decide, or all of them), with the judge's fix and whether it's waiting in Changes or made, and the banners about a failed check or fixes not made, mark one resolved or ignored, and save the report, when you ask; its saved report is listed in [Changes](app:review).
+An assistant can read the findings (those still to decide, or all of them), with the judge's fix and whether it's waiting in Changes or made, and the banners about a failed check or fixes not made, mark one resolved or ignored, and save the report once the check has finished, as **Save report as note** waits, when you ask; its saved report is listed in [Changes](app:review).

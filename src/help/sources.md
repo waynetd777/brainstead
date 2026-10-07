@@ -37,6 +37,6 @@ Open a source to read it. A PDF has a bar with page n of N, previous and next, z
 When you ingest an image, Claude Code and Codex see the picture as well as its text; Copilot and Antigravity get the text only, so an image with no text needs Claude Code or Codex. A change from an image is flagged in [Changes](app:review), to check against the picture.
 
 ## See where a source is used
-Beside the preview, the provenance card, **Cited by N pages**, says when the source was last ingested and by which model, and lists the wiki pages that cite it and the passages they cite. **Details** folds away the passages indexed and the file's hash. **Re-ingest** and **Reveal** (in Finder) are at the foot, with **Move to the Trash** apart at the right.
+Beside the preview, the provenance card, **Cited by N pages**, says when the source was last ingested and by which model, and lists the wiki pages that cite it and the passages they cite. **Details** folds away the passages indexed and the file's hash. **Re-ingest** and **Reveal** (in Finder) are at the foot, with **Move to the Trash** apart at the right. An assistant can read the same card for a source.
 
 A source's top bar has **Ask**, which starts a chat about it. A captured thread has **Draft a reply** in its top bar, and other documents have **Doc check**. On the Sources list, **Meeting notes** opens [Meeting note from a transcript](app:meeting).

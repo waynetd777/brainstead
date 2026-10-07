@@ -25,4 +25,4 @@ The verdict comes first, with a summary, the counts and which version was used (
 
 **Copy findings** copies them as markdown. **Save as note** saves them as `Doc check. <name> - <date>.md`.
 
-An assistant can check a document the same way, and gets the findings and the register in the words this screen uses; it can save its findings as a note and start the register, when you ask. The note and the register are listed in [Changes](app:review), with Revert.
+An assistant can check a document the same way (against the first governing document in the list when it names none, as the screen starts), and gets the findings and the register in the words this screen uses; it can save its findings as a note and start the register, when you ask. The note and the register are listed in [Changes](app:review), with Revert.

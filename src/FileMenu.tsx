@@ -13,7 +13,7 @@ import { Icon } from "./icons";
 import { askAboutNote } from "./Ask";
 import { ingest } from "./Ingest";
 import { isTranscriptPath, makeMeetingNotes } from "./meetingFlow";
-import { ingestable } from "./Lists";
+import { canIngest as ingestOffered } from "./Lists";
 import { copyRich, errText, exportPdf, openRename, toggleBookmark, trashFile, useBookmarked } from "./notes/actions";
 import { Popover } from "./ui";
 import { toast } from "./Toast";
@@ -80,7 +80,7 @@ export function FileMenu({ menu, doc, readFrom }: { menu: MenuState; doc?: () =>
   const isText = /\.(md|txt)$/i.test(f.path);
   const system = isSystemNote(f.path);
   const systemTip = "A system note: other parts of the app look for it by name, so it can't be renamed or moved to the Trash";
-  const canIngest = ingestable(f.path) && !f.path.startsWith("wiki/") && !f.path.startsWith("Templates/");
+  const canIngest = ingestOffered(f.path);
   const run = (fn: () => Promise<void>, done?: string) => () => {
     menu.close();
     fn()
