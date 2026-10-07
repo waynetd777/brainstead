@@ -1,8 +1,8 @@
 # The wiki and sources
 
-Brainstead keeps a wiki in your vault's `wiki/` folder: a page per person, team, product or idea, built from your sources, with every claim quoted from where it came from. The AI writes the pages; every quote is checked against its source, and each change is made at once and listed in Changes, with Revert.
+Brainstead keeps a wiki in your vault's `wiki/` folder: a page per person, team, product or idea, built from your sources, with every claim quoted from where it came from. The AI writes the pages and Brainstead checks every quote against its source. Each change is made at once and listed in Changes, with Revert.
 
-It follows Andrej Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern: raw material in `sources/`, pages the model maintains in `wiki/`, a catalogue in `index.md` and a record in `log.md`. Brainstead adds quotes checked against their sources, Changes (every AI change, with Revert), Knowledge health and a contradictions check.
+It follows Andrej Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) pattern: raw material in `sources/`, pages the model maintains in `wiki/`, a catalogue in `index.md` and a record in `log.md`. Brainstead adds checked quotes, Changes, Knowledge health and a contradictions check.
 
 [Sources](#sources) · [Ingest](#ingest) · [Changes](#changes) · [Wiki pages](#wiki-pages) · [Knowledge health](#knowledge-health) · [Contradictions](#contradictions) · [Graph](#graph) · [Meeting notes and the other tools](#meeting-notes-and-the-other-tools)
 
@@ -10,78 +10,94 @@ It follows Andrej Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a6bf
 
 <a href="images/index.md#the-wiki-and-sources"><picture><source media="(prefers-color-scheme: dark)" srcset="images/sources-dark.png"><img alt="Sources: captured emails and documents with their status, and the ingest runs" src="images/sources-light.png"></picture></a>
 
-Sources (⌥⌘0) are the files in `sources/`: emails and Teams chats and transcripts captured from the browser, PDFs, Word, PowerPoint and Excel files, images, and notes. They are the record, so Brainstead doesn't edit them, except to correct misheard names (a change you can revert).
+Sources (⌥⌘0) are the files in `sources/`: emails, Teams chats and transcripts captured from the browser, PDFs, Word, PowerPoint and Excel files, images, and notes. They are the record, so Brainstead doesn't edit them, except to correct misheard names (a change you can revert).
 
-- Drag files onto Sources, or click **Import**, to copy them in (assistants use `import_sources`).
-- The **Outlook** and **Teams** Chrome extensions capture a thread, a chat or a meeting transcript into `sources/` with one click. Set them up in Settings › Capture extensions; each capture also waits in the Inbox.
+- Drag files onto Sources, or click **Import**, to copy them in.
+- The **Outlook** and **Teams** Chrome extensions capture a thread, chat or meeting transcript into `sources/` with one click. Set them up in Settings › Capture extensions. Each capture also waits in the Inbox.
 - Each source is **New**, **Changed** (since the pages citing it were written) or **Ingested**.
-- A PDF opens with page navigation, zoom and find; Word, PowerPoint and Excel show the text Brainstead reads from them (slide by slide, sheet by sheet), with **Quick Look** (`Space`) for how they look in their app; an image with the text read from it (macOS's text recognition), which search uses too.
+- PDFs open with page navigation, zoom and find. Word, PowerPoint and Excel files show their text; **Quick Look** (`Space`) shows how they look. Images show the text read from them, which search uses too.
 
 <a href="images/index.md#the-wiki-and-sources"><picture><source media="(prefers-color-scheme: dark)" srcset="images/source-provenance-dark.png"><img alt="A source's provenance: when it was ingested and by which model, and the wiki pages that cite it with the passages they cite" src="images/source-provenance-light.png"></picture></a>
 
-Beside a source, its provenance says when it was ingested and by which model, and which wiki pages cite it, with the passages they cite.
+Beside a source, its provenance says when it was ingested, by which model, and which wiki pages cite it, with the passages they cite.
 
 ## Ingest
 
-**Ingest** reads a source and has the AI draft changes to the wiki pages it mentions, each claim with a quote from the source. Brainstead checks every quote: a change none of whose quotes it can find is dropped, and one with only some missing is kept and flagged. The changes are made and listed in Changes, and the source is added to each page's `sources:` list. If your notetaker misheard a name, ingest also fixes it in the source. A run shows its steps as it goes, with **Stop**.
+**Ingest** reads a source and has the AI draft changes to the wiki pages it mentions, each claim with a quote from the source. Brainstead checks every quote. A change with none of its quotes found is dropped; one with some missing is kept and flagged. The source is added to each page's `sources:` list, and misheard names in it are fixed. A run shows its steps as it goes, with **Stop**.
 
-Ingests wait in one queue, whoever started them (you, an assistant or the daily check), and run one at a time, the oldest source first (by the date in its name, else the file's), so a newer source has the last word on a page.
+Ingests wait in one queue, whoever started them, and run one at a time, oldest source first, so a newer source has the last word on a page.
 
-The AI doesn't choose where text goes: for each page it gives a Timeline entry for the source (date, title, text), a new Current state when the source changes what's true now, and a topical section when it changes one. Brainstead files the entry in the page's Timeline by date, newest first, with a `Source:` line naming the source; ingesting the same source again replaces its entry rather than adding another. The Current state goes under the page's opening text, a new topical section above the Timeline. The facts behind a change (subject, attribute, value, as of, and the quote they rest on), once their quotes are checked, are kept with the page in `wiki/.claims/<folder>/<page>.json`, naming the source and the Timeline entry they came with; ingesting a source again replaces its facts on the page. They're part of the page's change, so Revert takes them back too, and they move with the page when it's renamed or put in the Trash. The AI sees a long page as its outline, with its opening, Current state and newest Timeline entries in full, and never its `sources:` list; a change that would rewrite a section it saw only part of is dropped, so nothing it couldn't see is lost.
+Brainstead, not the AI, decides where text goes on a page:
 
-An image is ingested from the text read from it; Claude Code and Codex also see the picture, Copilot and Antigravity don't (so an image with no text needs one of the first two). Its changes are kept even when a quote isn't in that text, each flagged in Changes to check against the picture.
+- Each source gets one dated entry in the page's **Timeline**, newest first, with a `Source:` line. Ingesting the same source again replaces its entry.
+- When the source changes what's true now, a new **Current state** goes under the page's opening text. A new topical section goes above the Timeline.
+- The checked facts behind a change (what, its value, as of when, and the quote) are kept with the page. They're part of the change, so Revert takes them back too.
+- A change that would rewrite a section the AI saw only part of is dropped, so nothing is lost on a long page.
 
-An ingest you start makes its changes at once (logged, and revertable in Changes). One the daily check starts holds a change that fails a check (a quote not found, text read from an image) for you instead. **Ingest new sources as they arrive**, under Ingest in Settings › AI assistants, in the same group, ingests each capture as it lands.
+An image is ingested from the text read from it. Claude Code and Codex also see the picture; Copilot and Antigravity don't, so an image with no text needs one of the first two. Its changes are kept even when a quote isn't in that text, each flagged in Changes to check against the picture.
+
+An ingest you start makes its changes at once. One the daily check starts holds any change that fails a check for you instead. To ingest each capture as it lands, turn on **Ingest new sources as they arrive** in Settings › AI assistants.
 
 ## Changes
 
 <a href="images/index.md#the-wiki-and-sources"><picture><source media="(prefers-color-scheme: dark)" srcset="images/review-dark.png"><img alt="Changes: what assistants and runs changed, grouped by run, one open with its diff and the quotes it rests on" src="images/review-light.png"></picture></a>
 
-Assistants and runs change the vault themselves, and Changes (⌥⌘5) lists every change they made, newest first, grouped by run ("Daily check, 5 Oct: 6 changes to 4 pages"), each with its diff, why, who made it, the quotes it rests on and **Revert**. A change may come from Ask, a terminal session, an ingest, Knowledge health, a contradiction fix, the daily or weekly summary, or a meeting note.
+Changes (⌥⌘5) lists every change assistants and runs made to the vault, newest first, grouped by run ("Daily check, 5 Oct: 6 changes to 4 pages"). Each has its diff, why, who made it, the quotes it rests on and **Revert**.
 
 - A change you started (Ask, a terminal, a run started by hand) is made at once, and flagged if a check fails.
-- A scheduled run's change (the daily check, its ingests and contradiction check, the scheduled summaries) is made when it passes every check, and held otherwise: a quote not found or resting on text read from an image, text rewritten or taken out of one of your own notes (anything outside `wiki/`, `sources/`, `index.md`, `log.md` and the summaries' notes), unsaved edits to the page, an open contradiction on it (one whose fix is applied in Changes no longer counts), or properties that wouldn't read.
-- A change to a template, one that adds code that runs when a note is shown, or one that changes a [system note's header](notes.md#system-notes), is always held. Renames and moves to the Trash are made at once, unless they move a template or rewrite links in one; so is an assistant's restore from the Trash, unless it goes into `Templates/` or brings back code that runs. An assistant accepts a held change only while you're there, and only one held for a failed check.
-- **Held for you** is at the top, each with why: **Accept** (`A`), **Reject** (`R`), **Edit before accepting**, and **Accept all** or **Reject all** for a run (`⌘↩` accepts the run). A held change keeps what was asked for, so it applies to the page as it is when you accept it. Only held changes are counted in the sidebar.
-- **Revert** undoes a change on the page as it is now, keeping later edits. If its lines have been edited since, it says so and offers the page as it was before, to copy. **Revert all** does it for every change a run made. A page's side pane lists its agent changes, with Revert.
+- A scheduled run's change (the daily check and its ingests, the scheduled summaries) is made only when it passes every check, and held otherwise: a quote not found or read from an image, text rewritten or removed in one of your own notes, unsaved edits to the page, an open contradiction on it, or properties that wouldn't read.
+- A change to a template, one that adds code that runs when a note is shown, or one that changes a [system note's header](notes.md#system-notes) is always held. Renames, moves to the Trash and restores from it are made at once, unless they touch a template or bring back code that runs. An assistant can accept a held change only while you're there, and only one held for a failed check.
+- **Held for you** is at the top, each with why: **Accept** (`A`), **Reject** (`R`), **Edit before accepting**, and **Accept all** or **Reject all** for a run (`⌘↩` accepts the run). A held change applies to the page as it is when you accept it. The sidebar counts only held changes.
+- **Revert** undoes a change and keeps later edits. If its lines were edited since, it says so and offers the page as it was, to copy. **Revert all** undoes a whole run. A page's side pane lists its agent changes, with Revert.
 - History is kept 90 days or 500 MB, whichever comes first (Settings › AI assistants).
 
 ## Wiki pages
 
 <a href="images/index.md#the-wiki-and-sources"><picture><source media="(prefers-color-scheme: dark)" srcset="images/wiki-page-dark.png"><img alt="A wiki page: its current state with numbered citations, and the Sources and Linked from cards" src="images/wiki-page-light.png"></picture></a>
 
-Every entity and concept page has one layout: the opening text, **Current state**, topical sections, a **Timeline** of `### YYYY-MM-DD — title` entries (or `YYYY-MM`, `YYYY-Q3`, `YYYY-H1`) newest first, each with a `Source: [[…]]` line naming the note or source it came from, and **See also**. Summaries are left as they are.
+Every entity and concept page has one layout: opening text, **Current state**, topical sections, a **Timeline** of dated entries (`### YYYY-MM-DD — title`, or a month, quarter or half) newest first, each with a `Source:` line, and **See also**. Summaries are left as they are.
 
-The Wiki (⌥⌘9) lists the pages by type and tag with their health: **Held**, **Stale**, **Check** or **Healthy**. On a page, a link to a source shows as a small number that opens the source at the passage cited, listed in the **Sources** card. The **Facts** card lists the page's kept facts: the latest value of each, what it superseded, and the source it's quoted from; facts are kept from the first ingest that checks them, so older pages may have none. Assistants read them with `facts` ("the latest go_live_date for Orbit App"). A banner says when another page disagrees. **New wiki page** makes an entity or concept page you write yourself.
+The Wiki (⌥⌘9) lists the pages by type and tag with their health: **Held**, **Stale**, **Check** or **Healthy**. On a page:
+
+- A link to a source shows as a small number that opens the source at the passage cited; the **Sources** card lists them.
+- The **Facts** card lists the page's checked facts: the latest value of each, what it replaced, and its source. Older pages may have none until they're next ingested.
+- A banner says when another page disagrees.
+
+**New wiki page** makes an entity or concept page you write yourself.
 
 ## Knowledge health
 
 <a href="images/index.md#the-wiki-and-sources"><picture><source media="(prefers-color-scheme: dark)" srcset="images/health-dark.png"><img alt="Knowledge health: the checks, the issues needing a decision, and the side cards" src="images/health-light.png"></picture></a>
 
-Knowledge health checks the wiki whenever the vault changes: missing pages and links, broken or changed sources, duplicates, stale pages and claims with no citation, among others. Beside **Need a decision**, a line shows the count day by day once a day has needed one, its ends labelled with the first and latest day's count; hovering it gives the highest. Claims with no citation are listed one row a page, with each line that makes a claim, and open the page with all those lines highlighted.
+Knowledge health checks the wiki whenever the vault changes: missing pages and links, broken or changed sources, duplicates, stale pages, claims with no citation and more. A small chart beside **Need a decision** shows that count day by day. Claims with no citation are listed one row a page, and open the page with those lines highlighted.
 
-- Pie charts on the right show the wiki's pages by type and by tag; a slice opens the Wiki filtered to it.
+- Pie charts show the pages by type and by tag; a slice opens the Wiki filtered to it.
 - **Fix safe issues** fixes the ones with one right answer (a missing link, a date, a `log.md` line, a system note's lost header), undoably.
-- **Ignore** on an issue with nothing to fix stops listing and counting it until its page changes (a claim with no citation, until its own line changes); **Show again** lists a check's ignored issues again. Checks that are only worth a look (stale pages, claims with no citation, pages with no Current state) have a grey icon, not amber. Assistants use `ignore_issue`, and `health_issue` for the buttons an issue has of its own (**Create** and **Link to…** on a missing page, **Not duplicates**, **Move to the Trash** on an unused image). With Brainstead open, the `lint` tool gives the report as the screen shows it.
-- Missing pages can be created or linked to an existing page (**Link to…** lists the wiki's pages as you type, to pick one); duplicates compared or dismissed.
-- **Pages not in the page shape** lists entity and concept pages laid out another way. **Reshape pages** reshapes those it can by itself, by script with no model: sections move whole, dated headings are rewritten to the ISO form, a dated summing-up heading becomes Current state with an "As of" line, entries from one source on one date merge, of several dated summing-up sections the newest is Current state, See also lists merge, and every result is checked (no line lost, the frontmatter untouched, reshaping it again changes nothing) before it's written. Each page is one change in Changes, in one run with Revert all. A page that needs you says why (a year it can't tell, two summing-up sections, two entries citing the same note on different dates); fix the heading, or **Reshape anyway**. Assistants use `page_shape` and `reshape_pages`. The daily check counts the pages edited out of the shape, and an edit that adds a section the page doesn't have puts it where the shape does: a topical one above the Timeline, a Summary or Status as the Current state.
-- **Pages with no Current state** (not counted) lists pages with a Timeline but no Current state. **Write 5** and **Write all** have the cheap model (Haiku when Claude is the assistant) write one from the page's opening and newest Timeline entries only; a link to a page that doesn't exist is left as plain text. Each page is a change in one run in Changes. Assistants use `write_current_state`.
-- **Fix with Ask** hands the issues that need judgement to an assistant, whose fixes are made and listed in Changes.
+- **Ignore** hides an issue until its page changes; **Show again** brings a check's ignored issues back. Checks only worth a look (stale pages, claims with no citation, pages with no Current state) have a grey icon, not amber.
+- Missing pages can be created, or linked to an existing page with **Link to…**. Duplicates can be compared or dismissed.
+- **Pages not in the page shape** lists pages laid out another way. **Reshape pages** fixes the ones it can, without the AI, and checks that nothing is lost before it saves. Each page is one change in Changes, and you can revert the whole run at once. A page it can't fix says why; fix it, or **Reshape anyway**. The screen's help lists exactly what it changes.
+- **Pages with no Current state** lists pages with a Timeline but no Current state. **Write 5** and **Write all** have a cheap model write one from the page's opening and newest Timeline entries. Each page is a change in one run in Changes.
+- **Fix with Ask** hands the issues that need judgement to an assistant; its fixes are listed in Changes.
 
 ## Contradictions
 
-The contradictions check reads the claims on the pages that changed, adds the facts ingest kept for them, groups claims about the same thing, and has the AI judge the ones whose values differ: **Real** (with its severity), **Newer supersedes older**, **Not a conflict** or **Unclear**. When the judge has a fix for a real one, it's made and listed in Changes. **Mark resolved**, **Ignore**, or **Save report as note**; assistants list them with `list_contradictions` and do the same with `contradictions`. The [daily check](day-to-day.md#summaries-and-jobs) runs it on the pages that changed each day.
+The contradictions check groups claims about the same thing on the pages that changed, and has the AI judge the ones whose values differ: **Real** (with its severity), **Newer supersedes older**, **Not a conflict** or **Unclear**. When it has a fix for a real one, the fix is made and listed in Changes. You can **Mark resolved**, **Ignore**, or **Save report as note**. The [daily check](day-to-day.md#summaries-and-jobs) runs it on each day's changed pages.
 
 ## Graph
 
 <a href="images/index.md#the-wiki-and-sources"><picture><source media="(prefers-color-scheme: dark)" srcset="images/graph-dark.png"><img alt="The graph: a wiki page at the centre with the pages around it, coloured by type" src="images/graph-light.png"></picture></a>
 
-The **Graph** draws how pages link: a page's neighbourhood, or the whole wiki. Each kind of page has the colour it has on the Wiki pages by type pie: entities blue, sources and summaries orange, concepts green, notes purple.
+The **Graph** draws how pages link: a page's neighbourhood, or the whole wiki. Entities are blue, sources and summaries orange, concepts green, notes purple, as on the Wiki's pie chart.
 
 ## Meeting notes and the other tools
 
-- **Meeting notes** turns a Teams transcript into a meeting or 1-1 note from your template, with names spelt as your vault spells them; it's made in the vault (listed in Changes), then ingested, and the transcript moved to the Trash (both on by default, in Settings › AI assistants; a transcript whose note or ingest failed is kept). **Meeting note** on a transcript's row in Sources, `M` in the Inbox or **Make a meeting note** on its right-click menu does all of that in one step when Brainstead is sure of the note's type, name and date, and opens Meeting notes at the question when it isn't. Tick several there (or **Tick all**) and **Draft all** asks once for their dates, then does each the same way, with one message at the end. The note is dated with the meeting's day, which the Teams extension reads from the recap page; when it couldn't, the date is the capture day and you confirm it first (for **Draft all**, in its one dialog).
-- **Fix name** corrects a misspelt name across every note and wiki page at once (sources are left alone), adds the wrong spelling as an alias, and remembers the correction for future ingests. One ⌘Z undoes it all.
+- **Meeting notes** turns a Teams transcript into a meeting or 1-1 note from your template, with names spelt as your vault spells them. The note is made (listed in Changes) and ingested, and the transcript moves to the Trash; both are on by default in Settings › AI assistants, and a transcript is kept if either fails.
+  - Start it from **Meeting note** on a transcript in Sources, or `M` (or **Make a meeting note** on the right-click menu) in the Inbox. If Brainstead is sure of the note's type, name and date, it does it all in one step; otherwise it opens Meeting notes at the question.
+  - Tick several (or **Tick all**) and **Draft all** asks once for their dates, then does each.
+  - The note is dated with the meeting's day. If the Teams extension couldn't read it, the capture day is used and you confirm it first.
+- **Fix name** corrects a misspelt name across every note and wiki page at once (sources are left alone), adds the wrong spelling as an alias, and remembers it for future ingests. One ⌘Z undoes it all.
 - **Draft reply** drafts an answer to an email or Teams thread, drawing on the vault, for you to copy and send.
 - **Triage bookmarks** goes through your bookmarked notes with a suggestion for each: keep, update or drop.
-- **Doc check** checks a document against the version in force of the document it should follow, or whether a revision took in your feedback. Which version is in force comes from your register of governing documents, the note `Me. Canonical Docs.md`, which Doc check can start for you.
+- **Doc check** checks a document against the version in force of the one it should follow, or whether a revision took in your feedback. The version in force comes from your register of governing documents, the note `Me. Canonical Docs.md`, which Doc check can start for you.
+
+Assistants do all of this with Brainstead's tools, named as the screens are: for example `import_sources`, `facts`, `lint`, `ignore_issue`, `health_issue`, `page_shape`, `reshape_pages`, `write_current_state`, `list_contradictions` and `contradictions`.

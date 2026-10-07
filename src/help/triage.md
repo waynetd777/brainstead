@@ -8,21 +8,21 @@ summary: Go through your bookmarked notes and decide what to do with each one.
 Triage bookmarks lists every bookmark in `Me. Bookmarks.md`, oldest untouched first, so you can clear the ones that have sat too long. Open it from ⌘K, Ask's `/` picker, or **Triage** in Today's To process card when bookmarks are stale or missing.
 
 ## Read the list
-Each bookmark shows how many days its note has gone untouched. "stale" marks one that has sat a long time, and **Link missing** one whose note is no longer in the vault. Click a bookmark to see its choices.
+Each bookmark shows how many days its note has gone untouched. "stale" means it has sat a long time; **Link missing** means its note is no longer in the vault. Click a bookmark to see its choices.
 
 ## Get a suggestion
-Click **Suggest for all** and the AI reads each bookmarked note and suggests one of the choices below, with a short reason. For **Ingest into the wiki** it names the page and whether it's a concept or an entity; for **Make a task** it words the task. Nothing changes until you choose. Clicking it again asks afresh.
+Click **Suggest for all** and the AI suggests a choice for each note, with a short reason. For **Ingest into the wiki** it names the page and whether it's a concept or an entity; for **Make a task** it words the task. Nothing changes until you choose.
 
 ## Decide
 Press a key, or click the choice:
 
-- `K` **Keep**: leave the bookmark as it is. It counts as looked at, so it isn't stale, or counted on Today, for another two weeks.
+- `K` **Keep**: leave the bookmark. It counts as looked at, so it isn't stale or counted on Today for another two weeks.
 - `I` **Ingest into the wiki**: make a new wiki page from the note, listed in [Changes](app:review) with Revert.
 - `T` **Make a task**: add a task to the To Do list.
 - `A` **Archive**: drop the bookmark; the note stays where it is.
 - `⌫` **Remove**: drop the bookmark. The button shows on a bookmark whose note is missing, but the key works on any.
-- `↩` **Accept suggestion**: do what was suggested; the hint at the foot reads "↩ accept the suggestion". On a bookmark whose note is missing, `↩` removes it.
+- `↩` **Accept suggestion**: do what was suggested. On a bookmark whose note is missing, `↩` removes it.
 
 Every choice but Keep takes the line out of `Me. Bookmarks.md`. Press `⌘Z` to undo. **Open** opens the note.
 
-An assistant can ask for suggestions too, named as the choices here are; it changes nothing until you decide, and then does what the button does (Make a task captures the task to the Inbox, and Ingest into the wiki and Make a task take the bookmark off). It takes a bookmark off by its name, so one whose note is gone comes off too, and bookmarks only a note that's there.
+An assistant can ask for suggestions too, and changes nothing until you decide. Then it does what the button does (its Make a task captures the task to the Inbox). It can remove a bookmark whose note is gone, and bookmarks only a note that exists.

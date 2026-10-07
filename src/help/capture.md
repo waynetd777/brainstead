@@ -8,12 +8,12 @@ summary: A small window over any app for catching a task or a thought in a few k
 Quick capture opens a small box over whatever app you're in. Type, press `↩`, and you're back where you were.
 
 ## Open Quick capture
-Press `⌃⌥Space` from any app. The shortcut keeps working when Brainstead's main window is closed, as long as the app is running. You can also click **Capture** in the top bar of [Today](app:today), or type the task in ⌘K and choose "Capture … as a task".
+Press `⌃⌥Space` from any app. It works with the main window closed, as long as Brainstead is running. Or click **Capture** in the top bar of [Today](app:today), or type the task in ⌘K and choose "Capture … as a task".
 
-To change the shortcut, go to [Settings › General](app:settings/general), click the shortcut under Quick capture and press the new keys. **Reset to ⌃⌥Space** puts it back. If another app already uses the keys, the pane says so. ⌥Space and ⌘⌥Space are often taken by Spotlight or other launchers.
+To change it, click the shortcut under Quick capture in [Settings › General](app:settings/general) and press the new keys. **Reset to ⌃⌥Space** puts it back. The pane says if another app uses the keys; ⌥Space and ⌘⌥Space are often taken by launchers.
 
 ## Choose Task or Thought
-The box captures either a **Task** or a **Thought**; `Tab` switches between them, or click one below the box.
+The box captures a **Task** or a **Thought**; `Tab` or a click below the box switches.
 
 - A task is one line. It goes on the To Do list as `- [ ] your text`, at the top of the `#### Other` section.
 - A thought can run to several lines (`⇧↩` for a new line). It goes to the Scratchpad as a block headed with the date and time, such as `## 2026-10-03 14:30`, newest first.
@@ -27,11 +27,11 @@ In a task, a few words turn into the task format when you save:
 - `@calls` becomes the context `#context/calls`, and `effort:15m` becomes `[effort:: 15m]`.
 - `#followup`, `#waiting-for` and `#someday-maybe` put it straight on those lists.
 
-`[[` suggests notes to link and `#` suggests tags from the vault; `↑` and `↓` choose and `↩` or Tab inserts. While the task box is empty, a hint lists these.
+`[[` suggests notes to link and `#` suggests tags; `↑` and `↓` choose and `↩` or Tab inserts. An empty box shows a hint listing these.
 
-An assistant can capture for you too, when you ask: a task to the Inbox or a thought to the Scratchpad, with the same shorthand. Its capture is listed in [Changes](app:review), with Revert.
+An assistant can capture a task or thought for you when you ask, with the same shorthand. It's listed in [Changes](app:review), with Revert.
 
 ## If a capture is refused
 While **Read-only** is on in [Settings › Vault](app:settings/vault), captures are refused with a message and a button to that setting.
 
-A capture is also refused when a sync conflict copy (such as `Me. To Do List 1.md`) sits beside the file; sort out the copy first.
+It's also refused when a sync conflict copy (such as `Me. To Do List 1.md`) sits beside the file; sort out the copy first.

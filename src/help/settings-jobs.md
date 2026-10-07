@@ -5,47 +5,57 @@ screens: [settings/jobs]
 order: 34
 summary: The weekly review's day and time and its preparation, the scheduled daily and weekly summaries, the daily check, and recent runs.
 ---
-The page has two parts. **Your weekly review** is something you do: the guided review of your week. **Summaries Brainstead writes** are done for you: an assistant writes what you did each day and each week. The weekly summary is shown beside your weekly review's steps.
+The page has two parts. **Your weekly review** is something you do. **Summaries Brainstead writes** are done for you: an assistant writes up each day and each week. The weekly summary shows beside your weekly review's steps.
 
 ## Set when you do the weekly review
-**Weekly review**, at the top, is the day and time you do the guided [Weekly review](app:weekly), Friday 16:00 unless you change it. It isn't a job: [Today](app:today) reminds you from then until the end of the next day.
+**Weekly review** is when you do the guided [Weekly review](app:weekly): Friday 16:00 by default. It isn't a job: [Today](app:today) reminds you from then until the end of the next day.
 
 ## Prepare the weekly review ahead of time
-**Prepare the weekly review**, under it, reads the week and saves suggestions for each step of the review. It runs 4 hours before the review time on its day.
+**Prepare the weekly review** reads the week and saves suggestions for each step. It runs 4 hours before the review time, only while **Brainstead runs the daily and weekly summaries** is on, and only if the week has changed since it was last prepared. Its switch turns the schedule off. Starting the review prepares it too if needed.
 
-It runs on schedule only while **Brainstead runs the daily and weekly summaries** is on, and only if the week has changed since it was last prepared. Its switch turns the schedule off. Starting the review prepares it too if needed.
-
-The row shows the last run and the next, with **Open** for the last run's chat, and **Run now** (or **Stop**). Its model is **Weekly review preparation** under Models by job in [Settings › AI assistants](app:settings/assistants). Its runs aren't in Recent runs.
+The row shows the last and next run, **Open** for the last run's chat, and **Run now** (or **Stop**). Its model is **Weekly review preparation** under Models by job in [Settings › AI assistants](app:settings/assistants). Its runs aren't in Recent runs.
 
 ## When jobs run
-Jobs run while Brainstead is running, even with its window closed. A run missed while the app was closed or the computer asleep catches up when Brainstead next runs. Times use this computer's clock, as 24-hour HH:MM.
+Jobs run while Brainstead is running, even with its window closed. A run missed while the app was closed or the computer asleep catches up when Brainstead next runs. Times use this computer's clock, in 24-hour HH:MM.
 
 ## Let Brainstead write the daily and weekly summaries
-Only one app should write them, so Brainstead runs them only when **Brainstead runs the daily and weekly summaries** is on. If another app also runs them, switch them off there.
+Only one app should write them, so Brainstead runs them only when **Brainstead runs the daily and weekly summaries** is on. If another app also runs them, switch them off there. Until it's on, the summary rows are greyed. Then switch on:
 
-Until it's on, the **Daily summary** and **Weekly summary** rows are greyed, and a line above them says why. Then switch on **Daily summary** (every day at 06:30 unless you change it) and **Weekly summary** (Friday at 16:00 unless you change it). The weekly summary is the AI-written block for the week; the [Weekly review](app:weekly) is the screen you go through yourself. Each row shows the last run and the next. Brainstead gathers the notes, tasks and Claude Code sessions for the summary, the model writes the block from them, and Brainstead puts it at the top of the month's summaries note. While the vault is read-only, a scheduled summary is held for you in [Changes](app:review); **Run now** needs Read-only off in [Settings › Vault](app:settings/vault).
+- **Daily summary**: every day at 06:30 by default.
+- **Weekly summary**: Friday at 16:00 by default. This is the AI-written block for the week, not the [Weekly review](app:weekly) you go through yourself.
+
+Brainstead gathers the notes, tasks and Claude Code sessions, the model writes the block, and Brainstead puts it at the top of the month's summaries note. While the vault is read-only, a scheduled summary is held in [Changes](app:review), and **Run now** needs Read-only off in [Settings › Vault](app:settings/vault).
 
 ## Hold the summaries for you
-With **Hold the summaries for me** on, each one is held in [Changes](app:review) until you accept it. With it off, they're written straight away, undoable in Recent runs and revertable in Changes. A scheduled one that fails a check (the note is open with unsaved edits, or the vault is read-only) is held in Changes instead. One that would change the note's system-note header is always held.
+With **Hold the summaries for me** on, each summary waits in [Changes](app:review) until you accept it. With it off, they're written at once; undo them in Recent runs or revert them in Changes. A scheduled one that fails a check (the note has unsaved edits, or the vault is read-only) is held instead. One that would change the note's system-note header is always held.
 
 ## Run a job now or stop it
-**Run now** runs one whether or not it's scheduled, and opens its chat in [Ask](app:ask). The daily summary covers yesterday; click the day after **for** to pick an earlier one in the date picker, and **×** to go back to yesterday. A dated note, such as a meeting note, counts on its own date, not the day it was written up. While a job runs its button becomes **Stop**. Stopping the daily check keeps what it has read so far for next time.
+**Run now** runs a job at once and opens its chat in [Ask](app:ask). The daily summary covers yesterday; click the day after **for** to pick an earlier one, and **×** to go back. A dated note, such as a meeting note, counts on its own date, not the day it was written up. While a job runs, its button becomes **Stop**. A stopped daily check keeps what it has read for next time.
 
 ## Check the wiki every day
-**Daily check** (09:00 unless you change it) checks the wiki pages that changed since the last run for contradictions, making the fixes (held in [Changes](app:review) when a check fails), and brings the list of pages in `index.md` up to date. A bar shows its progress while it runs.
+**Daily check** (09:00 by default) checks wiki pages changed since the last run for contradictions and makes the fixes (held in [Changes](app:review) when a check fails). It also updates the page list in `index.md`. A bar shows its progress.
 
-To have it also ingest again the sources that changed, and to ingest new sources as they arrive, use the **Ingest** switches in [Settings › AI assistants](app:settings/assistants).
+To also re-ingest changed sources, or ingest new ones as they arrive, use the **Ingest** switches in [Settings › AI assistants](app:settings/assistants).
 
 ## Look back at recent runs
-**Recent runs** lists the last eight daily and weekly summary runs, scheduled or run now. **Open** shows the run's chat in Ask, **Show** opens the note it wrote, and **Undo** puts the note back as it was, as long as it hasn't been edited since (the line in `log.md` stays, as a record). Each run's summary is also a change in [Changes](app:review): reverting it there undoes the run the same way, and Recent runs then marks it undone. An assistant sees the same list, each run's chat included, and the weekly review preparation's last chat.
+**Recent runs** lists the last eight summary runs:
+
+- **Open** shows the run's chat in Ask.
+- **Show** opens the note it wrote.
+- **Undo** puts the note back, if it hasn't been edited since. The line in `log.md` stays as a record.
+
+Reverting a run in [Changes](app:review) does the same, and Recent runs marks it undone. An assistant sees the same list and chats, plus the weekly review preparation's last chat.
 
 ## Keep your tools' sessions out of the summaries
-The summaries put each project's work under **Work done** or **Personal** by the project's area: a project with the area Personal is personal, one with any other area is work, done projects included. A session counts for a project when its folder is named after it (`orbit-app` for Orbit App) or its messages are plainly about it. To move a project's work across, change its area on [Projects](app:projects).
+The summaries put each project's work under **Work done** or **Personal** by its area: area Personal is personal, any other is work, done projects included. A session counts for a project when its folder is named after it (`orbit-app` for Orbit App) or its messages are plainly about it. To move a project's work across, change its area on [Projects](app:projects).
 
-The daily summary writes up your Claude Code sessions as your work. A tool of yours that starts Claude Code sessions itself (a script, another app) would show there too. List it under **Your tools that start Claude Code sessions**, and its sessions are counted as automated instead.
+The daily summary counts your Claude Code sessions as your work. If a tool of yours starts sessions itself (a script, another app), list it under **Your tools that start Claude Code sessions** and its sessions count as automated instead.
 
-Each tool has a **Name** and what its sessions have in common. **Folder contains** matches a session whose working folder's path contains it. **First message starts with** matches a session whose first message opens with those words, ignoring case. Give one or both: with both, a session must match both. A row is saved once it has a name and one of the two; the **×** takes a tool off. If your saved tools couldn't be loaded, it says so with **Retry**, and nothing can be changed until they load, so the saved list isn't overwritten.
+Each tool has a **Name** and one or both of:
 
-An assistant can list, add or remove a tool when you ask, with the same **Folder contains** and **First message starts with**.
+- **Folder contains**: the session's working folder path contains this text.
+- **First message starts with**: the session's first message opens with these words, ignoring case.
 
-**Folders that look like a tool's** lists folders where, in the last two weeks, at least three sessions ran and nearly all of them were one prompt and done, as a tool runs Claude Code; a folder you work in yourself, with conversations, isn't listed, and nor are your vault (where Ask's chats run) or temporary folders. **It's a tool** adds a folder as a tool, named after it; rename it if you like. Brainstead's own jobs are recognised without being listed.
+With both, a session must match both. A row is saved once it has a name and one match; **×** removes it. If your saved tools couldn't load, it says so with **Retry**, and nothing can be changed until they load. An assistant can list, add or remove tools when you ask.
+
+**Folders that look like a tool's** lists folders where, in the last two weeks, at least three sessions ran and nearly all were one prompt and done. Your vault, temporary folders and folders where you hold conversations aren't listed. **It's a tool** adds a folder as a tool named after it; rename it if you like. Brainstead's own jobs are recognised without being listed.

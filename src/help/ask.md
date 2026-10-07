@@ -40,7 +40,7 @@ Press `↩` to send and `⇧↩` for a new line; the line under the box lists th
 While the assistant works you see what it is reading and searching. Click **Stop** or press `Esc` to stop the answer where it is. Messages you send while it is answering wait under **Queued** and are sent in order; click the cross on one to take it out of the queue.
 
 ## What Ask can and can't change
-Claude Code, Codex and Copilot change the vault only through Brainstead's tools, which do what the screens do. Their changes are made at once. Task, Inbox and project edits, prose, renames and moves to the Trash are each listed in [Changes](app:review), where you can revert them, and `⌘Z` undoes one straight after. Starting a run, such as an ingest (the AI reading a source into the wiki), happens at once too. A few kinds of change are held for you instead. See [Assistants and Brainstead's tools](help:assistants) for the full list. It can also read your daily and weekly summaries ("what did I do yesterday?") and work through the [Weekly review](app:weekly)'s suggestions with you.
+Claude Code, Codex and Copilot change the vault only through Brainstead's tools, which do what the screens do. Their changes are made at once and listed in [Changes](app:review), where you can revert them; `⌘Z` undoes one straight after. Starting a run, such as an ingest (the AI reading a source into the wiki), happens at once too. A few kinds of change are held for you instead: see [Assistants and Brainstead's tools](help:assistants). An assistant can also read your daily and weekly summaries ("what did I do yesterday?") and work through the [Weekly review](app:weekly) with you.
 
 ## Act on an answer
 Under each answer:

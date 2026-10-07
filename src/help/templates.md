@@ -6,36 +6,41 @@ order: 9
 page: Write a template
 summary: The note templates in the vault's Templates folder, to write, test and make notes from.
 ---
-Templates lists the files in the vault's `Templates/` folder. New note offers each one, and runs its Templater tags when it makes the note. **Use <% and <%* tags** below explains the tags; [Task and Dataview queries](help:queries) covers the query blocks a template can hold.
+Templates lists the files in the vault's `Templates/` folder. New note offers each one and runs its Templater tags when it makes the note. **Use <% and <%* tags** below explains the tags.
 
 ## Make a note from a template
-Press `⌘N`, or click **New note** on [Notes](app:notes). Pick a template on the left (`↑` and `↓` choose); it shows as a summary of the questions it asks, the lists it offers and whether it names the note, with **Show code** for the code. Click **Create** or press `⌘↩`.
+Press `⌘N`, or click **New note** on [Notes](app:notes). Pick a template on the left (`↑` `↓` choose). It shows a summary of its questions and lists and whether it names the note, with **Show code** for the code. Click **Create** or press `⌘↩`.
 
-The template's questions appear in the dialog as the run reaches them. Answer and press `↩`. **Cancel** skips a question and the template carries on; **Stop** ends the run and makes nothing. A template that doesn't name its note makes `Untitled.md`. The new note opens in Edit, with the caret at `tp.file.cursor()`, and then the template's finishing steps (`tp.hooks.on_all_templates_executed`) run. An assistant making a note from a template answers the same questions (Cancel included) and runs the same finishing steps once the note is made.
+Questions appear in the dialog as the run reaches them; answer and press `↩`.
+
+- **Cancel** skips a question and the template carries on.
+- **Stop** ends the run and makes nothing.
+
+A template that doesn't name its note makes `Untitled.md`. The note opens in Edit with the caret at `tp.file.cursor()`, then the finishing steps (`tp.hooks.on_all_templates_executed`) run. An assistant using a template answers the same questions and runs the same finishing steps.
 
 ## Write a template
-Click **New template**, type a name and click **Create**. It's made as `Templates/<name>.md`, starting with the note's title as its heading, and opens in Edit. A template an assistant makes waits in [Changes](app:review) for you to accept, since a template can run code.
+Click **New template**, type a name and click **Create**. It's made as `Templates/<name>.md`, headed with the note's title, and opens in Edit. A template can hold [query blocks](help:queries) too, which every note made from it runs.
 
-A template can hold [query blocks](help:queries) too, which every note made from it runs.
+Since a template can run code, anything an assistant does to one (making, changing, renaming or trashing it) is held for you to accept in [Changes](help:review).
 
-An assistant's change to a template, or a rename or move to the Trash of one, is always held for you in [Changes](help:review).
+Open a template from the list to change it. In Edit and Source the `<% %>` tags stand out, the script inside is coloured as code, and a banner says when it doesn't compile.
 
-Open any template from the list to change it. In Edit and Source the `<% %>` tags stand out and the script inside them is coloured as code (keywords, strings, numbers, names), and a banner says when the template doesn't compile.
+Inside a tag the editor suggests completions as you type (keywords, your names, `tp` and its functions, `tR`, `moment`), each with its arguments and a **Docs ↗** link. `⌃Space` opens the list anywhere in a tag.
 
-Inside a tag the editor completes the script as you type (keywords, your own names, `tp` and its functions, `tR` and `moment`), each with its arguments and a **Docs ↗** link, and `⌃Space` opens the list anywhere in a tag.
-
-Hover over a name in a tag, or put the caret on it, to see what it is: a keyword such as `await`, a `tp` function, `tR`, `moment`, a JavaScript name such as `Math.floor`, or one your template declares. With the caret on it the list opens with that name chosen. In View, hovering a name explains it the same way; move onto the box to click its **Docs ↗** link.
+Hover a name in a tag, or put the caret on it, to see what it is: a keyword such as `await`, a `tp` function, a JavaScript name such as `Math.floor`, or one your template declares. View explains names on hover too; move onto the box to click **Docs ↗**.
 
 ## Test a template
-On an open template, click **Test run**. It runs the template as New note would, asking its questions, and shows the note it would make, its name, where the caret would go and any other notes it would create. Nothing is written to the vault. An assistant making a note from a template can test-run it the same way first. It answers the questions as you would, several choices where a question takes them, and the other notes a template makes are new notes too, listed in [Changes](app:review) beside the note. Its folder and date are checked as for any new note: not in `sources/`, `wiki/` or `Templates/`, a folder that's there, and a date as YYYY-MM-DD or YYYY-MM.
+On an open template, click **Test run**. It asks the template's questions and shows the note it would make, its name, where the caret would go and any other notes it would create. Nothing is written to the vault.
 
-In the list, a template that doesn't compile is marked **Doesn't run**; hover the mark for the error. New note shows the same mark, with the reason, and won't run it.
+An assistant can test-run a template the same way first. Other notes a template makes are listed in [Changes](app:review) beside the note. Each note's folder and date are checked as for any new note: not in `sources/`, `wiki/` or `Templates/`, a folder that exists, and a date as YYYY-MM-DD or YYYY-MM.
+
+A template that doesn't compile is marked **Doesn't run**; hover the mark for the error. New note shows the same mark and won't run it.
 
 ## Use <% and <%* tags
 Templates use Templater's tags, and all the tags in a template are one script:
 
 - `<% … %>` writes the value of what's inside into the note: `<% tp.date.now() %>` puts in today's date.
-- `<%* … %>` runs code and writes nothing itself: for declaring names, asking questions and deciding things. It writes only what it adds with `tR += "…"`.
+- `<%* … %>` runs code (declaring names, asking questions, deciding things) and writes only what it adds with `tR += "…"`.
 - `<%# … %>` is a comment, left out of the note.
 - A `-` or `_` inside the marks (`<%-`, `-%>`) trims the line break, or all the spaces, beside the tag.
 
@@ -49,7 +54,7 @@ A name declared in a `<%*` tag can be used in any tag after it:
 ## Know what templates can do
 Inside the tags: `tR`, `moment`, and `tp.date`, `tp.file`, `tp.frontmatter`, `tp.config`, `tp.hooks` and `tp.system` (prompts, pick lists and the clipboard). `tp.file.include` runs another template, or one heading or block of it.
 
-`tp.user` runs your own `.js` scripts from a vault folder, `Templates/scripts` unless you choose another in [Settings › Notes](app:settings/notes). Not available: `tp.web` (no internet) and calls into another app's internals; a template that uses them stops with an error naming the call.
+`tp.user` runs your own `.js` scripts from `Templates/scripts`, or another folder set in [Settings › Notes](app:settings/notes). Not available: `tp.web` (no internet) and calls into another app's internals; a template using them stops with an error naming the call.
 
 ## Start from the examples
-A new vault comes with example templates: **Meeting**, **Daily note**, **1-1**, **Project**, **Weekly plan** and **Reading note**, with a snippet in `Templates/Snippets/` and a script in `Templates/scripts/`. Each one's first line says which features it shows. To get them in a vault without them, click **Add the example notes** in [Settings › Vault](app:settings/vault); it adds only the ones that are missing.
+A new vault comes with example templates: **Meeting**, **Daily note**, **1-1**, **Project**, **Weekly plan** and **Reading note**, plus a snippet in `Templates/Snippets/` and a script in `Templates/scripts/`. Each one's first line says which features it shows. To add any that are missing, click **Add the example notes** in [Settings › Vault](app:settings/vault).
