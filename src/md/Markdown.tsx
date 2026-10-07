@@ -39,7 +39,7 @@ import { Icon } from "../icons";
 import { remarkHighlights } from "./marks";
 import { remarkTags } from "./tags";
 import { calloutLook, defaultTitle, remarkCallouts } from "./callouts";
-import { parseWikilink, remarkWikilinks, WikiTarget } from "./wikilinks";
+import { imageSize, parseWikilink, remarkWikilinks, WikiTarget } from "./wikilinks";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { useVaultVersion } from "../state";
 
@@ -158,6 +158,8 @@ function VaultImage({
       alt={alt}
       width={width}
       height={height}
+      // CSS keeps it in proportion (height: auto); a height alone still sizes it.
+      style={height && !width ? { height: `${String(height).replace(/px$/, "")}px` } : undefined}
       loading="lazy"
       onError={(e) => {
         // Not under the vault: try beside the note.
@@ -389,8 +391,13 @@ function MarkdownView({ content, path, root, q, onTick, cites, onCites, scripts 
         }
         return <a href={href}>{children}</a>;
       },
-      img: ({ src, alt, width, height }) =>
-        typeof src === "string" ? <VaultImage src={src} alt={alt ?? ""} root={root} dir={dir} width={width} height={height} /> : null,
+      img: ({ src, alt, width, height }) => {
+        // `![A chart|400](pic.png)`: the size is in the alt text.
+        const size = imageSize(alt);
+        return typeof src === "string" ? (
+          <VaultImage src={src} alt={size.alt} root={root} dir={dir} width={width ?? size.width} height={height ?? size.height} />
+        ) : null;
+      },
       pre: ({ children, node }) => {
         const code = node?.children[0] as Element | undefined;
         const cls = (code?.properties?.className as string[] | undefined) ?? [];

@@ -10,7 +10,7 @@ A note opens in View. Switch to Edit or Source to change it; Brainstead saves on
 ## Switch between View, Edit and Source
 The switch in the top bar has three modes:
 
-- **View** (`⌘1`) shows the note rendered: properties, links, tables, task queries, callouts, diagrams and maths. Maths in `$…$` or `$$…$$` is drawn as formulas; amounts like $5 stay as written.
+- **View** (`⌘1`) shows the note rendered: properties, links, tables, task queries, callouts, diagrams and maths. A diagram's buttons zoom it, fit it, and show it full screen (Escape closes it). Maths in `$…$` or `$$…$$` is drawn as formulas; amounts like $5 stay as written.
 - **Edit** (`⌘2`) is the markdown itself, hidden except on the line you're editing: headings sized, links as their labels, checkboxes, images drawn.
 - **Source** (`⌘3`) is the plain markdown in a monospaced font, with no formatting and no toolbar.
 
@@ -19,7 +19,9 @@ A note made from a template opens in Edit, with the caret where the template put
 ## Write in Edit
 The toolbar above the text formats it: text style and headings, bold, italic, strikethrough, highlight (`⇧⌘H`, with a colour from the chevron), inline code, lists, task list, quote, code block, divider, link, link to a note, image, table, today's date, and **Insert a query**.
 
-Type `[[` to link a note and `#` for a tag; both suggest from the vault as you type part of a name (`[[` on its own lists your newest notes, and `#calls` finds `#context/calls`). `⌘`-click a link to open it. Paste or drop an image and it's saved in the vault's `images/` folder and embedded.
+Type `[[` to link a note and `#` for a tag; both suggest from the vault as you type part of a name (`[[` on its own lists your newest notes, and `#calls` finds `#context/calls`). `⌘`-click a link to open it. Paste or drop an image (a screenshot or a copied image) and it's saved in the vault's `images/` folder and embedded.
+
+Images stay drawn in Edit, even on the line you're on, including `<img>` tags written by other apps. Hover one to frame it: drag a corner handle to resize it, which writes its width into the note (`![[pic.png|400]]`, the way other markdown editors read it, and View and Export PDF show it at that width, smaller only when the page is narrower), or click the trash button to take it out of the note (`⌘Z` puts it back; the file stays in `images/`). Double-click an image to edit its markdown.
 
 Spelling and grammar are checked in Edit and Source: click an underlined word for suggestions, **Learn** or **Ignore**. Turn checking off in [Settings › Notes](app:settings/notes).
 

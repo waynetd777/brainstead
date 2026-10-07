@@ -105,6 +105,25 @@ describe("Markdown", () => {
     await waitFor(() => expect(container.querySelector("[data-test=mmd]")).toBeTruthy());
   });
 
+  it("draws images at the width their markdown gives, which the PDF prints", async () => {
+    const { container } = md(
+      'A ![[diagram.png|300]] B ![chart|250](images/c.png) C <img height="287" width="717" src="/api/vault-assets/images/p.png" />',
+    );
+    await waitFor(() => expect(container.querySelectorAll("img")).toHaveLength(3));
+    const imgs = [...container.querySelectorAll("img")];
+    expect(imgs.map((i) => i.getAttribute("width"))).toEqual(["300", "250", "717"]);
+    expect(imgs.map((i) => i.alt)).toEqual(["diagram.png", "chart", ""]);
+  });
+
+  it("opens a mermaid diagram full screen and closes it with Escape", async () => {
+    md("```mermaid\ngraph LR\n A-->B\n```");
+    fireEvent.click(await screen.findByRole("button", { name: "Full screen" }));
+    const full = await screen.findByRole("dialog", { name: "Diagram" });
+    await waitFor(() => expect(full.querySelector("[data-test=mmd]")).toBeTruthy());
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Diagram" })).toBeNull());
+  });
+
   it("answers a task query for the note it's drawn from, not the place on screen", async () => {
     nav.go({ screen: "doc", path: "Elsewhere.md" });
     const { container } = md("```tasks\nexplain\npath includes {{query.file.path}}\n```");

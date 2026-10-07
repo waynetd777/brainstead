@@ -22,7 +22,7 @@ Click the speaker on the top bar, or press ⇧⌘P, and Brainstead reads the not
 
 - The toolbar formats text, lists, tasks, quotes, code, tables, links and images, and inserts today's date or a query.
 - `[[` links a note and `#` adds a tag, both suggested from the vault as you type part of a name (`[[` alone lists your newest notes, and `#calls` finds `#context/calls`); ⌘-click a link to open it.
-- Paste or drop an image and it's saved in `images/` and embedded.
+- Paste or drop an image and it's saved in `images/` and embedded. In Edit, hover an image to resize it by a corner handle (its width is written as `![[pic.png|400]]`, which View, Export PDF and other markdown editors honour; an `<img>` tag's width is changed in the tag) or remove it from the note with its trash button; the file itself stays. Double-click an image to edit its markdown.
 - In a task, `due:`, `defer:`, `start:` and `created:` followed by a word (tomorrow, fri, +3d) become dates; a date picker opens as soon as you type the colon.
 - Spelling and grammar are checked as you type, in the English you choose.
 - ⌘F finds, and in Edit and Source replaces, one match or all.
@@ -37,7 +37,7 @@ Click the speaker on the top bar, or press ⇧⌘P, and Brainstead reads the not
 
 - **Tasks queries** (`tasks` blocks) and **Dataview** (`dataview` blocks: TABLE, LIST, TASK and CALENDAR) run in View, with tasks you can tick. In Edit, the editor suggests what comes next in a block, and **Build query…** opens a builder with a live preview.
 - **Callouts** (`> [!tip] Title`) are drawn as tinted boxes with an icon, folding with `[!tip]-` or `[!tip]+`.
-- **Mermaid** diagrams (with pan and zoom), **KaTeX** maths (`$…$` and `$$…$$`; an amount like $5 isn't taken for maths), highlighted code and `==highlights==` in colours.
+- **Mermaid** diagrams (with pan and zoom, and a full-screen button; Escape closes it), **KaTeX** maths (`$…$` and `$$…$$`; an amount like $5 isn't taken for maths), highlighted code and `==highlights==` in colours.
 
 Plain queries work in every note. Scripts in queries (`dataviewjs` blocks, inline `$=` and Tasks' `filter by function`) run only in your own notes: not in sources, wiki pages, templates, saved chats, the summary notes or notes an assistant wrote. A note an assistant wrote carries `created-by: assistant`; delete that property to trust it.
 

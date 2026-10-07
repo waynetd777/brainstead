@@ -64,6 +64,20 @@ const lineHits = StateField.define<{ want: Set<string>; deco: DecorationSet }>({
 });
 
 /** `[[partial` or `#partial` right before the cursor. */
+/** The images on the clipboard: its files, and the items that are images but aren't listed as
+ *  files (WebKit gives a browser's Copy Image or a screenshot one way or the other). One each. */
+export function clipboardImages(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const out = [...(data.files ?? [])].filter((f) => f.type.startsWith("image/"));
+  if (out.length) return out;
+  for (const it of [...(data.items ?? [])]) {
+    if (it.kind !== "file" || !it.type.startsWith("image/")) continue;
+    const f = it.getAsFile();
+    if (f) out.push(f);
+  }
+  return out;
+}
+
 export function completionTrigger(before: string): { kind: "link" | "tag"; q: string; start: number } | null {
   const l = /\[\[([^\]\n]*)$/.exec(before);
   if (l) return { kind: "link", q: l[1], start: before.length - l[0].length };
@@ -258,7 +272,7 @@ export class CMEditor implements Editor {
   }
 
   private paste(e: ClipboardEvent, view: EditorView): boolean {
-    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+    const files = clipboardImages(e.clipboardData);
     if (!files.length || !this.hooks.pasteImages) return false;
     e.preventDefault();
     const sel = view.state.selection.main;

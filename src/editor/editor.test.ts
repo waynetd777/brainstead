@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CMEditor, completionTrigger, shorthandEdit } from "./cm";
+import { clipboardImages, CMEditor, completionTrigger, shorthandEdit } from "./cm";
 import { openTaskAt } from "./taskHint";
 import { EditorState } from "@codemirror/state";
 import { merge3 } from "./merge";
@@ -176,5 +176,68 @@ describe("three-way merge", () => {
     expect(shorthandEdit(l, l.length, "2026-10-02")?.insert).toBe("🛫 2026-10-09");
     const c = "- [ ] plan created: today ";
     expect(shorthandEdit(c, c.length, "2026-10-02")?.insert).toBe("➕ 2026-10-02");
+  });
+});
+
+describe("images in Edit", () => {
+  const make = (md: string) => {
+    const parent = document.createElement("div");
+    parent.className = "editor";
+    document.body.appendChild(parent);
+    ed = new CMEditor(parent, { imageUrl: async () => "blob:x" });
+    ed.load(md);
+    return parent;
+  };
+
+  it("keeps an image drawn on the cursor's line, at the width its markdown gives", () => {
+    const parent = make("Before\n![[pic.png|300]]\nAfter");
+    ed!.view.dispatch({ selection: { anchor: ed!.view.state.doc.line(2).to } });
+    const img = parent.querySelector<HTMLImageElement>(".cm-img img");
+    expect(img?.style.width).toBe("300px");
+    expect(parent.querySelectorAll(".cm-img .cm-img-h")).toHaveLength(4);
+  });
+
+  it("draws a raw <img> tag, on a line of its own or in a sentence", () => {
+    const parent = make('Before\n<img height="287" width="717" src="/api/vault-assets/images/p.png" />\n\nSee <img src="c.png"> here');
+    const imgs = parent.querySelectorAll<HTMLImageElement>(".cm-img img");
+    expect(imgs).toHaveLength(2);
+    expect(imgs[0].style.width).toBe("717px");
+    parent.querySelector<HTMLButtonElement>(".cm-img-del")!.click();
+    expect(ed!.getMarkdown()).toBe('Before\n\nSee <img src="c.png"> here');
+  });
+
+  it("removes an image with its line", () => {
+    const parent = make("Before\n![[pic.png]]\nAfter");
+    parent.querySelector<HTMLButtonElement>(".cm-img-del")!.click();
+    expect(ed!.getMarkdown()).toBe("Before\nAfter");
+  });
+
+  it("removes only the image when it shares its line", () => {
+    const parent = make("See ![chart|200](images/c.png) here");
+    parent.querySelector<HTMLButtonElement>(".cm-img-del")!.click();
+    expect(ed!.getMarkdown()).toBe("See  here");
+  });
+
+  it("writes the new width when a handle is dragged", () => {
+    const parent = make("![[pic.png]]\n");
+    const img = parent.querySelector<HTMLImageElement>(".cm-img img")!;
+    img.getBoundingClientRect = () => ({ width: 200 }) as DOMRect;
+    const h = parent.querySelector<HTMLElement>(".cm-img-h.se")!;
+    h.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, clientX: 100 }));
+    window.dispatchEvent(new MouseEvent("pointermove", { clientX: 150 }));
+    window.dispatchEvent(new MouseEvent("pointerup", {}));
+    expect(ed!.getMarkdown()).toBe("![[pic.png|250]]\n");
+  });
+});
+
+describe("pasting images", () => {
+  const file = (type: string) => new File(["x"], "image.png", { type });
+  it("takes images from the clipboard's files, else from its items", () => {
+    const png = file("image/png");
+    expect(clipboardImages({ files: [png, file("text/plain")], items: [] } as unknown as DataTransfer)).toEqual([png]);
+    const item = { kind: "file", type: "image/png", getAsFile: () => png };
+    const text = { kind: "string", type: "text/html", getAsFile: () => null };
+    expect(clipboardImages({ files: [], items: [text, item] } as unknown as DataTransfer)).toEqual([png]);
+    expect(clipboardImages(null)).toEqual([]);
   });
 });

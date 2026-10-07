@@ -1662,8 +1662,11 @@ a.wl .embedmark {
 .prose th {
   background: var(--sunk);
 }
+
+/* Kept in proportion when the column (or the PDF's page) is narrower than its width. */
 .prose img {
   max-width: 100%;
+  height: auto;
   border-radius: 8px;
   vertical-align: middle;
 }
@@ -1874,6 +1877,19 @@ details.callout[open] .callout-chev {
   overflow: hidden;
   cursor: grab;
   touch-action: none;
+}
+.scrim.mfull {
+  padding: 16px;
+}
+.mfullbox {
+  width: 100%;
+  height: 100%;
+  box-shadow: var(--pop);
+  border-radius: 10px;
+}
+.mermaid.full {
+  height: 100%;
+  margin: 0;
 }
 .mermaid.err {
   height: auto;
@@ -3370,8 +3386,68 @@ button.rnhead {
 }
 .editor .cm-img {
   display: inline-block;
+  position: relative;
   max-width: 100%;
+  cursor: default;
+}
+
+/* In Edit: a frame, a handle at each corner to resize, and a button to remove it. */
+.editor .cm-img.edit:hover img,
+.editor .cm-img.sizing img {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.editor .cm-img-h,
+.editor .cm-img-del {
+  position: absolute;
+  display: none;
+}
+.editor .cm-img.edit:hover .cm-img-h,
+.editor .cm-img.sizing .cm-img-h,
+.editor .cm-img.edit:hover .cm-img-del {
+  display: block;
+}
+.editor .cm-img-h {
+  width: 10px;
+  height: 10px;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: 3px;
+}
+.editor .cm-img-h.nw {
+  left: -4px;
+  top: -4px;
+  cursor: nwse-resize;
+}
+.editor .cm-img-h.ne {
+  right: -4px;
+  top: -4px;
+  cursor: nesw-resize;
+}
+.editor .cm-img-h.sw {
+  left: -4px;
+  bottom: -4px;
+  cursor: nesw-resize;
+}
+.editor .cm-img-h.se {
+  right: -4px;
+  bottom: -4px;
+  cursor: nwse-resize;
+}
+.editor .cm-img-del {
+  top: 8px;
+  right: 8px;
+  padding: 4px;
+  line-height: 0;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: var(--pop);
   cursor: pointer;
+}
+.editor .cm-img-del:hover {
+  color: var(--red);
 }
 .editor .cm-img img {
   max-width: 100%;

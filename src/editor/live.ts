@@ -16,7 +16,8 @@ import { QUERY_DOCS } from "../md/queryDocs";
 import { openBuilderAt } from "./queryAssist";
 import { fmtShortDate } from "../md/dates";
 import { daysUntil } from "../md/taskQuery";
-import { IMAGE_EXT, parseWikilink, wikiLabel } from "../md/wikilinks";
+import { iconSvg } from "../icons";
+import { IMAGE_EXT, imageSize, imgTag, parseWikilink, setImageWidth, wikiLabel } from "../md/wikilinks";
 import { chipOf, FIELD_RE, splitTaskFields } from "../taskFields";
 import type { EditorHooks } from "./Editor";
 import { frontmatterEnd, frontmatterKeys, toggledLine } from "./text";
@@ -53,34 +54,105 @@ function activeLines(state: EditorState): Set<number> {
   return s;
 }
 
+/** A drawn image. While the note can be edited, hovering it shows a frame with a handle at each
+ *  corner, which resizes it (its width written into its markdown, `![[pic.png|400]]`), and a
+ *  button that removes it from the note. `text` is its markdown, to find it again. */
 class ImageWidget extends WidgetType {
   constructor(
     readonly src: string,
-    readonly alt: string,
+    readonly label: string,
+    readonly text: string,
     readonly hooks: EditorHooks,
   ) {
     super();
   }
   eq(o: ImageWidget) {
-    return o.src === this.src && o.alt === this.alt;
+    return o.src === this.src && o.label === this.label && o.text === this.text;
   }
-  toDOM() {
+  toDOM(view: EditorView) {
+    const { alt, width, height } = imageSize(this.label);
     const span = document.createElement("span");
     span.className = "cm-img";
     const img = document.createElement("img");
-    img.alt = this.alt;
+    img.alt = alt;
+    if (width) img.style.width = `${width}px`;
+    if (height && !width) img.style.height = `${height}px`;
     span.appendChild(img);
     void this.hooks.imageUrl?.(this.src).then((u) => {
       if (u) img.src = u;
       else {
         span.classList.add("missing");
-        span.textContent = this.alt || this.src;
+        span.textContent = alt || this.src;
       }
     });
+    if (!view.state.facet(EditorView.editable) || view.state.readOnly) return span;
+    span.classList.add("edit");
+    // Where its markdown is now, or null when it's gone or changed.
+    const range = () => {
+      const from = view.posAtDOM(span);
+      const to = from + this.text.length;
+      return view.state.sliceDoc(from, to) === this.text ? { from, to } : null;
+    };
+    for (const corner of ["nw", "ne", "sw", "se"]) {
+      const h = document.createElement("span");
+      h.className = `cm-img-h ${corner}`;
+      h.title = "Drag to resize the image";
+      h.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const sx = e.clientX;
+        const w0 = img.getBoundingClientRect().width;
+        const max = span.parentElement?.getBoundingClientRect().width || Infinity;
+        // A handle on the left grows the image as it's dragged left.
+        const dir = corner.endsWith("e") ? 1 : -1;
+        let w = w0;
+        span.classList.add("sizing");
+        const move = (m: PointerEvent) => {
+          w = Math.max(24, Math.min(max, w0 + dir * (m.clientX - sx)));
+          img.style.width = `${Math.round(w)}px`;
+          img.style.height = "";
+        };
+        const up = () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+          span.classList.remove("sizing");
+          const r = range();
+          const next = r && Math.round(w) !== Math.round(w0) ? setImageWidth(this.text, w) : null;
+          if (r && next) view.dispatch({ changes: { ...r, insert: next }, userEvent: "input.resize" });
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+      });
+      span.appendChild(h);
+    }
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "cm-img-del";
+    del.title = "Remove the image from the note (the file stays in the vault)";
+    del.setAttribute("aria-label", "Remove the image");
+    del.innerHTML = iconSvg("trash", 14);
+    del.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    del.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const r = range();
+      if (!r) return;
+      // On a line of its own, the line goes too.
+      const l = view.state.doc.lineAt(r.from);
+      const whole = l.text.trim() === this.text && l.number < view.state.doc.lines;
+      const at = whole ? { from: l.from, to: l.to + 1 } : r;
+      view.dispatch({ changes: { ...at, insert: "" }, userEvent: "delete.image" });
+      view.focus();
+    });
+    span.appendChild(del);
     return span;
   }
-  ignoreEvent() {
-    return false;
+  ignoreEvent(e: Event) {
+    // The handles and the button handle their own.
+    return !!(e.target as HTMLElement).closest?.(".cm-img-h, .cm-img-del");
   }
 }
 
@@ -291,6 +363,8 @@ function build(view: EditorView, hooks: EditorHooks): DecorationSet {
   const out: Range<Decoration>[] = [];
   const lineOf = (pos: number) => state.doc.lineAt(pos);
   const isAct = (pos: number) => act.has(lineOf(pos).number);
+  // An image stays drawn on the cursor's line: only a selection inside its markdown shows it.
+  const inside = (a: number, b: number) => state.selection.ranges.some((r) => r.to > a && r.from < b);
   const lines = (from: number, to: number, cls: string) => {
     for (let p = from; p <= to;) {
       const l = lineOf(p);
@@ -339,6 +413,12 @@ function build(view: EditorView, hooks: EditorHooks): DecorationSet {
             // Inline HTML is drawn, never shown, even on the cursor's line (Source shows the tags):
             // a highlighter colour (src/editor/paint.ts) or a formatting pair styles its text.
             const tag = state.doc.sliceString(n.from, n.to);
+            const im = imgTag(tag);
+            if (im) {
+              if (!inside(n.from, n.to))
+                out.push(Decoration.replace({ widget: new ImageWidget(im.src, im.label, tag, hooks) }).range(n.from, n.to));
+              return;
+            }
             const t = /^<(\/?)([a-zA-Z][\w-]*)\b[^>]*?(\/?)>$/.exec(tag);
             if (!t || KEEP_TAGS.has(t[2].toLowerCase())) return;
             const name = t[2].toLowerCase();
@@ -393,9 +473,20 @@ function build(view: EditorView, hooks: EditorHooks): DecorationSet {
           case "Comment":
           case "CommentBlock":
             return false;
-          case "HTMLBlock":
+          case "HTMLBlock": {
+            // An `<img>` tag on a line of its own is drawn, as inline ones are.
+            const block = state.doc.sliceString(n.from, n.to);
+            const tag = block.trim();
+            const im = !tag.includes("\n") ? imgTag(tag) : null;
+            if (im) {
+              const a = n.from + block.indexOf(tag);
+              const b = a + tag.length;
+              if (!inside(a, b)) out.push(Decoration.replace({ widget: new ImageWidget(im.src, im.label, tag, hooks) }).range(a, b));
+              return false;
+            }
             out.push(mark("cm-faint").range(n.from, n.to));
             return false;
+          }
           case "ListMark": {
             if (isAct(n.from)) return;
             const after = state.doc.sliceString(n.to, n.to + 5);
@@ -417,10 +508,10 @@ function build(view: EditorView, hooks: EditorHooks): DecorationSet {
             return;
           }
           case "Image": {
-            if (isAct(n.from)) return false;
+            if (inside(n.from, n.to)) return false;
             const text = state.doc.sliceString(n.from, n.to);
             const m = /^!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?/.exec(text);
-            if (m) out.push(Decoration.replace({ widget: new ImageWidget(m[2], m[1], hooks) }).range(n.from, n.to));
+            if (m) out.push(Decoration.replace({ widget: new ImageWidget(m[2], m[1], text, hooks) }).range(n.from, n.to));
             return false;
           }
           case "Link": {
@@ -460,12 +551,12 @@ function build(view: EditorView, hooks: EditorHooks): DecorationSet {
         if (a < fm || inCode(state, a)) continue;
         const t = parseWikilink(!!m[1], m[2]);
         if (!t) continue;
-        if (isAct(a)) {
+        const image = t.embed && IMAGE_EXT.test(t.target);
+        if (image ? inside(a, b) : isAct(a)) {
           out.push(mark("cm-wikilink raw").range(a, b));
           continue;
         }
-        if (t.embed && IMAGE_EXT.test(t.target))
-          out.push(Decoration.replace({ widget: new ImageWidget(`wiki:${t.target}`, t.alias ?? "", hooks) }).range(a, b));
+        if (image) out.push(Decoration.replace({ widget: new ImageWidget(`wiki:${t.target}`, t.alias ?? "", m[0], hooks) }).range(a, b));
         else out.push(Decoration.replace({ widget: new LinkWidget(wikiLabel(t), m[2].split("|")[0], t.embed) }).range(a, b));
       } else {
         const a = from + m.index + m[3].length;
@@ -518,8 +609,19 @@ function clicks(hooks: EditorHooks) {
         return true;
       }
       if (!e.metaKey) {
-        // A plain click on a drawn link or image puts the cursor there, which shows its markdown.
-        const w = el.closest(".cm-wikilink:not(.raw), .cm-img");
+        // A click on a drawn image leaves it drawn, for its handles; a double-click puts the
+        // cursor in its markdown, which shows it.
+        const im = el.closest(".cm-img");
+        if (im) {
+          if (e.detail >= 2) {
+            view.dispatch({ selection: { anchor: view.posAtDOM(im) + 2 } });
+            view.focus();
+          }
+          e.preventDefault();
+          return true;
+        }
+        // A plain click on a drawn link puts the cursor there, which shows its markdown.
+        const w = el.closest(".cm-wikilink:not(.raw)");
         if (w) {
           const pos = view.posAtDOM(w);
           view.dispatch({ selection: { anchor: pos } });

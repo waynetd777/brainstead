@@ -57,6 +57,7 @@ const PATHS: Record<string, string> = {
   someday: "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM10 16h4",
   textsize: "M2.25 18.75L6.75 6l4.5 12.75M3.75 15h6M13.5 18.75l3.75-9 3.75 9M14.7 16.2h5.1",
   fit: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
+  expand: "M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7",
   more: "M5 12h.01M12 12h.01M19 12h.01",
   copy: "M9 9h11v11H9zM5 15H4V4h11v1",
   chevup: "M18 15l-6-6-6 6",
@@ -102,6 +103,10 @@ const PATHS: Record<string, string> = {
   // Save a chat to the vault: a tray with an arrow into it.
   save: "M12 3v12M7 10l5 5 5-5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4",
 };
+
+/** The same icon as markup, for DOM built outside React (the editor's widgets). */
+export const iconSvg = (name: string, size = 16) =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${PATHS[name] ?? PATHS.note}"/></svg>`;
 
 export function Icon({ name, size = 16, style, className }: { name: string; size?: number; style?: CSSProperties; className?: string }) {
   return (
