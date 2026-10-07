@@ -851,6 +851,18 @@ function Assistants() {
             />
           </Popover>
         )}
+        <div className="card">
+          <div className="srow">
+            <Icon name="ask" style={{ color: s.askSuggest === false ? "var(--ink3)" : "var(--green)" }} />
+            <div className="t">
+              <div className="pt">Suggest a next message</div>
+              <div className="faint">
+                After each answer, a model offers a follow-up in the message box (→ types it), at the cost of one more call per answer.
+              </div>
+            </div>
+            <Switch label="Suggest a next message" on={s.askSuggest !== false} onChange={(v) => settings.update({ askSuggest: v })} />
+          </div>
+        </div>
       </section>
       <section className="sgroup">
         <h2 className="h3">Changes</h2>
@@ -961,18 +973,6 @@ function Assistants() {
           </div>
         </div>
       </section>
-      <div className="card">
-        <div className="srow">
-          <Icon name="ask" style={{ color: s.askSuggest === false ? "var(--ink3)" : "var(--green)" }} />
-          <div className="t">
-            <div className="pt">Suggest a next message</div>
-            <div className="faint">
-              After each answer, a model offers a follow-up in the message box (→ types it), at the cost of one more call per answer.
-            </div>
-          </div>
-          <Switch label="Suggest a next message" on={s.askSuggest !== false} onChange={(v) => settings.update({ askSuggest: v })} />
-        </div>
-      </div>
       <JobModels found={found} fallback={model} />
       <section className="sgroup">
         <div className="row">

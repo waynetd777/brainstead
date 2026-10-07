@@ -1026,6 +1026,21 @@ input {
   flex-direction: column;
   gap: 22px;
 }
+
+/* Cards side by side in a section read as one card, a line between them, so it's clear which
+   settings belong together (the negative margin takes back the gap, the 1px overlaps the borders). */
+.spane .card:not(.jobnote) + .card:not(.jobnote) {
+  margin-top: -23px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.sgroup .card:not(.jobnote) + .card:not(.jobnote) {
+  margin-top: -9px;
+}
+.spane .card:not(.jobnote):has(+ .card:not(.jobnote)) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
 .sgroup {
   display: flex;
   flex-direction: column;
@@ -1665,6 +1680,15 @@ a.wl .embedmark {
   border-top: 1px solid var(--line);
   margin: 24px 0;
 }
+
+/* The line a link went to (an uncited claim), marked until the page is left. */
+.cm-line.cm-line-hit,
+.prose .line-hit {
+  background: var(--amber-soft);
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px var(--amber-soft);
+}
+
 .prose .flash {
   animation: flash 1.6s ease-out;
 }
@@ -6583,6 +6607,13 @@ select.sel {
 .ckitem .grow {
   text-align: left;
   overflow-wrap: anywhere;
+}
+
+/* An uncited claim's line, under its page's name. */
+.ckitem .ckline {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
 }
 .ckitem .why {
   color: var(--amber);

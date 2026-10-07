@@ -7,6 +7,7 @@ import type { ChangeRow, LintReport } from "./api";
 import { filedPage } from "./Ask";
 import {
   byRun,
+  claimsByPage,
   decisions,
   fixWithAskPrompt,
   held,
@@ -138,6 +139,19 @@ describe("knowledge health", () => {
       to: "3 Oct: 1",
       tip: "Issues needing a decision each day, 1 Oct to 3 Oct. Highest: 6.",
     });
+  });
+
+  it("groups a page's claims with no citation into one row", () => {
+    const c = (page: string, line: string) => ({ text: `${page}: ${line}`, page, detail: line, safe: false });
+    const g = claimsByPage([
+      c("wiki/Orbit App.md", "Launch is on 14 November"),
+      c("wiki/Maya.md", "Owner of the rota"),
+      c("wiki/Orbit App.md", "Budget is agreed"),
+    ]);
+    expect(g.map((g) => [g.page, g.items.map((i) => i.detail)])).toEqual([
+      ["wiki/Orbit App.md", ["Launch is on 14 November", "Budget is agreed"]],
+      ["wiki/Maya.md", ["Owner of the rota"]],
+    ]);
   });
 
   it("files an answer as a page with properties and its current state", () => {

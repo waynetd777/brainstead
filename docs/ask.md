@@ -60,7 +60,7 @@ copilot mcp add brainstead -- "/Applications/Brainstead.app/Contents/MacOS/Brain
 agy mcp add brainstead -- "/Applications/Brainstead.app/Contents/MacOS/Brainstead" --mcp              # Antigravity
 ```
 
-Searching and reading the vault, facts, the summaries, the health report, the Page shape check and help work with Brainstead closed. Everything else needs the app, and opens it. `open` brings the window to the front on a screen (by its sidebar name), a Settings pane, a note or a search.
+Searching and reading the vault, facts, the summaries, the health report, the Page shape check and help work with Brainstead closed. Everything else needs the app, and opens it. `open` brings the window to the front on a screen (by its sidebar name), a Settings pane, a note (with lines highlighted, when given) or a search.
 
 ## Questions about Brainstead
 

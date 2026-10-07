@@ -1196,7 +1196,9 @@ async function healthIgnore(a: Args): Promise<string> {
     return `${c.title} issues have buttons of their own instead of Ignore: health_issue, start_run ingest or reshape_pages.`;
   await api.healthIgnore(c.id, text);
   told("ignored a Knowledge health issue");
-  return "Ignored: it's left out of Knowledge health until its page changes. show_again lists it again.";
+  return c.id === "uncited-claims"
+    ? "Ignored: it's left out of Knowledge health until its line changes. show_again lists it again."
+    : "Ignored: it's left out of Knowledge health until its page changes. show_again lists it again.";
 }
 
 /** reshape_pages: Reshape pages, as Knowledge health's Page shape check does it. */
@@ -1982,7 +1984,8 @@ async function openApp(a: Args): Promise<string> {
     if (!path) throw new Error(`There's no page called ${page}.`);
   }
   await invoke("main_show", { screen: null });
-  if (path) nav.go({ screen: "doc", path });
+  const lines = (Array.isArray(a.lines) ? a.lines : []).map((l) => String(l).trim()).filter(Boolean);
+  if (path) nav.go({ screen: "doc", path, ...(lines.length ? { lines } : {}) });
   else if (screen === "settings") nav.go({ screen, pane: (str(a, "pane") as SettingsPane | undefined) ?? "general" });
   else if (screen === "search") nav.go({ screen, q: str(a, "query") ?? "" });
   else if (screen) nav.go(screen);

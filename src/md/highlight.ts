@@ -82,3 +82,16 @@ function split(t: Text, re: RegExp): ElementContent[] {
   if (last < t.value.length) out.push({ type: "text", value: t.value.slice(last) });
   return out;
 }
+
+/** A line's words as View shows them, for finding it there: markdown marks, links' brackets and
+ *  list markers dropped, spaces folded, lower case. */
+export function lineText(s: string): string {
+  return s
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+(?:\[.\]\s+)?/, "")
+    .replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[*_`~>#]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}

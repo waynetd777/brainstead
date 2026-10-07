@@ -43,6 +43,8 @@ export interface Place {
   q?: string;
   /** A heading or block to scroll to in "doc". */
   anchor?: string;
+  /** Lines of the document to highlight in "doc", scrolled to the first, as their text (trimmed). */
+  lines?: string[];
   /** The screen's own choices here (search text, sort, tab, filter, selection): useViewState. */
   view?: Record<string, unknown>;
 }
@@ -52,10 +54,12 @@ export const samePlace = (a: Place, b: Place) =>
   (a.pane ?? null) === (b.pane ?? null) &&
   (a.path ?? null) === (b.path ?? null) &&
   (a.q ?? null) === (b.q ?? null) &&
-  (a.anchor ?? null) === (b.anchor ?? null);
+  (a.anchor ?? null) === (b.anchor ?? null) &&
+  (a.lines ?? []).join("\n") === (b.lines ?? []).join("\n");
 
 /** Opens a vault file. */
-export const openDoc = (path: string, extra: { q?: string; anchor?: string } = {}) => nav.go({ screen: "doc", path, ...extra });
+export const openDoc = (path: string, extra: { q?: string; anchor?: string; lines?: string[] } = {}) =>
+  nav.go({ screen: "doc", path, ...extra });
 
 /** Back/forward history. Going somewhere new drops anything ahead; going where you are does nothing. */
 export class History {

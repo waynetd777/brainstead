@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { highlightTerms, termsRegex } from "./highlight";
+import { highlightTerms, lineText, termsRegex } from "./highlight";
 
 describe("highlight terms", () => {
   it("follows the previous app's rules", () => {
@@ -14,5 +14,13 @@ describe("highlight terms", () => {
   });
   it("escapes regex characters", () => {
     expect("cost (q4)".match(termsRegex(highlightTerms("(q4)"))!)?.[0]).toBe("(q4)");
+  });
+});
+
+describe("lineText", () => {
+  it("reads a markdown line as View shows it", () => {
+    expect(lineText("- **Owner**: [[Maya Patel|Maya]], see [the plan](plan.md)")).toBe("owner: maya, see the plan");
+    expect(lineText("  2. [ ] Launch is on `14 November`")).toBe("launch is on 14 november");
+    expect(lineText("Owner:   Maya\n  and Lena")).toBe("owner: maya and lena");
   });
 });

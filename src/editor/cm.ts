@@ -21,8 +21,8 @@ import {
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorSelection, EditorState, Extension, Prec, Text, Transaction } from "@codemirror/state";
-import { drawSelection, dropCursor, EditorView, keymap } from "@codemirror/view";
+import { Compartment, EditorSelection, EditorState, Extension, Prec, StateEffect, StateField, Text, Transaction } from "@codemirror/state";
+import { Decoration, DecorationSet, drawSelection, dropCursor, EditorView, keymap } from "@codemirror/view";
 import { effortMinutes } from "../gtd";
 import { pendingShorthand, resolveDateWord, shorthandEmoji } from "../md/dates";
 import { headingSlug } from "../md/plugins";
@@ -33,6 +33,35 @@ import { fenceAt, queryAssist, queryCompletions } from "./queryAssist";
 import { templaterCompletions } from "./templaterAssist";
 import { taskHint } from "./taskHint";
 import { frontmatterEnd, lineSeparator, TASK_LINE } from "./text";
+
+/** Lines marked from outside (Knowledge health's uncited claims), as their text (trimmed, its
+ *  first 160 characters). Marked again when the text is replaced from outside (the page reloaded);
+ *  cleared by the user's own edit. */
+const setLineHits = StateEffect.define<string[]>();
+const lineHit = Decoration.line({ class: "cm-line-hit" });
+const hitsIn = (doc: Text, want: Set<string>) => {
+  const at = [];
+  for (let n = 1; n <= doc.lines && want.size; n++) {
+    const l = doc.line(n);
+    if (want.has([...l.text.trim()].slice(0, 160).join(""))) at.push(lineHit.range(l.from));
+  }
+  return Decoration.set(at);
+};
+const lineHits = StateField.define<{ want: Set<string>; deco: DecorationSet }>({
+  create: () => ({ want: new Set(), deco: Decoration.none }),
+  update(v, tr) {
+    for (const e of tr.effects) {
+      if (e.is(setLineHits)) {
+        const want = new Set(e.value.map((t) => t.trim()).filter(Boolean));
+        return { want, deco: hitsIn(tr.state.doc, want) };
+      }
+    }
+    if (!tr.docChanged || !v.want.size) return v;
+    if (["input", "delete", "move", "undo", "redo"].some((u) => tr.isUserEvent(u))) return { want: new Set(), deco: Decoration.none };
+    return { want: v.want, deco: hitsIn(tr.state.doc, v.want) };
+  },
+  provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
+});
 
 /** `[[partial` or `#partial` right before the cursor. */
 export function completionTrigger(before: string): { kind: "link" | "tag"; q: string; start: number } | null {
@@ -148,6 +177,7 @@ export class CMEditor implements Editor {
         EditorState.lineSeparator.of(sep),
         history(),
         drawSelection(),
+        lineHits,
         dropCursor(),
         markdown({ base: markdownLanguage, addKeymap: true, extensions: [Highlight] }),
         highlightSelectionMatches(),
@@ -252,7 +282,10 @@ export class CMEditor implements Editor {
 
   load(md: string) {
     for (const p of this.pastes) Object.assign(p, { from: null, to: null });
+    // Lines marked from outside stay marked when the page is loaded again.
+    const keep = [...this.view.state.field(lineHits).want];
     this.view.setState(this.makeState(md));
+    if (keep.length) this.view.dispatch({ effects: setLineHits.of(keep) });
     const caret = document.documentElement.dataset.caret;
     if (caret) window.setTimeout(() => this.sceneCaret(caret, !!document.documentElement.dataset.hover), 800);
   }
@@ -327,6 +360,15 @@ export class CMEditor implements Editor {
       }
     }
     return false;
+  }
+
+  /** Highlights each line that reads one of `texts` (trimmed, its first 160 characters, as
+   *  Knowledge health gives a line) until the next edit, and scrolls to the first. */
+  highlightLines(texts: string[]): boolean {
+    this.view.dispatch({ effects: setLineHits.of(texts) });
+    const first = this.view.state.field(lineHits).deco.iter();
+    if (first.value) this.view.dispatch({ effects: EditorView.scrollIntoView(first.from, { y: "center" }) });
+    return !!first.value;
   }
 
   setMode(m: EditorMode) {

@@ -523,7 +523,7 @@ pub fn tools() -> Vec<Value> {
             "Applies Knowledge health's safe fixes (needs the app): missing cross-links, stale updated: dates, unlogged writes' log lines and system notes' lost headers; all of them, or the items named (their text as lint gives it). Undoable. Page shape items are reshape_pages'. Issues that need judgement aren't safe fixes: make those with edit_page.",
             schema(json!({"items": {"type": "array", "items": {"type": "string"}, "description": "Only these issues, by their text as lint gives it; every safe fix when left out."}}), &[])),
         tool("ignore_issue", "Ignore a Knowledge health issue", Change,
-            "Knowledge health's Ignore (needs the app): stops listing an issue that has no fix (its text as lint gives it) until its page changes; only when the user asked, and not for missing pages, duplicates, unused images, sources not yet ingested or page shape, which have buttons of their own (health_issue, start_run ingest, reshape_pages). With show_again, Show again: the ignored issues listed again, of one check (its id) or all. Ignored issues are left out of the app's count and of lint while the app is open.",
+            "Knowledge health's Ignore (needs the app): stops listing an issue that has no fix (its text as lint gives it) until its page changes, or for a claim with no citation until its line changes; only when the user asked, and not for missing pages, duplicates, unused images, sources not yet ingested or page shape, which have buttons of their own (health_issue, start_run ingest, reshape_pages). With show_again, Show again: the ignored issues listed again, of one check (its id) or all. Ignored issues are left out of the app's count and of lint while the app is open.",
             schema(json!({
                 "item": {"type": "string", "description": "The issue's text, as lint gives it."},
                 "show_again": {"type": "boolean", "description": "List ignored issues again instead."},
@@ -658,6 +658,7 @@ pub fn tools() -> Vec<Value> {
                 "screen": {"type": "string", "enum": ["today", "inbox", "tasks", "projects", "weekly_review", "changes", "ask", "search", "notes", "wiki", "sources", "templates", "graph", "knowledge_health", "contradictions", "activity", "triage", "trash", "settings"], "description": "The screen, as the sidebar names it; the one showing when left out."},
                 "pane": {"type": "string", "enum": ["general", "notes", "vault", "assistants", "jobs", "capture", "permissions", "about"], "description": "With screen settings: the pane."},
                 "page": page,
+                "lines": {"type": "array", "items": {"type": "string"}, "description": "With page: lines of it to highlight, scrolled to the first, each as its text (as lint gives a claim with no citation)."},
                 "query": {"type": "string", "description": "With screen search: what to search for."}
             }), &[])),
         tool("app_status", "Brainstead's state", Read,

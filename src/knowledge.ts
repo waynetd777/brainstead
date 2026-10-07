@@ -132,6 +132,16 @@ export function trendLabels(history: [string, { decisions: number }][]): { from:
   };
 }
 
+/** Claims with no citation by page, in the order the check gives them. */
+export function claimsByPage(items: LintItem[]): { page: string; items: LintItem[] }[] {
+  const out = new Map<string, LintItem[]>();
+  for (const i of items) {
+    const p = i.page ?? "";
+    out.set(p, [...(out.get(p) ?? []), i]);
+  }
+  return [...out].map(([page, items]) => ({ page, items }));
+}
+
 /** What Ask is asked to do about the issues that need judgement. */
 export function fixWithAskPrompt(r: LintReport): string {
   const lines: string[] = [];

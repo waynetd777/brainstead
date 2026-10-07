@@ -17,6 +17,7 @@ import { ingestable } from "./Lists";
 import { useGlance, WikiGlance } from "./Glance";
 import {
   ADVISORY,
+  claimsByPage,
   decisions,
   OWN_ACTIONS,
   fixOf,
@@ -337,9 +338,11 @@ function Group({
               <div className="ckitems">
                 {c.id === "page-shape" && <ReshapeAll items={c.items} on={on} />}
                 {c.id === "no-current-state" && <WriteCurrentState n={c.items.length} />}
-                {c.items.slice(0, 200).map((i) => (
-                  <Row key={i.text} check={c.id} i={i} on={on} />
-                ))}
+                {c.id === "uncited-claims"
+                  ? claimsByPage(c.items)
+                      .slice(0, 200)
+                      .map((g) => <ClaimsRow key={g.page} page={g.page} items={g.items} />)
+                  : c.items.slice(0, 200).map((i) => <Row key={i.text} check={c.id} i={i} on={on} />)}
                 {n > 200 && <p className="faint small">and {n - 200} more</p>}
                 {ignored > 0 && <Ignored check={c.id} n={ignored} />}
               </div>
@@ -461,6 +464,47 @@ function Row({ check, i, on }: { check: string; i: LintItem; on: Handlers }) {
           Ignore
         </BusyButton>
       )}
+    </div>
+  );
+}
+
+/** A page's claims with no citation, one row: each line under the page's name, all of them
+ *  highlighted when the page opens, and Ignore for them all. */
+function ClaimsRow({ page, items }: { page: string; items: LintItem[] }) {
+  const lines = items.map((i) => i.detail ?? "").filter(Boolean);
+  const id = `ignore:uncited-claims:${page}`;
+  return (
+    <div className="ckitem">
+      <button
+        type="button"
+        className="blink grow"
+        title={`Open ${page} with ${lines.length === 1 ? "this line" : `these ${lines.length} lines`} highlighted`}
+        onClick={() => openDoc(page, { lines })}
+      >
+        {pageName(page)}
+        {lines.map((l) => (
+          <span key={l} className="ckline faint">
+            {l}
+          </span>
+        ))}
+      </button>
+      <BusyButton
+        id={id}
+        className="btn sm ghost"
+        title={lines.length === 1 ? "Stop listing this claim until its line changes" : "Stop listing these claims until their lines change"}
+        onClick={() =>
+          act(
+            id,
+            async () => {
+              for (const i of items) await api.healthIgnore("uncited-claims", i.text);
+            },
+            () => {},
+            false,
+          )
+        }
+      >
+        Ignore
+      </BusyButton>
     </div>
   );
 }

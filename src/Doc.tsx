@@ -16,6 +16,7 @@ import { NoteEditor, NoteEditorHandle } from "./editor/NoteEditor";
 import { EditSession } from "./editor/session";
 import { FileMenu, useFileMenu } from "./FileMenu";
 import { Icon } from "./icons";
+import { lineText } from "./md/highlight";
 import { headingSlug } from "./md/plugins";
 import { Markdown } from "./md/Markdown";
 import { nav, openDoc, place, setLeaveGuard } from "./nav";
@@ -239,10 +240,49 @@ export function DocScreen() {
     el?.scrollIntoView({ block: "start" });
     el?.classList.add("flash");
   }, [doc, here.anchor, session]); // eslint-disable-line react-hooks/exhaustive-deps
+  // To lines (a page's uncited claims in Knowledge health): highlighted in the editor, or the
+  // blocks that hold them marked in View, scrolled to the first.
+  const wantLines = (here.lines ?? []).join("\n");
+  useEffect(() => {
+    const want = wantLines ? wantLines.split("\n") : [];
+    if (!doc || !want.length || here.anchor) return;
+    const ed = editor.current?.editor;
+    if (ed && editable(doc.meta.summary) && mode !== "read") {
+      ed.highlightLines(want);
+      return;
+    }
+    const plain = want.map((w) => lineText(w).slice(0, 60)).filter(Boolean);
+    if (!plain.length) return;
+    // Marks each line's innermost block (a list item before the list holding it).
+    const mark = () => {
+      const blocks = [...(body.current?.querySelectorAll("p, li, td, th, h1, h2, h3, h4, h5, h6, blockquote") ?? [])].reverse();
+      const texts = blocks.map((b) => lineText(b.textContent ?? ""));
+      const hits = plain.map((p) => blocks[texts.findIndex((t) => t.includes(p))]).filter((b): b is Element => !!b);
+      for (const h of hits) if (!h.classList.contains("line-hit")) h.classList.add("line-hit");
+      return hits;
+    };
+    // The page can be drawn again after it opens (its links resolved, say), which drops the marks:
+    // they're put back on every redraw while the page is open.
+    const redrawn = new MutationObserver(() => mark());
+    if (body.current) redrawn.observe(body.current, { childList: true, subtree: true });
+    let tries = 0;
+    const t = window.setInterval(() => {
+      const hits = mark();
+      if (hits.length === plain.length || ++tries > 20) window.clearInterval(t);
+      if (!hits.length) return;
+      window.clearInterval(t);
+      const first = hits.reduce((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_PRECEDING ? b : a));
+      first.scrollIntoView({ block: "center" });
+    }, 50);
+    return () => {
+      window.clearInterval(t);
+      redrawn.disconnect();
+    };
+  }, [path, wantLines, doc]); // eslint-disable-line react-hooks/exhaustive-deps
   // Back at the top for a new document; opened from a search (⌘K, Search) without a heading to go
   // to, down to the first match once it's drawn.
   useEffect(() => {
-    if (here.anchor) return;
+    if (here.anchor || here.lines?.length) return;
     body.current?.scrollTo({ top: 0 });
     if (!here.q || !doc) return;
     let tries = 0;
@@ -256,7 +296,7 @@ export function DocScreen() {
       }
     }, 50);
     return () => window.clearInterval(t);
-  }, [path, here.anchor, here.q, doc]);
+  }, [path, here.anchor, here.lines, here.q, doc]);
 
   const s = doc?.meta.summary;
   const look = useDocLook(path);

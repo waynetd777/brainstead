@@ -107,7 +107,7 @@ pub(crate) fn run_lint(app: &AppHandle) -> Option<Report> {
     r.checks.push(crate::contradict::uncited_check(&root));
     let mut k = kept();
     r.checks.push(callout_check(&root, &mut k.callouts));
-    lint::without_ignored(&mut r, &mut k.ignored, &|p| page_version(&root, p));
+    lint::without_ignored(&mut r, &mut k.ignored, &|p| page_version(&root, p), &|p| read_opt(&root.join(p)));
     k.history.insert(today().to_string(), Day { total: r.total(), decisions: r.needs_decision() });
     let cutoff = (today() - chrono::Duration::days(56)).to_string();
     k.history.retain(|d, _| *d >= cutoff);
@@ -354,7 +354,8 @@ fn page_version(root: &Path, page: &str) -> Option<String> {
     std::fs::read(root.join(page)).ok().map(|b| write::version(&b))
 }
 
-/// Ignores an issue (its check and its line, as the report gives them) until its page changes.
+/// Ignores an issue (its check and its line, as the report gives them) until its page changes,
+/// or for an uncited claim until its line does.
 fn health_ignore_now(app: AppHandle, check: String, text: String) -> Res<()> {
     let root = root(&app)?;
     let report = app.state::<Health>().report.lock().unwrap().clone();

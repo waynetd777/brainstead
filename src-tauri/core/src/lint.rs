@@ -614,19 +614,36 @@ pub fn ignore_key(check: &str, text: &str) -> String {
     format!("{check}|{text}")
 }
 
+/// Checks whose issue is one line of a page, given in full in the issue's text: one of these
+/// stays ignored for as long as its page still has that line, whatever else on the page changes.
+pub const LINE_KEYED: [&str; 1] = ["uncited-claims"];
+
+/// An uncited claim's line as the check gives it: trimmed, at most 160 characters.
+fn claim_line(l: &str) -> String {
+    l.trim().chars().take(160).collect()
+}
+
 /// Takes the ignored issues out of the report, counting them on their check. `ignored` maps an
 /// issue's key to its page's version when it was ignored; `version` gives a page's version now
-/// (None when it's gone). An issue whose page has changed since comes back, and its key is
-/// dropped from `ignored`; so does the key of an issue no check gives any more.
-pub fn without_ignored(r: &mut Report, ignored: &mut BTreeMap<String, String>, version: &dyn Fn(&str) -> Option<String>) {
+/// (None when it's gone) and `text` its text. An issue whose page has changed since comes back,
+/// and its key is dropped from `ignored`; so does the key of an issue no check gives any more.
+/// A [`LINE_KEYED`] issue comes back only when its line does, and its key is kept while its
+/// page still has the line (a claim not read again yet drops out of its check for a while).
+pub fn without_ignored(
+    r: &mut Report,
+    ignored: &mut BTreeMap<String, String>,
+    version: &dyn Fn(&str) -> Option<String>,
+    text: &dyn Fn(&str) -> Option<String>,
+) {
     let mut seen = HashSet::new();
     for c in &mut r.checks {
         let (id, n) = (c.id, &mut c.ignored);
+        let by_line = LINE_KEYED.contains(&id);
         c.items.retain(|i| {
             let key = ignore_key(id, &i.text);
             let Some(was) = ignored.get(&key) else { return true };
             let now = i.page.as_deref().map(|p| version(p).unwrap_or_default()).unwrap_or_default();
-            if *was != now {
+            if !by_line && *was != now {
                 return true;
             }
             seen.insert(key);
@@ -634,7 +651,14 @@ pub fn without_ignored(r: &mut Report, ignored: &mut BTreeMap<String, String>, v
             false
         });
     }
-    ignored.retain(|k, _| seen.contains(k));
+    ignored.retain(|k, _| {
+        if seen.contains(k) {
+            return true;
+        }
+        let Some((check, issue)) = k.split_once('|') else { return false };
+        let Some((page, line)) = issue.split_once(": ").filter(|_| LINE_KEYED.contains(&check)) else { return false };
+        text(page).is_some_and(|t| t.lines().any(|l| claim_line(l) == line))
+    });
 }
 
 // ── Safe fixes ────────────────────────────────────────────────────────────────
@@ -812,13 +836,48 @@ mod tests {
             (ignore_key("orphans", "wiki/entities/Gone.md"), "v1".to_string()),
         ]);
         let mut r = report();
-        without_ignored(&mut r, &mut ignored, &|_| Some("v1".into()));
+        without_ignored(&mut r, &mut ignored, &|_| Some("v1".into()), &|_| None);
         assert_eq!((r.checks[0].items.len(), r.checks[0].ignored, r.needs_decision()), (1, 1, 1));
         // An issue no check gives any more is forgotten.
         assert_eq!(ignored.len(), 1);
         let mut r = report();
-        without_ignored(&mut r, &mut ignored, &|_| Some("v2".into()));
+        without_ignored(&mut r, &mut ignored, &|_| Some("v2".into()), &|_| None);
         assert_eq!((r.checks[0].items.len(), r.checks[0].ignored), (2, 0));
+        assert!(ignored.is_empty());
+    }
+
+    #[test]
+    fn an_ignored_claim_stays_ignored_while_its_line_does() {
+        let claim = |line: &str| Check {
+            id: "uncited-claims",
+            title: "Claims with no citation",
+            classic: false,
+            ignored: 0,
+            items: vec![Item {
+                text: format!("wiki/Orbit App.md: {line}"),
+                page: Some("wiki/Orbit App.md".into()),
+                detail: Some(line.into()),
+                ..Default::default()
+            }],
+        };
+        let report = |checks: Vec<Check>| Report { checks, wiki_pages: 1, sources: 0, ms: 0 };
+        let mut ignored = BTreeMap::from([(ignore_key("uncited-claims", "wiki/Orbit App.md: Launch is on 14 November"), "v1".to_string())]);
+        let page = |t: &'static str| move |_: &str| Some(t.to_string());
+        // The page changed elsewhere: still ignored.
+        let mut r = report(vec![claim("Launch is on 14 November")]);
+        without_ignored(&mut r, &mut ignored, &|_| Some("v2".into()), &page("# Orbit App\nLaunch is on 14 November\nNew line\n"));
+        assert_eq!((r.checks[0].items.len(), r.checks[0].ignored), (0, 1));
+        // Out of the check for a run while the page still has the line: kept.
+        let mut r = report(vec![]);
+        without_ignored(&mut r, &mut ignored, &|_| Some("v3".into()), &page("  Launch is on 14 November\n"));
+        assert_eq!(ignored.len(), 1);
+        let mut r = report(vec![claim("Launch is on 14 November")]);
+        without_ignored(&mut r, &mut ignored, &|_| Some("v3".into()), &page("Launch is on 14 November\n"));
+        assert_eq!(r.checks[0].items.len(), 0);
+        // The line itself changed: the new line is listed and the old ignore forgotten.
+        let mut r = report(vec![claim("Launch is on 21 November")]);
+        without_ignored(&mut r, &mut ignored, &|_| Some("v4".into()), &page("Launch is on 21 November\n"));
+        assert_eq!(r.checks[0].items.len(), 1);
         assert!(ignored.is_empty());
     }
 
