@@ -16,7 +16,7 @@ The build plan that took Brainstead through its ten stages is complete and kept 
 | `make fmt` | Reformat everything, and add the licence header where it's missing |
 | `make evals` | The workflow evals with real models on a copy of the fixture vault (`EVALS="help --model …"` picks); writes `src-tauri/target/evals/report.md`. Not part of `check` |
 | `make app` | Bump the version and build the .app, signed with the identity in `signing.local` if there is one |
-| `make install-app` | Build it and replace the copy in /Applications (quits a running Brainstead first) |
+| `make install-app` | Build it at the current version (no bump: only `make app` for a release bumps it) and replace the copy in /Applications (quits a running Brainstead first) |
 | `make dmg` | Pack the built app into the release DMG (`src-tauri/target/release/bundle/dmg/Brainstead.dmg`) |
 | `make screenshots` | Retake the screenshots in `docs/images/` |
 | `make icons` | Redraw the icon artwork and regenerate the icon set |

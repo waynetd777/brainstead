@@ -78,7 +78,8 @@ app:
 	    || { echo "WARNING: app is not signed with $(SIGN_ID)"; exit 1; }; \
 	else echo "note: no signing.local, so the app is signed ad hoc"; fi
 
-## Build and replace /Applications/Brainstead.app.
+## Build and replace /Applications/Brainstead.app, keeping the version: only a release build (make app) bumps it.
+install-app: VERSION = $(shell python3 -c "import json; print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
 install-app: app
 	@pkill -x Brainstead 2>/dev/null || true
 	@rm -rf "/Applications/Brainstead.app"
