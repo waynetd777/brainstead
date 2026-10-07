@@ -746,6 +746,12 @@ fn a_read_tool_never_changes_anything() {
     assert!(refused(&f.ctx, "changes", json!({"action": "list"})).contains("not list"));
     assert!(refused(&f.ctx, "changes", json!({"action": "history"})).contains("list_changes history reads it"));
     assert!(refused(&f.ctx, "bookmarks", json!({})).contains("list_bookmarks"));
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
+    ok(&f.ctx, "bookmarks", json!({"remove": "Gone note"}));
+    assert_eq!(app.join().unwrap().args["remove"], "Gone note");
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
+    ok(&f.ctx, "list_bookmarks", json!({"remove": "Gone note"}));
+    assert!(app.join().unwrap().args.get("remove").is_none());
     // The read tool sends the app's own action, with what only the change tool takes dropped.
     let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
     ok(&f.ctx, "list_settings", json!({"key": "theme"}));

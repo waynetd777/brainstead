@@ -104,12 +104,19 @@ describe("one step", () => {
     await draftNotes([[MAYA, { type: "1-1", name: "Maya", date: "2026-10-01" }]]);
     expect(meetingRunEnded(run({}), true)).toBe(true);
     await flush();
-    expect(ingestStart).toHaveBeenCalledWith(["1-1. Maya - 2026-10-01.md"]);
+    expect(ingestStart).toHaveBeenCalledWith(["1-1. Maya - 2026-10-01.md"], false);
     expect(trashMove).not.toHaveBeenCalled();
     ingestRunEnded(run({ id: "i1", kind: "ingest", status: "done" }));
     await flush();
     expect(trashMove).toHaveBeenCalledWith(MAYA);
     expect(toast).toHaveBeenLastCalledWith(expect.stringContaining("ingested; the transcript is in the Trash"), expect.anything(), "ok");
+  });
+
+  it("ingests unattended when an unattended assistant started the note, so its failing changes are held", async () => {
+    await draftNotes([[MAYA, { type: "1-1", name: "Maya", date: "2026-10-01" }]], true);
+    meetingRunEnded(run({ trigger: "scheduled" }), true);
+    await flush();
+    expect(ingestStart).toHaveBeenCalledWith(["1-1. Maya - 2026-10-01.md"], true);
   });
 
   it("keeps the transcript when the ingest fails", async () => {

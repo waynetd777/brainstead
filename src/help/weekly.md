@@ -26,7 +26,7 @@ With an AI assistant set up, Brainstead reads the week ahead of the review and p
 
 A line under the step's title says when the suggestions were prepared, with **Prepare again** for a fresh set. While they're being prepared a bar shows it's working; if it fails you see why, with **Retry**. If the model's answer stops part way, the suggestions before the stop are kept. When none can be read, the run's chat in Ask shows what the model wrote.
 
-In [Ask](app:ask) you can also ask for help with the review, such as "go through this week's suggestions with me". The assistant can read them and accept or skip one for you, or prepare them again: for a paused review, its own week, as **Prepare again** does.
+In [Ask](app:ask) you can also ask for help with the review, such as "go through this week's suggestions with me". The assistant can read them and accept or skip one for you once the review is started, or prepare them again: for a paused review, its own week, as **Prepare again** does.
 
 Each step shows its suggestions above its usual content, one row each: what's suggested, the note it came from (hover for the quote, click to open it), a button for the action (**Add task**, **Tick**, **Defer to** a date, **Waiting for**, **Someday**, **Change wording**, **Clarify as…** or **Link**) and **Skip**. Collect loose ends and New ideas show prompts to think about instead, with nothing to click.
 

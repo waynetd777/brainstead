@@ -693,6 +693,8 @@ export interface IngestRun {
   dropped: { page: string; reason: string }[];
   pages: string[];
   error: string | null;
+  /** "scheduled" when the daily check or an unattended assistant started it; absent when the user did. */
+  trigger?: string;
 }
 
 export interface FixNameRequest {

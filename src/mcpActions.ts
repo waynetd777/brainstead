@@ -93,7 +93,8 @@ import { foundDetail, handedOver, INSTALL, languageName, SCREEN_NAME, scriptsFol
 import { choice, prepStep, WEEKLY_STATE_CHANGED } from "./weeklyPrep";
 import { draftNotes, followThrough, isTranscriptPath, noteFile, specOf, specOk } from "./meetingFlow";
 import { DONE as MEETING_DONE, needsDate, noteExists, TYPES as MEETING_TYPES } from "./Meeting";
-import { reportMarkdown } from "./Contradictions";
+import { order as contradictionsOrder, reportMarkdown } from "./Contradictions";
+import { KINDS as GRAPH_KINDS, visible as graphVisible } from "./graphModel";
 import { checklist, isDone, isRetired, STOP_FIRST } from "./Switchover";
 import { canIngest, ingestable } from "./Lists";
 import { LAYERS as SEARCH_LAYERS } from "./Search";
@@ -586,7 +587,8 @@ async function moveTask(a: Args, r: McpRequest): Promise<string> {
   return o.applied ? `Moved “${t.text}”${where} in ${list.v.label}${how}. ${o.message}` : o.message;
 }
 
-async function projectPath(name: string): Promise<string> {
+/** A project by name; `activeOnly`, as the Inbox's forms list only active projects. */
+async function projectPath(name: string, activeOnly = false): Promise<string> {
   const want = name
     .replace(/^\[\[|\]\]$/g, "")
     .replace(/^Project\. /, "")
@@ -594,6 +596,10 @@ async function projectPath(name: string): Promise<string> {
     .toLowerCase();
   const p = (await api.projectsList()).find((x) => x.name.toLowerCase() === want);
   if (!p) throw new Error(`There's no project called ${name}. list_projects shows them.`);
+  if (activeOnly && p.status !== "active")
+    throw new Error(
+      `${p.name} isn't an active project (it's ${p.status}), and the Inbox only offers active ones: update_project can make it active first.`,
+    );
   return p.path;
 }
 
@@ -716,7 +722,7 @@ export async function clarifyChanges(
 ): Promise<{ said: string; changes: ChangeSubmit[]; after?: () => Promise<unknown> }> {
   const becomes = str(a, "becomes");
   const text = str(a, "text") ?? (i.kind === "capture" ? `Follow up on [[${i.text}]]` : i.text.trim());
-  const proj = str(a, "project") ? await projectPath(str(a, "project")!) : null;
+  const proj = str(a, "project") ? await projectPath(str(a, "project")!, true) : null;
   const fields = { text, project: proj, context: str(a, "context") ?? null, effort: str(a, "effort") ?? null, due: str(a, "due") ?? null };
   const short = i.text.replace(/\s+/g, " ").trim().slice(0, 60);
   const captureDone = i.kind === "capture" ? () => api.inboxCaptureDone(i.path) : undefined;
@@ -744,6 +750,11 @@ export async function clarifyChanges(
       : [addTask(toProject ?? TODO_LIST, line, toProject ? heading : undefined), ...takeOut()];
   switch (becomes) {
     case "next":
+      // As the Inbox's Next action form saves it: with no project or context it would land back in the Inbox.
+      if (!proj && !fields.context?.trim())
+        throw new Error(
+          "A next action needs a project or a context (calls, office…), as the Inbox's form does; without either it would land back in the Inbox.",
+        );
       return {
         said: `a next action${proj ? ` in ${projectName(proj)}` : ""}`,
         changes: settle(taskLine(fields), proj),
@@ -1590,7 +1601,12 @@ async function weeklySuggestion(a: Args): Promise<string> {
   const prep = (await api.weekprepStatus(week)).prep;
   const s = prep?.suggestions.find((x) => x.id === id);
   if (!s) throw new Error(`No suggestion ${id} for ${week}. weekly_review lists them.`);
-  if (st?.handled?.[id]) throw new Error(`That suggestion was ${st.handled[id]} already.`);
+  // As on the screen, where the suggestions are steps of a review: this doesn't start one.
+  if (!st)
+    throw new Error(
+      "The weekly review isn't started: its suggestions are accepted or skipped in it. weekly_step start starts it, as the user asks.",
+    );
+  if (st.handled?.[id]) throw new Error(`That suggestion was ${st.handled[id]} already.`);
   let line = "";
   if (how === "accept") {
     const projects = (await api.projectsList()).filter((p) => p.status === "active");
@@ -1599,11 +1615,10 @@ async function weeklySuggestion(a: Args): Promise<string> {
     line = await c.run();
   }
   // Kept with the review's progress, as the screen keeps it, so it stays hidden there.
-  const cur: WeeklyState = st ?? { week, step: 0, done: [], log: [], notes: "", startedAt: Date.now() };
   await api.weeklyStateWrite({
-    ...cur,
-    handled: { ...cur.handled, [id]: how === "accept" ? "accepted" : "skipped" },
-    log: line ? [...cur.log, line] : cur.log,
+    ...st,
+    handled: { ...st.handled, [id]: how === "accept" ? "accepted" : "skipped" },
+    log: line ? [...st.log, line] : st.log,
   });
   window.dispatchEvent(new Event(WEEKLY_STATE_CHANGED));
   if (how === "skip") {
@@ -1755,6 +1770,8 @@ async function fixName(a: Args): Promise<string> {
   const wrong = str(a, "written_as");
   const right = str(a, "correct_spelling");
   if (!wrong || !right) throw new Error("Give written_as (the name as it's misspelt) and correct_spelling.");
+  // As the screen, which plans nothing while the two are spelt the same.
+  if (wrong.trim() === right.trim()) throw new Error("correct_spelling is spelt the same as written_as: there's nothing to fix.");
   // Files to leave alone (part of the name each), Where it's from, and Remember this correction, on
   // unless false, as on the screen.
   const guards = (Array.isArray(a.files_to_leave_alone) ? a.files_to_leave_alone : []).map((g) => String(g).trim()).filter(Boolean);
@@ -1841,6 +1858,13 @@ async function trash(a: Args): Promise<string | Listing> {
 async function bookmarks(a: Args): Promise<string | Listing> {
   const page = str(a, "page");
   const keep = str(a, "keep");
+  const remove = str(a, "remove");
+  if (remove) {
+    // As Triage's Archive and Remove: by the bookmark's target, so one whose note is gone comes off too.
+    await api.bookmarkRemove(remove);
+    told(`took the bookmark ${remove} off`);
+    return `Took the bookmark ${remove} off. Undoable with ⌘Z.`;
+  }
   if (keep) {
     await api.bookmarkKeep(keep);
     told(`kept the bookmark ${keep}`);
@@ -1858,6 +1882,12 @@ async function bookmarks(a: Args): Promise<string | Listing> {
       empty: "No bookmarks.",
     });
   }
+  // As a note's Bookmark: only a text note (the file menu offers it on .md and .txt) that's there.
+  if (!/\.(md|txt)$/i.test(page))
+    throw new Error(`${page} isn't a note: Bookmark is on notes (.md or .txt) only, as the file menu offers it.`);
+  await api.docRead(page).catch(() => {
+    throw new Error(`There's no note at ${page}. A bookmark whose note is gone comes off with remove (its target, from list_bookmarks).`);
+  });
   const on = await api.bookmarkToggle(page);
   told(on ? `bookmarked ${page}` : `took the bookmark off ${page}`);
   return on ? `Bookmarked ${page}.` : `Took the bookmark off ${page}.`;
@@ -1960,8 +1990,14 @@ async function graph(a: Args): Promise<string> {
     [center] = await api.linksResolve([page.replace(/^\[\[|\]\]$/g, "")]);
     if (!center) throw new Error(`There's no page called ${page}.`);
   }
+  // The kind chips, by their labels: the kinds turned off, the centre kept, as the screen's visible().
+  const want = (Array.isArray(a.hide) ? a.hide : []).map(String);
+  const bad = want.filter((l) => !GRAPH_KINDS.some(([, label]) => label === l));
+  if (bad.length)
+    throw new Error(`hide takes the Graph screen's chips: ${GRAPH_KINDS.map(([, l]) => l).join(", ")} (not ${bad.join(", ")}).`);
+  const hidden = GRAPH_KINDS.filter(([, label]) => want.includes(label)).map(([k]) => k);
   // Two links away unless said, as the Graph screen starts.
-  const g = await api.graph(center, Math.min(Math.max(Number(a.depth) || 2, 1), 3));
+  const g = graphVisible(await api.graph(center, Math.min(Math.max(Number(a.depth) || 2, 1), 3)), hidden, center);
   const name = new Map(g.nodes.map((n) => [n.id, n.title ?? n.id]));
   const lines = g.edges.map(([s, t]) => `- ${name.get(s)} → ${name.get(t)}`);
   // Cut to the nearest 400 pages, as the screen says under it.
@@ -2268,7 +2304,7 @@ async function triageSuggest(a: Args): Promise<string> {
     return `- ${i.target}: ${TRIAGE[g.decision][0]}${what} — ${g.why}${g.summary ? ` ${g.summary}` : ""}`;
   });
   return [
-    "Suggestions only, nothing changed. Keep is bookmarks keep; Archive and Remove take the bookmark off (bookmarks with page); Ingest into the wiki is edit_page making the page, and Make a task is capture with kind task (to the Inbox), each then taking the bookmark off with bookmarks with page, as the screen's buttons do.",
+    "Suggestions only, nothing changed. Keep is bookmarks keep; Archive and Remove take the bookmark off (bookmarks remove, by its target); Ingest into the wiki is edit_page making the page, and Make a task is capture with kind task (to the Inbox), each then taking the bookmark off with bookmarks remove, as the screen's buttons do.",
     ...lines,
   ].join("\n");
 }
@@ -2485,8 +2521,8 @@ async function healthIssue(a: Args): Promise<string> {
   const i = c?.items.find((x) => x.text === text);
   if (!c || !i) return `That isn't an issue under ${c?.title ?? want}: give its text as lint gives it.`;
   if (action === "create") {
-    const folder = str(a, "folder") === "concepts" ? "concepts" : "entities";
-    const p = await api.healthCreatePage(i.name!, folder);
+    // As the screen's Create: an entity page (a concept page is edit_page's, in wiki/concepts/).
+    const p = await api.healthCreatePage(i.name!, "entities");
     told(`made the page ${pageName(p)}`);
     return `Made ${p}. ⌘Z in the app undoes it; edit_page fills it in.`;
   }
@@ -2554,10 +2590,12 @@ async function contradictionsTool(a: Args, r: McpRequest): Promise<string> {
   // The screen's banners: why the last check failed, and the fixes it couldn't make.
   if (l.error) head.push(` It failed: ${l.error}`);
   if (l.failed) head.push(` ${l.failed === 1 ? "1 fix" : `${l.failed} fixes`} not made: ${l.failures.join("; ")}.`);
-  // The ones to decide: a real contradiction or an unclear one, not yet resolved or ignored.
+  // Every finding, in the screen's order (real ones by severity, then unclear, then the settled);
+  // the ones to decide are a real contradiction or an unclear one, not yet resolved or ignored.
   const settled = new Set(["compatible", "evolution", "resolved", "ignored"]);
-  const shown = a.all === true ? rep.items : rep.items.filter((i) => !i.verdict || !settled.has(i.verdict.verdict));
-  const left = rep.items.length - shown.length;
+  const shown = contradictionsOrder(rep.items);
+  const toDecide = shown.filter((i) => !i.verdict || !settled.has(i.verdict.verdict)).length;
+  const left = rep.items.length - toDecide;
   const page = pagedRows(
     a,
     shown,
@@ -2566,9 +2604,7 @@ async function contradictionsTool(a: Args, r: McpRequest): Promise<string> {
     20,
   );
   if (rep.items.length) {
-    head.push(
-      ` ${shown.length} to decide${left ? `; ${left} more not a conflict, newer superseding older, resolved or ignored (all lists them)` : ""}.`,
-    );
+    head.push(` ${toDecide} to decide${left ? `; ${left} not a conflict, newer superseding older, resolved or ignored` : ""}.`);
     if (shown.length) head.push(` ${page.head}.`);
   }
   // The judge's fix, and its change in Changes (the check makes or holds it, as the screen's The fix

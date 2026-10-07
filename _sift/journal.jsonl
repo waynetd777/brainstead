@@ -271,3 +271,4 @@
 {"commit": "26376716", "detail": "D-20261007-12 - MCP parity part 3: tool and argument shapes", "id": "j-20261007-141622-853b", "kind": "decision-ref", "ts": "2026-10-07T14:16:22Z", "who": "waynetd777@users.noreply.github.com"}
 {"commit": "e7bbc669", "detail": "D-20261007-13 - MCP parity part 4: the fourth audit's fixes and shapes", "id": "j-20261007-144917-6298", "kind": "decision-ref", "ts": "2026-10-07T14:49:17Z", "who": "waynetd777@users.noreply.github.com"}
 {"commit": "b2a1f885", "detail": "D-20261007-14 - MCP parity part 5: the fifth audit's fixes and shapes", "id": "j-20261007-151944-2eb1", "kind": "decision-ref", "ts": "2026-10-07T15:19:44Z", "who": "waynetd777@users.noreply.github.com"}
+{"commit": "af928d73", "detail": "D-20261007-15 - MCP parity part 6: the sixth audit's fixes and shapes", "id": "j-20261007-153635-529d", "kind": "decision-ref", "ts": "2026-10-07T15:36:35Z", "who": "waynetd777@users.noreply.github.com"}

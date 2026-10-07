@@ -147,9 +147,10 @@ export function meetingRunEnded(r: IngestRun, made: boolean): boolean {
     batchOf.delete(r.source);
     return false;
   }
+  // A note an unattended assistant started is ingested unattended too: its failing changes are held.
   if (f.ingest)
     void api
-      .ingestStart([note])
+      .ingestStart([note], r.trigger === "scheduled")
       .then(([id]) => ingesting.set(id, { transcript: r.source, note }))
       .catch((e) => finish(r.source, { note, ingested: false, trashed: false, error: `couldn't ingest it: ${String(e)}` }));
   else void trash(r.source, note, false);

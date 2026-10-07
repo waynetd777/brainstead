@@ -360,12 +360,12 @@ pub fn tools() -> Vec<Value> {
             "What's waiting in the Inbox to clarify (needs the app): captures from Outlook and Teams, Scratchpad thoughts and tasks under Other on the To Do list. Each row has its id (task:14, capture:…) for clarify_inbox. Clarified items aren't listed. With suggest, the model suggests what each of the first 20 rows shown is, as the Inbox's Suggest does; nothing changes, and accepting one is clarify_inbox with its values.",
             schema(json!({"suggest": {"type": "boolean", "description": "true asks the model what each of the first 20 rows shown is (a run on the user's account): becomes, text, project, context, effort, due and why, as clarify_inbox takes them."}}), &[])),
         tool("clarify_inbox", "Clarify an Inbox item", Change,
-            "Decides what an Inbox item is, as the Inbox screen does (needs the app); its edits to notes are recorded in Changes, where the user can revert them, and held together when one is held. next and waiting write a task (with project, under the project's Next actions, or its Waiting for for waiting, as the Inbox files them); someday writes a #someday-maybe task; project makes a new project from it; done ticks or clears it; reference files it in a note (note or new_note), or keeps a capture in Sources; ingest ingests a capture into the wiki; delete takes it out (a capture goes to the Trash).",
+            "Decides what an Inbox item is, as the Inbox screen does (needs the app); its edits to notes are recorded in Changes, where the user can revert them, and held together when one is held. next and waiting write a task (with project, under the project's Next actions, or its Waiting for for waiting, as the Inbox files them; next needs a project or a context, as the Inbox's form does); someday writes a #someday-maybe task; project makes a new project from it; done ticks or clears it; reference files it in a note (note or new_note), or keeps a capture in Sources; ingest ingests a capture into the wiki; delete takes it out (a capture goes to the Trash).",
             schema(json!({
                 "item": {"type": "string", "description": "The item's id from list_inbox, as in task:14."},
                 "becomes": {"type": "string", "enum": ["next", "waiting", "someday", "project", "done", "reference", "ingest", "delete"], "description": "What it is, as the Inbox's buttons name it."},
                 "text": {"type": "string", "description": "The task's text, if it should read differently: start with a verb."},
-                "project": {"type": "string", "description": "For next, waiting or someday: the project it belongs to, by name."},
+                "project": {"type": "string", "description": "For next, waiting or someday: the active project it belongs to, by name (the Inbox offers only active ones)."},
                 "context": {"type": "string", "description": "For next, waiting or someday: where or with what, as in calls or office."},
                 "effort": {"type": "string", "description": "15m, 1h…"},
                 "due": day("the task's due date."),
@@ -442,8 +442,8 @@ pub fn tools() -> Vec<Value> {
             "Lists the bookmarks as the sidebar shows them (needs the app): each one's title and the note it points at, or missing when that note is gone; one whose note hasn't changed in two weeks (and wasn't kept) says untouched N days, as Triage flags it. Bookmark, unbookmark or keep one with bookmarks; triage_bookmarks asks the model what to do with the ones given.",
             schema(json!({}), &[])),
         tool("bookmarks", "Bookmark a note", Destroy,
-            "With page, bookmarks a note or takes its bookmark off (needs the app), as a note's Bookmark does; with keep, keeps a bookmark as triage's Keep does, so it won't need triage for two weeks. Undoable with ⌘Z in the app. Only as the user asked; list_bookmarks lists them.",
-            schema(json!({"page": {"type": "string", "description": "A note's path to bookmark, or unbookmark when it has one."}, "keep": {"type": "string", "description": "A bookmark's target to keep: it won't need triage for two weeks."}}), &[])),
+            "With page, bookmarks a note or takes its bookmark off (needs the app), as a note's Bookmark does (a note, .md or .txt, that's there); with remove, takes a bookmark off by its target, as Triage's Archive and Remove do (one whose note is gone too); with keep, keeps a bookmark as triage's Keep does, so it won't need triage for two weeks. Undoable with ⌘Z in the app. Only as the user asked; list_bookmarks lists them.",
+            schema(json!({"page": {"type": "string", "description": "A note's path to bookmark, or unbookmark when it has one."}, "remove": {"type": "string", "description": "A bookmark's target to take off, from list_bookmarks."}, "keep": {"type": "string", "description": "A bookmark's target to keep: it won't need triage for two weeks."}}), &[])),
         tool("list_saved_searches", "Saved searches", Read,
             "Lists the saved searches, as Search's sidebar shows them (needs the app): each one's name, query and the layers it searches (all when none are given). Run one with search, its query and those layers, as clicking it does; save or delete one with saved_searches.",
             schema(json!({}), &[])),
@@ -501,7 +501,7 @@ pub fn tools() -> Vec<Value> {
             "The guided weekly review (needs the app): when it's scheduled and its suggestions are next prepared, the week it's for (on a Monday or Tuesday the week just ended, otherwise this one; a paused review keeps its week), its progress (steps done, the step it's on, notes and decisions so far), the path of the week's own review note once it's finished (Me. Weekly Review - YYYY-Www.md, what the user did and wrote; read it with read_section), and the prepared suggestions not yet accepted or skipped, grouped by step, each with its id, text, source and what accepting does. weekly_suggestion accepts or skips one; start_run weekly_prep prepares them again.",
             schema(json!({}), &[])),
         tool("weekly_suggestion", "Accept or skip a weekly review suggestion", Destroy,
-            "Accepts a prepared weekly review suggestion, doing what the Weekly review's button does (a task added, ticked, deferred or reworded, or an Inbox item clarified, undoable with ⌘Z in the app; a link added to a note, made as a change recorded in Changes, where the user can revert it); or skips it. Either way it's hidden from the review for good and an accepted one goes in the review's log (needs the app). Accept or skip only what the user asked for.",
+            "Accepts a prepared weekly review suggestion, doing what the Weekly review's button does (a task added, ticked, deferred or reworded, or an Inbox item clarified, undoable with ⌘Z in the app; a link added to a note, made as a change recorded in Changes, where the user can revert it); or skips it. Either way it's hidden from the review for good and an accepted one goes in the review's log (needs the app). Only in a review that's started (weekly_step start), as the screen shows them in one. Accept or skip only what the user asked for.",
             schema(json!({
                 "id": {"type": "string", "description": "The suggestion's id from weekly_review."},
                 "action": {"type": "string", "enum": ["accept", "skip"]}
@@ -549,18 +549,15 @@ pub fn tools() -> Vec<Value> {
                 "check": {"type": "string", "description": "With show_again: the check's id (orphans, stale-pages…); every check when left out."}
             }), &[])),
         tool("health_issue", "A Knowledge health issue's button", Destroy,
-            "Does what an issue's own button on Knowledge health does (needs the app), the issue named by its text as lint gives it. create (Create, on a missing page): writes the page as a new entity page, or a concept with folder concepts; link_to (Link to…, on a missing page): points every link to the missing page at an existing page, given as to; not_duplicates (Not duplicates, on a possible duplicate): the pair isn't listed again; move_to_trash (Move to the Trash, on an image nothing uses; restore_from_trash puts it back). A page made is undone with ⌘Z in the app; each relinked page is a change in Changes, with Revert. Only as the user asked.",
+            "Does what an issue's own button on Knowledge health does (needs the app), the issue named by its text as lint gives it. create (Create, on a missing page): writes the page as a new entity page, as Create does (a concept page is edit_page's, in wiki/concepts/); link_to (Link to…, on a missing page): points every link to the missing page at an existing page, given as to; not_duplicates (Not duplicates, on a possible duplicate): the pair isn't listed again; move_to_trash (Move to the Trash, on an image nothing uses; restore_from_trash puts it back). A page made is undone with ⌘Z in the app; each relinked page is a change in Changes, with Revert. Only as the user asked.",
             schema(json!({
                 "action": {"type": "string", "enum": ["create", "link_to", "not_duplicates", "move_to_trash"]},
                 "item": {"type": "string", "description": "The issue's text, as lint gives it."},
-                "to": {"type": "string", "description": "For link_to: the page the links should point at, by name or path."},
-                "folder": {"type": "string", "enum": ["entities", "concepts"], "description": "For create: default entities."}
+                "to": {"type": "string", "description": "For link_to: the page the links should point at, by name or path."}
             }), &["action", "item"])),
         tool("list_contradictions", "Contradictions", Read,
-            "The Contradictions screen's findings (needs the app): when the last check ran, and as the screen's banners say, why it failed or which fixes it couldn't make; then the findings still to decide (with all, every one), each with its id, the claims that clash (page, value, as-of date and quote), the model's verdict, and the judge's fix with its change in Changes (waiting there for the user, or made, with the change's id), as the screen's Judge's view and The fix is in Changes show them. Settle one or save the report with contradictions; start_run contradictions runs the check again.",
-            schema(json!({
-                "all": {"type": "boolean", "description": "Every finding, also those not a conflict, superseded, resolved or ignored; else only those to decide."}
-            }), &[])),
+            "The Contradictions screen's findings (needs the app): when the last check ran, and as the screen's banners say, why it failed or which fixes it couldn't make; then every finding, in the screen's order (real ones by severity, then unclear, then those settled), each with its id, the claims that clash (page, value, as-of date and quote), the model's verdict, and the judge's fix with its change in Changes (waiting there for the user, or made, with the change's id), as the screen's Judge's view and The fix is in Changes show them. Settle one or save the report with contradictions; start_run contradictions runs the check again.",
+            schema(json!({}), &[])),
         tool("contradictions", "Settle a contradiction", Change,
             "Acts on the Contradictions screen (needs the app): mark settles a finding as its buttons do (resolved: Mark resolved; ignored: Ignore, not a real contradiction, so it isn't flagged again); save writes the report as a new note, Contradictions - YYYY-MM-DD, as Save report as note does, recorded in Changes. list_contradictions lists the findings. Mark only as the user asked.",
             schema(json!({
@@ -596,7 +593,7 @@ pub fn tools() -> Vec<Value> {
             }), &["written_as", "correct_spelling"])),
         // The skill screens.
         tool("triage_bookmarks", "Triage bookmarks", Run,
-            "Asks the model what to do with each bookmark given, as the Triage screen does (needs the app), in its choices: Keep, Ingest into the wiki (with the page to make), Make a task (with the task), Archive, or Remove for one whose note is gone; nothing is changed. list_bookmarks lists them, with how long since each changed. Act on a suggestion as the user decides, as its button does: Keep is bookmarks keep; Archive and Remove are bookmarks with page (the bookmark taken off); Ingest into the wiki is edit_page making the page, and Make a task is capture with kind task (to the Inbox), each then taking the bookmark off with bookmarks with page, as the screen's do.",
+            "Asks the model what to do with each bookmark given, as the Triage screen does (needs the app), in its choices: Keep, Ingest into the wiki (with the page to make), Make a task (with the task), Archive, or Remove for one whose note is gone; nothing is changed. list_bookmarks lists them, with how long since each changed. Act on a suggestion as the user decides, as its button does: Keep is bookmarks keep; Archive and Remove are bookmarks remove (by the bookmark's target); Ingest into the wiki is edit_page making the page, and Make a task is capture with kind task (to the Inbox), each then taking the bookmark off with bookmarks remove, as the screen's do.",
             schema(json!({"items": {"type": "array", "minItems": 1, "description": "The bookmarks to ask about, as list_bookmarks gives them.", "items": schema(json!({
                 "target": {"type": "string", "description": "The bookmark's target, from list_bookmarks."},
                 "path": {"type": "string", "description": "The note it points at, from list_bookmarks."}
@@ -616,8 +613,8 @@ pub fn tools() -> Vec<Value> {
             "log.md, newest first: what Brainstead and the assistants changed in the vault (needs the app), a line an entry with its date, action and title. action keeps one kind of entry, as the Activity screen's action chips do; query keeps the entries with all its words in their title, description or action's label, as its search does, best matches first or with order latest the newest first. With date, the day picked as on the screen: the files changed that day, then that day's entries (action and query narrow the entries, not the files). detail adds each entry's time and description.",
             schema(json!({"date": day("the files changed that day and its entries."), "action": {"type": "string", "description": "Only entries of this action, as the log names it or its chip on the Activity screen does: ingest, review, trash…"}, "order": {"type": "string", "enum": ["best_match", "latest"], "description": "With query, the screen's order of search results: best_match (Best match, the default) or latest (Latest). Newest first without query."}, "detail": detail}), &[])),
         tool("graph", "Links around a page", Read,
-            "The pages linked to and from a page (by name, [[link]] or path), to a depth of 1 to 3 (needs the app), as the Graph screen draws it; the whole wiki without page. Like the screen it keeps the nearest 400 pages, and says so when there were more. It lists the links between them, one `from → to` a line. detail lists the pages too, each with its type, how far it is from the page and how many links it has.",
-            schema(json!({"page": page, "depth": {"type": "integer", "minimum": 1, "maximum": 3, "description": "How many links away to go. Default 2, as the Graph screen starts."}, "detail": detail}), &[])),
+            "The pages linked to and from a page (by name, [[link]] or path), to a depth of 1 to 3 (needs the app), as the Graph screen draws it; the whole wiki without page. Like the screen it keeps the nearest 400 pages, and says so when there were more. It lists the links between them, one `from → to` a line. hide leaves out kinds of page, as the screen's chips do (the page itself stays). detail lists the pages too, each with its type, how far it is from the page and how many links it has.",
+            schema(json!({"page": page, "depth": {"type": "integer", "minimum": 1, "maximum": 3, "description": "How many links away to go. Default 2, as the Graph screen starts."}, "hide": {"type": "array", "items": {"type": "string", "enum": ["Entities", "Sources and summaries", "Concepts", "Other wiki", "Notes", "Not written yet"]}, "description": "The kind chips turned off: those pages and their links are left out."}, "detail": detail}), &[])),
         tool("list_suggestions", "Suggested tasks and projects", Read,
             "Find tasks and projects' suggestions (needs the app): tasks and projects a read of the user's notes from the last 90 days found, each with the note and quote it rests on and its id, and how the last look went. Accept or skip one with suggestions; start_run find_tasks looks again.",
             schema(json!({}), &[])),
@@ -1015,11 +1012,13 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         // own actions, so a read tool never changes anything.
         "list_trash" => act("trash", acting(obj, name, &["list"], "list", &[])?),
         "restore_from_trash" => act("trash", acting(obj, name, &["restore"], "restore", &[])?),
-        "list_bookmarks" => act("bookmarks", without(obj, &["page", "keep"])),
+        "list_bookmarks" => act("bookmarks", without(obj, &["page", "keep", "remove"])),
         "bookmarks" => {
             let given = |k: &str| obj.get(k).and_then(Value::as_str).is_some_and(|v| !v.trim().is_empty());
-            if !given("page") && !given("keep") {
-                return Err(CallError::Tool("Give page (to bookmark or unbookmark a note) or keep. list_bookmarks lists them.".into()));
+            if !given("page") && !given("keep") && !given("remove") {
+                return Err(CallError::Tool(
+                    "Give page (to bookmark or unbookmark a note), keep or remove. list_bookmarks lists them.".into(),
+                ));
             }
             act("bookmarks", obj)
         }
@@ -1071,7 +1070,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         "chats" => act("chats", acting(obj, name, &["rename", "pin", "unpin", "trash"], "", &[])?),
         "health_issue" => act("health.issue", obj),
         "list_contradictions" => act("contradictions", acting(obj, name, &["list"], "list", &["id", "as"])?),
-        "contradictions" => act("contradictions", acting(obj, name, &["mark", "save"], "", &["all"])?),
+        "contradictions" => act("contradictions", acting(obj, name, &["mark", "save"], "", &[])?),
         "list_task_lists" => act("task_lists", acting(obj, name, &["list"], "list", &["name", "view", "context", "effort", "group"])?),
         "task_lists" => act("task_lists", acting(obj, name, &["save", "remove"], "", &[])?),
         "list_settings" => act("settings", acting(obj, name, &["get"], "get", &["key", "value"])?),

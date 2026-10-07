@@ -240,10 +240,22 @@ describe("MCP actions", () => {
     // Held: the capture stays in the Inbox until the user accepts.
     calls.length = 0;
     answers.changes_submit_many = outcomes(false);
-    const out = (await run("inbox.clarify", { item: "capture:1", becomes: "next" })) as string;
+    const out = (await run("inbox.clarify", { item: "capture:1", becomes: "next", context: "office" })) as string;
     expect(calls.some(([c]) => c === "inbox_capture_done")).toBe(false);
     expect(out).toContain("stays in the Inbox");
     await expect(run("inbox.clarify", { item: "task:99", becomes: "next" })).rejects.toThrow(/No Inbox item/);
+    // A next action with neither project nor context: refused, as the Inbox's form won't save it; waiting is fine.
+    calls.length = 0;
+    await expect(run("inbox.clarify", { item: "task:34", becomes: "next" })).rejects.toThrow(/needs a project or a context/);
+    expect(calls.some(([c]) => c === "changes_submit_many")).toBe(false);
+    answers.changes_submit_many = outcomes(true);
+    await run("inbox.clarify", { item: "task:34", becomes: "waiting" });
+    expect(submitted()[0].instruction).toMatchObject({ new: ["- [ ] ring the venue #waiting-for"] });
+    // Only an active project, as the Inbox's forms list them.
+    answers.projects_list = () => [{ name: "Acme rollout", path: "Project. Acme rollout.md", status: "on-hold" }];
+    await expect(run("inbox.clarify", { item: "task:34", becomes: "next", project: "Acme rollout" })).rejects.toThrow(
+      /isn't an active project/,
+    );
   });
 
   it("makes and changes projects through Changes", async () => {
@@ -476,6 +488,12 @@ describe("MCP actions", () => {
       await expect(run("weekly.suggestion", { id: "s0", action: "skip" })).rejects.toThrow(/skipped already/);
       await expect(run("weekly.suggestion", { id: "nope", action: "skip" })).rejects.toThrow(/No suggestion/);
     });
+
+    it("doesn't start a review to accept or skip one in", async () => {
+      answers.weekly_state_read = () => null;
+      await expect(run("weekly.suggestion", { id: "s1", action: "skip" })).rejects.toThrow(/isn't started.*weekly_step start/);
+      expect(calls.some(([c]) => c === "weekly_state_write" || c === "task_toggle")).toBe(false);
+    });
   });
 
   describe("tools for what the screens do", () => {
@@ -524,8 +542,9 @@ describe("MCP actions", () => {
 
     it("does an issue's own buttons, and Ignore only where the screen has it", async () => {
       answers.health_create_page = () => "wiki/concepts/Northwind.md";
-      await run("health.issue", { action: "create", item: "[[Northwind]]", folder: "concepts" });
-      expect(calls.find(([c]) => c === "health_create_page")![1]).toEqual({ name: "Northwind", folder: "concepts" });
+      await run("health.issue", { action: "create", item: "[[Northwind]]" });
+      // An entity page, as the screen's Create makes.
+      expect(calls.find(([c]) => c === "health_create_page")![1]).toEqual({ name: "Northwind", folder: "entities" });
       answers.links_resolve = () => ["wiki/entities/Acme.md"];
       answers.health_link_ghost = () => 1;
       expect(await run("health.issue", { action: "link_to", item: "[[Northwind]]", to: "Acme" })).toMatch(/in 1 page, each a change/);
@@ -610,10 +629,9 @@ describe("MCP actions", () => {
         verdict: { id: "c2", verdict: "compatible", severity: "low", summary: "Same role.", correct: "", fix: "", patch: null, judged: "" },
       });
       const open = (await run("contradictions")) as string;
-      expect(open).toMatch(/ 1 to decide; 1 more not a conflict/);
-      expect(open).toMatch(/Orbit App · launch date \(id c1\): contradiction, high/);
-      expect(open).not.toMatch(/Maya/);
-      expect(await run("contradictions", { all: true })).toMatch(/Maya · role/);
+      expect(open).toMatch(/ 1 to decide; 1 not a conflict/);
+      // Every finding, as the screen lists them: the real one first, the settled after.
+      expect(open).toMatch(/Orbit App · launch date \(id c1\): contradiction, high[\s\S]*Maya · role \(id c2\): compatible/);
       await run("contradictions", { action: "mark", id: "c1", as: "resolved" });
       expect(calls.find(([c]) => c === "contradictions_mark")![1]).toEqual({ id: "c1", verdict: "resolved" });
       await expect(run("contradictions", { action: "mark", id: "c1", as: "fixed" })).rejects.toThrow(/resolved/);
@@ -951,6 +969,15 @@ describe("MCP actions", () => {
       ];
       expect(await run("bookmarks")).toBe("2 bookmarks:\n- Plan (a.md) · untouched 20 days\n- Fresh (b.md)");
       expect(((await data("bookmarks")).items as Record<string, unknown>[])[0]).toMatchObject({ days: 20, stale: true });
+      // Remove by target, as Triage's Archive and Remove (a missing note's too); page only on a note that's there.
+      expect(await run("bookmarks", { remove: "Gone note" })).toContain("Took the bookmark Gone note off");
+      expect(calls.find(([c]) => c === "bookmark_remove")![1]).toEqual({ target: "Gone note" });
+      await expect(run("bookmarks", { page: "sources/deck.pdf" })).rejects.toThrow(/isn't a note/);
+      answers.doc_read = () => {
+        throw new Error("not found");
+      };
+      await expect(run("bookmarks", { page: "Gone note.md" })).rejects.toThrow(/no note at Gone note\.md.*remove/);
+      expect(calls.some(([c]) => c === "bookmark_toggle")).toBe(false);
       answers.smart_lists = () => [
         { name: "Launch", query: "soft launch +Orbit", layers: [] },
         { name: "Budget", query: "budget", layers: [] },
@@ -1060,6 +1087,11 @@ describe("MCP actions", () => {
       });
       expect(await run("graph")).not.toMatch(/Pages:/);
       expect(await run("graph", { detail: true })).toMatch(/Pages:\n- A · entity · wiki · 0 away · 3 links\n- B · wiki · 1 away · 1 links/);
+      // The kind chips: Other wiki off leaves B and its link out.
+      const hid = (await run("graph", { hide: ["Other wiki"] })) as string;
+      expect(hid).toMatch(/^1 pages/);
+      expect(hid).not.toMatch(/→/);
+      await expect(run("graph", { hide: ["Wiki"] })).rejects.toThrow(/Graph screen's chips/);
       // A page by its name or link, resolved to its path first; two links away unless said, as the screen.
       expect(calls.filter(([c]) => c === "graph").map(([, x]) => x)).toContainEqual({ center: null, depth: 2 });
       calls.length = 0;
@@ -1276,6 +1308,8 @@ describe("MCP actions", () => {
       await expect(run("fix_name", { ...args, files: ["Idea. C.md"] })).rejects.toThrow(
         /Not among the files.*They are: Idea\. A\.md, Idea\. B\.md/,
       );
+      // Spelt the same: nothing to fix, as the screen plans nothing.
+      await expect(run("fix_name", { written_as: "Lena", correct_spelling: " Lena " })).rejects.toThrow(/spelt the same/);
       // Remember is on unless false, with Where it's from; Files to leave alone go to the plan.
       const req = () => calls.filter(([c]) => c === "fixname_apply").at(-1)![1]!.req as Record<string, unknown>;
       expect(req()).toMatchObject({ skipSubstitution: false, guards: [], note: "" });
