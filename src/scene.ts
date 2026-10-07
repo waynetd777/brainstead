@@ -5,7 +5,9 @@
 // Screenshot mode (tools/screenshots.py, tools/screenshots/scenes.json): BRAINSTEAD_SCENE holds a
 // scene as JSON, and the window sets it up and saves nothing.
 
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { focusMode } from "./focus";
+import { imageView } from "./ImageViewer";
 import { toast } from "./Toast";
 import { fixNameOpen } from "./FixName";
 import { shortcutsOpen } from "./Shortcuts";
@@ -54,6 +56,8 @@ export interface Scene {
   view?: Record<string, unknown>;
   /** For "ask": show a sample chat. */
   chat?: boolean;
+  /** An image in the vault (its path) shown full size over the window. */
+  image?: string;
   /** For "weekly": sample suggestions for the week, instead of preparing them. */
   weekprep?: boolean;
   /** A task's menu open, by its `path:line` (the task list's key). */
@@ -167,6 +171,7 @@ export function applyScene(sc: Scene) {
   if (sc.dialog === "shortcuts") shortcutsOpen.set(true);
   if (sc.dialog === "fix-name") fixNameOpen.set({ wrong: sc.q, right: sc.title });
   if (sc.weekprep) scenePrep.set(true);
+  if (sc.image) imageView.set({ url: convertFileSrc(`${(settings.get().vaultPath ?? "").replace(/\/$/, "")}/${sc.image}`), alt: sc.image });
   if (sc.chat) ask.set({ chats: [sampleChat()], active: "scene" });
   if (sc.help) helpOpen.set(sc.help);
   if (sc.reading) readingScene.set(sc.reading);

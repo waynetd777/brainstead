@@ -22,6 +22,7 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { api } from "../api";
+import { imageView } from "../ImageViewer";
 import { nav, openDoc } from "../nav";
 import { rehypeSearchHighlight } from "./highlight";
 import { Mermaid } from "./Mermaid";
@@ -161,6 +162,9 @@ function VaultImage({
       // CSS keeps it in proportion (height: auto); a height alone still sizes it.
       style={height && !width ? { height: `${String(height).replace(/px$/, "")}px` } : undefined}
       loading="lazy"
+      className="zoomable"
+      title="Show the image full size"
+      onClick={(e) => imageView.set({ url: e.currentTarget.currentSrc || url, alt })}
       onError={(e) => {
         // Not under the vault: try beside the note.
         const beside = "path" in where && dir ? convertFileSrc(join(root, `${dir}/${where.path}`)) : null;

@@ -108,6 +108,12 @@
     "path": "Idea. Images.md"
   },
   {
+    "name": "image-full",
+    "screen": "doc",
+    "path": "Idea. Images.md",
+    "image": "images/diagram.png"
+  },
+  {
     "name": "wiki-page",
     "screen": "doc",
     "path": "wiki/entities/Orbit App.md",

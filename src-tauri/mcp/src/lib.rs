@@ -690,7 +690,7 @@ pub fn tools() -> Vec<Value> {
                 "reason": reason
             }), &["name", "content"])),
         tool("open", "Open Brainstead", Read,
-            "Opens Brainstead (starting it when it isn't running) and brings its window to the front, on a screen, a Settings pane, a note or a search when given; it changes nothing. meeting (Meeting note from a transcript) opens on transcript when given, reply (Draft a reply) on thread, doc_check (Check a document) on document, ready for the user to go on there; graph with page opens Graph around that page; focus opens the page (or the one showing) in focus mode, as ⌘. does. Only when the user asks to see something.",
+            "Opens Brainstead (starting it when it isn't running) and brings its window to the front, on a screen, a Settings pane, a note or a search when given; it changes nothing. meeting (Meeting note from a transcript) opens on transcript when given, reply (Draft a reply) on thread, doc_check (Check a document) on document, ready for the user to go on there; graph with page opens Graph around that page; focus opens the page (or the one showing) in focus mode, as ⌘. does; image shows an image full size over the window, as a click on one in a note does. Only when the user asks to see something.",
             schema(json!({
                 "screen": {"type": "string", "enum": ["today", "inbox", "tasks", "projects", "weekly_review", "changes", "ask", "search", "notes", "wiki", "sources", "templates", "graph", "knowledge_health", "contradictions", "activity", "triage", "meeting", "reply", "doc_check", "trash", "settings"], "description": "The screen, as the sidebar or the command palette names it; the one showing when left out."},
                 "pane": {"type": "string", "enum": ["general", "notes", "vault", "assistants", "jobs", "capture", "permissions", "about"], "description": "With screen settings: the pane."},
@@ -700,7 +700,8 @@ pub fn tools() -> Vec<Value> {
                 "transcript": {"type": "string", "description": "With screen meeting: the transcript's path (list_transcripts)."},
                 "thread": {"type": "string", "description": "With screen reply: the email thread's path in sources/, as draft_reply takes it."},
                 "document": {"type": "string", "description": "With screen doc_check: the document to check, by path, as doc_check takes it."},
-                "focus": {"type": "boolean", "description": "With page, or a note, wiki page or source showing: focus mode (⌘.), just the text across the window with Read aloud, Text size and Exit focus above it; false leaves it."}
+                "focus": {"type": "boolean", "description": "With page, or a note, wiki page or source showing: focus mode (⌘.), just the text across the window with Read aloud, Text size and Exit focus above it; false leaves it."},
+                "image": {"type": "string", "description": "An image in the vault, by its name (diagram.png) or path (images/diagram.png): shown full size over the window, as a click on it in a note shows it. Escape closes it. Not with the others."}
             }), &[])),
         tool("add_example_notes", "Add the example notes", Change,
             "Settings › Vault's Add the example notes (needs the app): the notes a new vault is made with, which show what Brainstead can do, each added as a new note recorded in Changes, where the user can revert it; only those that aren't in the vault, and refused when they're all there already, as the button says. Nothing already there is changed. The example templates are held for the user to accept, as every change to Templates/ is. Only when the user asks.",

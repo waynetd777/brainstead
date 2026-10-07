@@ -25,6 +25,8 @@ export interface EditorHooks {
   pickDate?: (kind: ShorthandKind, at: { left: number; top: number; bottom: number }, insert: (date: string) => void) => void;
   /** A URL for an image the note embeds (`![[pic.png]]`, `![](images/pic.png)`), or null. */
   imageUrl?: (src: string) => Promise<string | null>;
+  /** An image's expand button: show it full size. */
+  openImage?: (url: string, alt: string) => void;
   /** ⌘-click on a link: a wikilink target (`Note#Heading`) or a URL. */
   openLink?: (target: string, wiki: boolean) => void;
   /** Images pasted into the editor; resolves to the markdown to insert. */

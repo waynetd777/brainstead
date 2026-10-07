@@ -23,6 +23,7 @@ import { findTask, Listing, runAction, taskLineOut } from "./mcpActions";
 import { settings } from "./store";
 import { focusMode, startFocus } from "./focus";
 import { nav } from "./nav";
+import { imageView } from "./ImageViewer";
 import { followUp } from "./Ingest";
 
 const row = (over: Partial<TaskRow>): TaskRow => ({
@@ -789,6 +790,17 @@ describe("MCP actions", () => {
       expect(await run("open", { page: "[[Orbit App]]" })).toBe("Brainstead is open on Orbit App.");
       answers.links_resolve = () => [null];
       await expect(run("open", { page: "Nowhere" })).rejects.toThrow(/no page called Nowhere/);
+    });
+
+    it("shows an image full size, as a click on it does", async () => {
+      settings.update({ vaultPath: "/v" });
+      answers.asset_find = () => "images/diagram.png";
+      expect(await run("open", { image: "![[diagram.png|400]]" })).toBe("Brainstead shows images/diagram.png full size.");
+      expect(imageView.get()).toEqual({ url: "/v/images/diagram.png", alt: "diagram.png" });
+      imageView.set(null);
+      answers.asset_find = () => null;
+      await expect(run("open", { image: "nowhere.png" })).rejects.toThrow(/no image called nowhere.png/);
+      await expect(run("open", { image: "Orbit App" })).rejects.toThrow(/no image called Orbit App/);
     });
 
     it("opens a page in focus mode, which leaving the document ends", async () => {

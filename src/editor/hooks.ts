@@ -8,6 +8,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../api";
+import { imageView } from "../ImageViewer";
 import { suggest } from "../Capture";
 import { imageSource, safeDecode } from "../md/Markdown";
 import { localToday } from "../md/taskQuery";
@@ -51,6 +52,9 @@ export function appHooks(path: string, root: string, pickDate?: EditorHooks["pic
         return p ? convertFileSrc(join(root, p)) : null;
       }
       return convertFileSrc(join(root, dir && !w.path.includes("/") ? `${dir}/${w.path}` : w.path));
+    },
+    openImage(url, alt) {
+      imageView.set({ url, alt });
     },
     openLink(target, wiki) {
       if (!wiki) {

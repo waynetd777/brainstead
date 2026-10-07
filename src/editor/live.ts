@@ -56,7 +56,8 @@ function activeLines(state: EditorState): Set<number> {
 
 /** A drawn image. While the note can be edited, hovering it shows a frame with a handle at each
  *  corner, which resizes it (its width written into its markdown, `![[pic.png|400]]`), and a
- *  button that removes it from the note. `text` is its markdown, to find it again. */
+ *  button that removes it from the note. A button shows it full size, in Edit or not. `text` is
+ *  its markdown, to find it again. */
 class ImageWidget extends WidgetType {
   constructor(
     readonly src: string,
@@ -85,6 +86,24 @@ class ImageWidget extends WidgetType {
         span.textContent = alt || this.src;
       }
     });
+    if (this.hooks.openImage) {
+      const full = document.createElement("button");
+      full.type = "button";
+      full.className = "cm-img-full";
+      full.title = "Show the image full size";
+      full.setAttribute("aria-label", "Show the image full size");
+      full.innerHTML = iconSvg("expand", 14);
+      full.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      full.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (img.src) this.hooks.openImage?.(img.currentSrc || img.src, alt);
+      });
+      span.appendChild(full);
+    }
     if (!view.state.facet(EditorView.editable) || view.state.readOnly) return span;
     span.classList.add("edit");
     // Where its markdown is now, or null when it's gone or changed.
@@ -152,7 +171,7 @@ class ImageWidget extends WidgetType {
   }
   ignoreEvent(e: Event) {
     // The handles and the button handle their own.
-    return !!(e.target as HTMLElement).closest?.(".cm-img-h, .cm-img-del");
+    return !!(e.target as HTMLElement).closest?.(".cm-img-h, .cm-img-del, .cm-img-full");
   }
 }
 

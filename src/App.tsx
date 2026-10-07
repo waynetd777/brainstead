@@ -17,6 +17,7 @@ import { WeeklyScreen } from "./Weekly";
 import { RevertConflict, ReviewScreen } from "./Review";
 import { FollowUp } from "./Ingest";
 import { FixNameHost } from "./FixName";
+import { ImageViewerHost } from "./ImageViewer";
 import { ShortcutsHost } from "./Shortcuts";
 import { HelpDrawer, startHelpMenu } from "./help/HelpDrawer";
 import { startMcpBridge } from "./mcpActions";
@@ -177,6 +178,7 @@ export default function App({ scene }: { scene: Scene | null }) {
       <NoteDialogs />
       <FixNameHost />
       <ShortcutsHost />
+      <ImageViewerHost />
       <HelpDrawer />
       <QueryBuilderHost />
       <SpellMenuHost />

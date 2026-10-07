@@ -22,7 +22,7 @@ Click the speaker on the top bar, or press ⇧⌘P, and Brainstead reads the not
 
 - The toolbar formats text, lists, tasks, quotes, code, tables, links and images, and inserts today's date or a query.
 - `[[` links a note and `#` adds a tag, both suggested from the vault as you type part of a name (`[[` alone lists your newest notes, and `#calls` finds `#context/calls`); ⌘-click a link to open it.
-- Paste or drop an image and it's saved in `images/` and embedded. In Edit, hover an image to resize it by a corner handle (its width is written as `![[pic.png|400]]`, which View, Export PDF and other markdown editors honour; an `<img>` tag's width is changed in the tag) or remove it from the note with its trash button; the file itself stays. Double-click an image to edit its markdown.
+- Paste or drop an image and it's saved in `images/` and embedded. In Edit, hover an image to resize it by a corner handle (its width is written as `![[pic.png|400]]`, which View, Export PDF and other markdown editors honour; an `<img>` tag's width is changed in the tag) or remove it from the note with its trash button; the file itself stays. Double-click an image to edit its markdown. Click an image in View, or its expand button in Edit, to see it full size over the window, fitted to it; a click shows it at its actual size, and Escape or a click beside it closes it.
 - In a task, `due:`, `defer:`, `start:` and `created:` followed by a word (tomorrow, fri, +3d) become dates; a date picker opens as soon as you type the colon.
 - Spelling and grammar are checked as you type, in the English you choose.
 - ⌘F finds, and in Edit and Source replaces, one match or all.

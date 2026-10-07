@@ -10,7 +10,7 @@
 // out here or by the MCP server, then made or held by the rule in src-tauri/src/changes.rs, each
 // recorded in Changes with Revert.
 
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import moment from "moment";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -87,6 +87,8 @@ import {
 import { DOC_ACCENTS, DOC_STYLES, docDefaults, lookOf, withOwnLook } from "./docLook";
 import { loadVoices, speechSettingsChanged, voiceLabel, voices } from "./speech/player";
 import { applyReadSize, applyTheme, READ_SIZE, settings } from "./store";
+import { imageView } from "./ImageViewer";
+import { IMAGE_EXT } from "./md/wikilinks";
 import { nav, place, Screen, SettingsPane } from "./nav";
 import { focusMode } from "./focus";
 import { DEFAULT_SCHEDULE, DEFAULT_WEEKLY_REVIEW } from "./Jobs";
@@ -3146,8 +3148,18 @@ const SCREEN_IDS: Record<string, Screen> = {
 /** The screens that open on a file of their own, and the argument that names it (as their tools name it). */
 const SCREEN_FILE: Partial<Record<Screen, string>> = { meeting: "transcript", reply: "thread", doccheck: "document" };
 
-/** open: the window to the front, on a screen, a Settings pane, a note or a search. */
+/** open: the window to the front, on a screen, a Settings pane, a note or a search; or an image
+ *  full size over it, as a click on one in a note shows it. */
 async function openApp(a: Args): Promise<string> {
+  const image = str(a, "image")?.trim();
+  if (image) {
+    const name = image.replace(/^!?\[\[|\]\]$/g, "").split("|")[0];
+    const p = IMAGE_EXT.test(name) ? await api.assetFind(name).catch(() => null) : null;
+    if (!p) throw new Error(`There's no image called ${image} in the vault.`);
+    await invoke("main_show", { screen: null });
+    imageView.set({ url: convertFileSrc(`${(settings.get().vaultPath ?? "").replace(/\/$/, "")}/${p}`), alt: pageName(p) });
+    return `Brainstead shows ${p} full size.`;
+  }
   const page = str(a, "page")?.trim();
   const name = str(a, "screen");
   const screen = name ? (SCREEN_IDS[name] ?? (name as Screen)) : null;
