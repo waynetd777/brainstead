@@ -2689,6 +2689,19 @@ button.rrow.rlink:hover {
 .csugg button.on {
   background: var(--accent-soft);
 }
+
+/* Knowledge health's Link to…: the wiki's pages under the box as you type (in the dialog's flow,
+   which clips anything floating out of it). */
+.csugg.pagelist {
+  margin: 6px 0 0;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.csugg.pagelist button {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
 .cardcap {
   overflow: visible;
 }

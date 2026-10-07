@@ -8,8 +8,9 @@
 // (cross-links, `updated:` dates, log lines, system notes' headers) apply straight away and can be undone; anything that
 // needs judgement goes to Ask, whose changes are listed in Changes.
 
-import { useEffect, useState } from "react";
-import { api, CurrentStateRun, LintCheck, LintItem, LintReport } from "./api";
+import { useEffect, useMemo, useState } from "react";
+import { api, CurrentStateRun, FileSummary, LintCheck, LintItem, LintReport } from "./api";
+import { linkMatches } from "./Capture";
 import { askWith } from "./askState";
 import { ingest } from "./Ingest";
 import { Icon } from "./icons";
@@ -705,14 +706,36 @@ function SideCards({ r }: { r: LintReport }) {
 }
 
 /** Points a ghost link's links at a page that exists, one change per page (revertable in Changes). */
-function LinkGhost({ item, onClose }: { item: LintItem; onClose: () => void }) {
+export function LinkGhost({ item, onClose }: { item: LintItem; onClose: () => void }) {
   const [name, setName] = useState("");
   const [working, setWorking] = useState(false);
+  // The wiki's pages, matched as you type as `[[` matches them in Capture; the one picked is linked.
+  const [pages, setPages] = useState<FileSummary[]>([]);
+  const [picked, setPicked] = useState<FileSummary | null>(null);
+  const [hi, setHi] = useState(0);
+  const [listOpen, setListOpen] = useState(true);
+  useEffect(() => {
+    let live = true;
+    api
+      .filesList("wiki")
+      .then((f) => live && setPages(f.filter((p) => !/^wiki\/(index|log)\.md$/.test(p.path))))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+  const matches = useMemo(() => (name.trim() ? linkMatches(pages, name, 8) : []), [pages, name]);
+  const showList = listOpen && !picked && matches.length > 0;
+  const pick = (f: FileSummary) => {
+    setPicked(f);
+    setName(f.title);
+    setListOpen(false);
+  };
   const go = async () => {
     if (working) return;
     setWorking(true);
     try {
-      const [to] = await api.linksResolve([name.trim()]);
+      const [to] = picked ? [picked.path] : await api.linksResolve([name.trim()]);
       if (!to) return toast(`There's no page called ${name.trim()}.`, undefined, "bad");
       const n = await api.healthLinkGhost(item.name!, to, item.pages ?? []);
       onClose();
@@ -730,15 +753,56 @@ function LinkGhost({ item, onClose }: { item: LintItem; onClose: () => void }) {
         <p className="muted small">
           On each page linking it, [[{item.name}]] becomes a link to the page you name, still reading “{item.name}”. Revertable in Changes.
         </p>
-        <label className="inp">
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void go()}
-            placeholder="Orbit App"
-          />
-        </label>
+        <div className="pagepick">
+          <label className="inp">
+            <input
+              autoFocus
+              role="combobox"
+              aria-expanded={showList}
+              aria-controls="linkghost-pages"
+              aria-label="The page to link to"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setPicked(null);
+                setHi(0);
+                setListOpen(true);
+              }}
+              onKeyDown={(e) => {
+                if (showList && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+                  e.preventDefault();
+                  setHi((h) => (h + (e.key === "ArrowDown" ? 1 : matches.length - 1)) % matches.length);
+                } else if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (showList) pick(matches[hi]);
+                  else void go();
+                }
+              }}
+              placeholder="Search the wiki's pages"
+            />
+          </label>
+          {showList && (
+            <ul className="csugg pagelist" id="linkghost-pages" role="listbox" aria-label="Wiki pages">
+              {matches.map((f, i) => (
+                <li key={f.path}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={i === hi}
+                    className={i === hi ? "on" : ""}
+                    title={`Link to ${f.path}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onMouseEnter={() => setHi(i)}
+                    onClick={() => pick(f)}
+                  >
+                    <span>{f.title}</span>
+                    <span className="faint small mono">{f.path.replace(/^wiki\//, "").replace(/\/[^/]+$/, "")}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <div className="row">
           <span className="grow" />
           <button type="button" className="btn lg" title="Close without changing anything" onClick={onClose}>

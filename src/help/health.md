@@ -23,7 +23,7 @@ Hover a check's name for what it looks for. Click a check to see its issues, and
 Some issues have one right answer, and Brainstead can fix them without asking: adding a missing `[[ ]]` link at the first mention, setting `updated:` to the file's date, adding a missing line to `log.md`, and putting back a system note's header as it was. Click **Fix** on one issue, or **Fix safe issues** in the top bar for all of them. Each fix can be undone with `⌘Z`.
 
 ## Deal with the rest
-- **Missing pages**: **Create** makes the page in `wiki/entities/` (from `Templates/Wiki page.md` if you have one) and opens it; **Link to…** points the missing link at an existing page, on each page that links it (listed in Changes, with Revert).
+- **Missing pages**: **Create** makes the page in `wiki/entities/` (from `Templates/Wiki page.md` if you have one) and opens it; **Link to…** points the missing link at an existing page, on each page that links it: type part of the page's name and pick it from the wiki pages listed as you type (↑ ↓ and ↩ work too) (listed in Changes, with Revert).
 - **Possible duplicates**: **Open the other** compares them; **Not duplicates** stops the pair being flagged.
 - **Anything else** (an orphan page, a stale page, a broken source…): **Ignore** stops listing it, and counting it, until its page changes (a claim with no citation, until its own line changes). The check then says how many it's ignoring; **Show again** lists them again.
 - **Images nothing uses**: **Move to the Trash**, after asking. You can restore them from the Trash.
