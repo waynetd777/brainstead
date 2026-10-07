@@ -8913,7 +8913,7 @@ html.tray-view body {
 /* The task menu, two columns wide where there's room (TaskList.tsx TaskMenu). */
 .tmenu.wide .tmcols {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 4px 14px;
 }
 .tmenu:not(.wide) .tmcols,
@@ -8932,6 +8932,16 @@ html.tray-view body {
 .tmenu:not(.wide) .tmacts {
   display: contents;
 }
+
+/* A long name (a project's) is cut to the column, in full in its tooltip. */
+.tmenu .qchips .chip.pname {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  line-height: 20px;
+}
+
 .tmenu .tmacts button {
   min-width: 0;
   overflow: hidden;

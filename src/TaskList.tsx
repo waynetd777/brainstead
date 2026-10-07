@@ -613,7 +613,7 @@ function GtdMenu({ t, onClose }: { t: TaskRow; onClose: () => void }) {
               <button
                 key={p.path}
                 type="button"
-                className={`chip f ${t.project === p.path ? "on" : ""}`}
+                className={`chip f pname ${t.project === p.path ? "on" : ""}`}
                 title={t.project === p.path ? `Already part of ${p.name}` : `Make it part of the project ${p.name}`}
                 onClick={() => run({ project: p.path })}
               >
@@ -628,7 +628,7 @@ function GtdMenu({ t, onClose }: { t: TaskRow; onClose: () => void }) {
               <button
                 key={p.path}
                 type="button"
-                className={`chip f ${t.project === p.path ? "on" : ""}`}
+                className={`chip f pname ${t.project === p.path ? "on" : ""}`}
                 title={t.project === p.path ? `Already part of ${p.name}` : `Make it part of the project ${p.name}`}
                 onClick={() => run({ project: p.path })}
               >
