@@ -1820,7 +1820,7 @@ details.callout[open] .callout-chev {
 .hljs-title,
 .hljs-section,
 .hljs-name {
-  color: var(--l-journal);
+  color: var(--pie-6);
 }
 
 /* task query blocks */
@@ -4814,7 +4814,7 @@ button.rnhead {
 }
 .cm-tp-code .tok-propertyName,
 .cm-tp-code .tok-definition {
-  color: var(--l-journal);
+  color: var(--pie-6);
 }
 .cm-tp-comment {
   font-family: var(--mono);
