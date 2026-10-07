@@ -78,3 +78,8 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 debug = false
 opt-level = 2
+
+# The core's checks, index and parsers run over the whole vault: unoptimised, Knowledge health's
+# rerun takes seconds in the dev build (7 s against 1 s on a 2,000-file vault).
+[profile.dev.package.brainstead-core]
+opt-level = 2
