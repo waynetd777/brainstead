@@ -13,6 +13,7 @@ export type NoteMenuAction =
   | "view"
   | "edit"
   | "source"
+  | "focus"
   | "copy-markdown"
   | "copy-rich"
   | "copy-path"

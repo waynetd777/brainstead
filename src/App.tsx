@@ -42,6 +42,7 @@ import { undoLast } from "./taskModel";
 import { TodayScreen } from "./Today";
 import { SettingsScreen } from "./Settings";
 import { HOTKEYS, Sidebar } from "./Sidebar";
+import { focusMode, startFocus } from "./focus";
 import { hideSplash } from "./splash";
 import { permissions } from "./state";
 import { settings, useStore } from "./store";
@@ -85,6 +86,8 @@ export default function App({ scene }: { scene: Scene | null }) {
   const p = useStore(permissions);
   const { place: here } = useStore(place);
   const [palette, setPalette] = useState(!!scene?.palette);
+  const focused = useStore(focusMode) && here.screen === "doc";
+  useEffect(() => startFocus(), []);
 
   useEffect(() => {
     if (p) hideSplash();
@@ -157,8 +160,8 @@ export default function App({ scene }: { scene: Scene | null }) {
     );
   }
   return (
-    <div className="shell">
-      <Sidebar onSearch={() => setPalette(true)} />
+    <div className={`shell${focused ? " focus" : ""}`}>
+      {!focused && <Sidebar onSearch={() => setPalette(true)} />}
       {(() => {
         const S = SCREENS[here.screen];
         return (

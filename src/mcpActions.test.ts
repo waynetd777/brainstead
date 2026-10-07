@@ -21,6 +21,8 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) })
 import type { InboxItem, TaskRow } from "./api";
 import { findTask, Listing, runAction, taskLineOut } from "./mcpActions";
 import { settings } from "./store";
+import { focusMode, startFocus } from "./focus";
+import { nav } from "./nav";
 import { followUp } from "./Ingest";
 
 const row = (over: Partial<TaskRow>): TaskRow => ({
@@ -787,6 +789,20 @@ describe("MCP actions", () => {
       expect(await run("open", { page: "[[Orbit App]]" })).toBe("Brainstead is open on Orbit App.");
       answers.links_resolve = () => [null];
       await expect(run("open", { page: "Nowhere" })).rejects.toThrow(/no page called Nowhere/);
+    });
+
+    it("opens a page in focus mode, which leaving the document ends", async () => {
+      const off = startFocus();
+      answers.links_resolve = () => ["wiki/entities/Orbit App.md"];
+      expect(await run("open", { page: "Orbit App", focus: true })).toBe("Brainstead is open on Orbit App in focus mode.");
+      expect(focusMode.get()).toBe(true);
+      expect(await run("open", { focus: false })).toBe("Focus mode is off.");
+      expect(focusMode.get()).toBe(false);
+      await expect(run("open", { screen: "inbox", focus: true })).rejects.toThrow(/Focus mode shows a note/);
+      focusMode.set(true);
+      nav.go("inbox");
+      expect(focusMode.get()).toBe(false);
+      off();
     });
 
     it("pages every list the same way", async () => {

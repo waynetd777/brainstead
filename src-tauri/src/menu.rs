@@ -24,6 +24,7 @@ const ITEMS: &[(&str, &str, Option<&str>)] = &[
     ("note:view", "View", Some("CmdOrCtrl+1")),
     ("note:edit", "Edit", Some("CmdOrCtrl+2")),
     ("note:source", "Source", Some("CmdOrCtrl+3")),
+    ("note:focus", "Focus Mode", Some("CmdOrCtrl+.")),
     ("-", "", None),
     ("note:copy-markdown", "Copy Markdown", None),
     ("note:copy-rich", "Copy Rich Text", None),

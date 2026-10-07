@@ -25,6 +25,7 @@ import { DatePicker } from "./DatePicker";
 import { LookPicker } from "./LookPicker";
 import type { ShorthandKind } from "./md/dates";
 import { NoteMenuAction, setNoteMenu } from "./noteMenu";
+import { focusMode } from "./focus";
 import { SpeechBlock, speechBlocks, spokenIntro } from "./speech/blocks";
 import { player, readingScene, skipReading, startReading, stillReading, stopReading, toggleReading, voices } from "./speech/player";
 import { PlayerBar, ReadAloudButton, SpeakLayer } from "./speech/ReadAloud";
@@ -300,6 +301,16 @@ export function DocScreen() {
 
   const s = doc?.meta.summary;
   const look = useDocLook(path);
+  const focus = useStore(focusMode) && !!s;
+  // Esc leaves focus mode, unless something else took it (a dialog, the find bar, a suggestion list).
+  useEffect(() => {
+    if (!focus) return;
+    const k = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) focusMode.set(false);
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [focus]);
   const richEl = () => (s && isMarkdown(s.path) ? readEl.current : null);
 
   // Ticking a task in View: the one-line write the task screens make (⌘Z undoes it), or, with
@@ -324,6 +335,7 @@ export function DocScreen() {
     if (!s) return;
     if (a === "save") return void save();
     if (a === "read-aloud") return readAloudRef.current();
+    if (a === "focus") return focusMode.set(!focusMode.get());
     if (a === "view" || a === "edit" || a === "source") return canEdit && setMode(a === "view" ? "read" : a === "edit" ? "live" : "source");
     if (a === "discard-draft") {
       if (session) {
@@ -466,159 +478,191 @@ export function DocScreen() {
       live = false;
     };
   }, [sourceNames, path, vv]);
-  return (
-    <main className="main" ref={mainEl}>
-      <TopBar
-        title={s?.title ?? path.split("/").pop() ?? ""}
-        sub={s ? LAYER_LABEL[s.layer] : undefined}
-        ask={
-          s && (isMarkdown(s.path) || s.layer === "source")
-            ? { about: `“${s.title}”`, prompt: `About ${askLink(s.path)}: `, sm: true }
-            : undefined
+  const readAloudButton = s ? (
+    isMarkdown(s.path) && voiceList.length ? (
+      <ReadAloudButton path={s.path} onStart={() => readAloud()} />
+    ) : (
+      <span
+        title={
+          isMarkdown(s.path)
+            ? "Read aloud needs a system voice, and none was found"
+            : "Read aloud reads notes and pages, not this kind of file"
         }
       >
-        {dirty && (
-          <button type="button" className="btn sm pri" onClick={() => void save()} disabled={view?.saving} title="Save (⌘S)">
-            {view?.saving ? "Saving…" : "Save"}
+        <button type="button" className="ibtn" aria-label="Read aloud" disabled>
+          <Icon name="speaker" />
+        </button>
+      </span>
+    )
+  ) : null;
+  const textSizeButton = s ? (
+    <TextSizeButton off={isMarkdown(s.path) ? undefined : "Text size applies to notes and pages, not this kind of file"} />
+  ) : null;
+
+  return (
+    <main className={`main${focus ? " focused" : ""}`} ref={mainEl}>
+      {focus && s ? (
+        <div className="top drag focusbar" data-tauri-drag-region>
+          <div className="crumbs focustitle">
+            <b>{s.title}</b>
+          </div>
+          {readAloudButton}
+          {textSizeButton}
+          <button type="button" className="btn sm" title="Leave focus mode (Esc or ⌘.)" onClick={() => focusMode.set(false)}>
+            Exit focus<span className="kbd">esc</span>
           </button>
-        )}
-        {isWiki && s && (
-          <>
-            <button
-              type="button"
-              className="btn sm"
-              disabled={!cites.listed.length}
-              title={
-                cites.listed.length ? "Ingest this page's sources again; their changes are listed in Changes" : "This page lists no sources"
-              }
-              onClick={() => ingest(cites.listed.filter((p) => !p.startsWith("wiki/")))}
-            >
-              <Icon name="refresh" size={13} />
-              Refresh from sources
+        </div>
+      ) : (
+        <TopBar
+          title={s?.title ?? path.split("/").pop() ?? ""}
+          sub={s ? LAYER_LABEL[s.layer] : undefined}
+          ask={
+            s && (isMarkdown(s.path) || s.layer === "source")
+              ? { about: `“${s.title}”`, prompt: `About ${askLink(s.path)}: `, sm: true }
+              : undefined
+          }
+        >
+          {dirty && (
+            <button type="button" className="btn sm pri" onClick={() => void save()} disabled={view?.saving} title="Save (⌘S)">
+              {view?.saving ? "Saving…" : "Save"}
             </button>
-          </>
-        )}
-        {s?.layer === "source" && (
-          <>
-            {isThread(s.path) && (
+          )}
+          {isWiki && s && (
+            <>
               <button
                 type="button"
                 className="btn sm"
-                title="Have the AI draft a reply to this thread"
-                onClick={() => nav.go({ screen: "reply", path: s.path })}
+                disabled={!cites.listed.length}
+                title={
+                  cites.listed.length
+                    ? "Ingest this page's sources again; their changes are listed in Changes"
+                    : "This page lists no sources"
+                }
+                onClick={() => ingest(cites.listed.filter((p) => !p.startsWith("wiki/")))}
               >
-                <Icon name="send" size={13} />
-                Draft a reply
+                <Icon name="refresh" size={13} />
+                Refresh from sources
               </button>
-            )}
-            {/\.(pdf|docx|pptx|xlsx|md|txt)$/i.test(s.path) && !isThread(s.path) && (
+            </>
+          )}
+          {s?.layer === "source" && (
+            <>
+              {isThread(s.path) && (
+                <button
+                  type="button"
+                  className="btn sm"
+                  title="Have the AI draft a reply to this thread"
+                  onClick={() => nav.go({ screen: "reply", path: s.path })}
+                >
+                  <Icon name="send" size={13} />
+                  Draft a reply
+                </button>
+              )}
+              {/\.(pdf|docx|pptx|xlsx|md|txt)$/i.test(s.path) && !isThread(s.path) && (
+                <button
+                  type="button"
+                  className="btn sm"
+                  title="Check it against the version of a governing document in force"
+                  onClick={() => nav.go({ screen: "doccheck", path: s.path })}
+                >
+                  <Icon name="shield" size={13} />
+                  Doc check
+                </button>
+              )}
+            </>
+          )}
+          {isTemplate && (
+            <>
               <button
                 type="button"
                 className="btn sm"
-                title="Check it against the version of a governing document in force"
-                onClick={() => nav.go({ screen: "doccheck", path: s.path })}
+                title="Run this template as New note would, without making anything"
+                onClick={() => setTesting(true)}
               >
-                <Icon name="shield" size={13} />
-                Doc check
+                Test run
               </button>
-            )}
-          </>
-        )}
-        {isTemplate && (
-          <>
+              <TemplaterDocsLink />
+            </>
+          )}
+          {s && canEdit && (
+            <Seg<DocMode>
+              label="View"
+              value={mode}
+              onChange={setMode}
+              options={[
+                ["read", "View", "View (⌘1)"],
+                ["live", "Edit", "Edit (⌘2)"],
+                ["source", "Source", "Source markdown (⌘3)"],
+              ]}
+            />
+          )}
+          {s && (
             <button
               type="button"
-              className="btn sm"
-              title="Run this template as New note would, without making anything"
-              onClick={() => setTesting(true)}
+              className={`ibtn ${bookmarked ? "on" : ""}`}
+              aria-pressed={bookmarked}
+              aria-label={bookmarked ? "Remove the bookmark" : "Bookmark"}
+              title={bookmarked ? "Bookmarked: click to remove" : "Bookmark (in the sidebar)"}
+              onClick={() => void toggleBookmark(s.path)}
             >
-              Test run
+              <Icon name="pin" />
             </button>
-            <TemplaterDocsLink />
-          </>
-        )}
-        {s && canEdit && (
-          <Seg<DocMode>
-            label="View"
-            value={mode}
-            onChange={setMode}
-            options={[
-              ["read", "View", "View (⌘1)"],
-              ["live", "Edit", "Edit (⌘2)"],
-              ["source", "Source", "Source markdown (⌘3)"],
-            ]}
-          />
-        )}
-        {s && (
-          <button
-            type="button"
-            className={`ibtn ${bookmarked ? "on" : ""}`}
-            aria-pressed={bookmarked}
-            aria-label={bookmarked ? "Remove the bookmark" : "Bookmark"}
-            title={bookmarked ? "Bookmarked: click to remove" : "Bookmark (in the sidebar)"}
-            onClick={() => void toggleBookmark(s.path)}
-          >
-            <Icon name="pin" />
-          </button>
-        )}
-        {s && (
-          <button
-            type="button"
-            className="ibtn"
-            aria-label="Copy"
-            title="Copy"
-            onClick={(e) => setCopyAt(e.currentTarget.getBoundingClientRect())}
-          >
-            <Icon name="copy" />
-          </button>
-        )}
-        {s && (
-          <button type="button" className="ibtn" aria-label="Rename" title="Rename… (⇧⌘R)" onClick={() => void fileAction("rename", s)}>
-            <Icon name="rename" />
-          </button>
-        )}
-        {/* The same buttons in the same order on every kind of file; one that doesn't apply is greyed, saying why. */}
-        {s &&
-          (s.layer !== "template" ? (
-            <button type="button" className="ibtn" aria-label="Graph" title="Graph around this page" onClick={() => openGraph(s.path)}>
-              <Icon name="graph" />
+          )}
+          {s && (
+            <button
+              type="button"
+              className="ibtn"
+              aria-label="Copy"
+              title="Copy"
+              onClick={(e) => setCopyAt(e.currentTarget.getBoundingClientRect())}
+            >
+              <Icon name="copy" />
             </button>
-          ) : (
-            <span title="Templates aren't in the graph">
-              <button type="button" className="ibtn" aria-label="Graph" disabled>
+          )}
+          {s && (
+            <button type="button" className="ibtn" aria-label="Rename" title="Rename… (⇧⌘R)" onClick={() => void fileAction("rename", s)}>
+              <Icon name="rename" />
+            </button>
+          )}
+          {/* The same buttons in the same order on every kind of file; one that doesn't apply is greyed, saying why. */}
+          {s &&
+            (s.layer !== "template" ? (
+              <button type="button" className="ibtn" aria-label="Graph" title="Graph around this page" onClick={() => openGraph(s.path)}>
                 <Icon name="graph" />
               </button>
-            </span>
-          ))}
-        {s &&
-          (isMarkdown(s.path) && voiceList.length ? (
-            <ReadAloudButton path={s.path} onStart={() => readAloud()} />
-          ) : (
-            <span
-              title={
-                isMarkdown(s.path)
-                  ? "Read aloud needs a system voice, and none was found"
-                  : "Read aloud reads notes and pages, not this kind of file"
-              }
+            ) : (
+              <span title="Templates aren't in the graph">
+                <button type="button" className="ibtn" aria-label="Graph" disabled>
+                  <Icon name="graph" />
+                </button>
+              </span>
+            ))}
+          {s && readAloudButton}
+          {s && textSizeButton}
+          {s && (
+            <button
+              type="button"
+              className="ibtn"
+              aria-label="Focus mode"
+              title="Focus mode: just the text, full window (⌘.)"
+              onClick={() => focusMode.set(true)}
             >
-              <button type="button" className="ibtn" aria-label="Read aloud" disabled>
-                <Icon name="speaker" />
-              </button>
-            </span>
-          ))}
-        {s && <TextSizeButton off={isMarkdown(s.path) ? undefined : "Text size applies to notes and pages, not this kind of file"} />}
-        {s && (
-          <button
-            type="button"
-            className="ibtn"
-            aria-label="More"
-            title="More actions for this file"
-            onClick={(e) => menu.open(e.currentTarget.getBoundingClientRect(), s)}
-          >
-            <Icon name="more" />
-          </button>
-        )}
-      </TopBar>
+              <Icon name="expand" />
+            </button>
+          )}
+          {s && (
+            <button
+              type="button"
+              className="ibtn"
+              aria-label="More"
+              title="More actions for this file"
+              onClick={(e) => menu.open(e.currentTarget.getBoundingClientRect(), s)}
+            >
+              <Icon name="more" />
+            </button>
+          )}
+        </TopBar>
+      )}
       {finding > 0 && doc && (
         <FindBar
           key={`${path}:${finding}`}
@@ -641,7 +685,7 @@ export function DocScreen() {
       >
         {err && <div className="docerr err">{err}</div>}
         {doc && s && (
-          <div className={`docgrid ${sideFolded ? "wide" : ""}`}>
+          <div className={`docgrid ${sideFolded || focus ? "wide" : ""} ${focus ? "focus" : ""}`}>
             <article
               className={`doc docsurf ${look.style === "brainstead" ? "" : "styled"} ${look.ownTheme ? "owntheme" : ""}`}
               data-doc-theme={look.theme}
@@ -649,31 +693,33 @@ export function DocScreen() {
               data-doc-accent={look.accent}
             >
               <header className="dochead">
-                <div className="docmeta" data-no-print>
-                  <span className={`lb ${s.layer}`}>{LAYER_LABEL[s.layer]}</span>
-                  {s.type && <span className="chip">{s.type}</span>}
-                  {s.date && <span className="faint">{s.date}</span>}
-                  <span className="faint mono ell" title={s.path}>
-                    {s.path}
-                  </span>
-                  {dirty && (
-                    <button type="button" className="unsaved" title="Save (⌘S)" onClick={() => void save()}>
-                      Unsaved · ⌘S
-                    </button>
-                  )}
-                  {isMarkdown(s.path) && <DocLookControls look={look} />}
-                  {sideFolded && (
-                    <button
-                      type="button"
-                      className="btn sm ghost"
-                      title="Show what links here"
-                      onClick={() => settings.update({ docSideFolded: false })}
-                    >
-                      Linked from · {doc.meta.backlinks.length}
-                      <Icon name="chevdown" size={12} />
-                    </button>
-                  )}
-                </div>
+                {!focus && (
+                  <div className="docmeta" data-no-print>
+                    <span className={`lb ${s.layer}`}>{LAYER_LABEL[s.layer]}</span>
+                    {s.type && <span className="chip">{s.type}</span>}
+                    {s.date && <span className="faint">{s.date}</span>}
+                    <span className="faint mono ell" title={s.path}>
+                      {s.path}
+                    </span>
+                    {dirty && (
+                      <button type="button" className="unsaved" title="Save (⌘S)" onClick={() => void save()}>
+                        Unsaved · ⌘S
+                      </button>
+                    )}
+                    {isMarkdown(s.path) && <DocLookControls look={look} />}
+                    {sideFolded && (
+                      <button
+                        type="button"
+                        className="btn sm ghost"
+                        title="Show what links here"
+                        onClick={() => settings.update({ docSideFolded: false })}
+                      >
+                        Linked from · {doc.meta.backlinks.length}
+                        <Icon name="chevdown" size={12} />
+                      </button>
+                    )}
+                  </div>
+                )}
                 <h1 className={`h1 doc-page-title ${bodyStartsWithH1(liveText ?? doc.content) ? "dup" : ""}`}>{s.title}</h1>
                 {isWiki && <WikiSummary text={pageText} sources={cites.listed.length} />}
               </header>
@@ -777,7 +823,7 @@ export function DocScreen() {
               )}
               {s.layer === "source" && !isMarkdown(s.path) && <SourcePreview file={s} root={doc.root} content={doc.content} />}
             </article>
-            {!sideFolded && (
+            {!sideFolded && !focus && (
               <aside className="docside" data-no-print>
                 {s.layer === "source" && <ProvenanceCard file={s} />}
                 {s.layer === "note" && <LastTimeCard path={s.path} />}

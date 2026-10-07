@@ -23,6 +23,7 @@ The keys below work where their heading says. The quick capture shortcut is the 
 
 ## A note
 - `⌘1` `⌘2` `⌘3` — View, Edit, Source
+- `⌘.` — Focus mode; `Esc` leaves it
 - `⌘S` — Save
 - `⌘F` — Find, and in Edit and Source, replace; `↩` `⇧↩` next, previous match
 - `⌘B` `⌘I` `⇧⌘X` `⌘E` `⇧⌘H` — Bold, italic, strikethrough, code, highlight (while editing)

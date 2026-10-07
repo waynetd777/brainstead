@@ -5,6 +5,7 @@
 // Screenshot mode (tools/screenshots.py, tools/screenshots/scenes.json): BRAINSTEAD_SCENE holds a
 // scene as JSON, and the window sets it up and saves nothing.
 
+import { focusMode } from "./focus";
 import { toast } from "./Toast";
 import { fixNameOpen } from "./FixName";
 import { shortcutsOpen } from "./Shortcuts";
@@ -41,6 +42,8 @@ export interface Scene {
   hover?: boolean;
   /** For "doc": the Linked from pane collapsed. */
   sideFolded?: boolean;
+  /** For "doc": in focus mode (⌘.). */
+  focus?: boolean;
   /** For "doc": the note shown being read aloud at a block and spoken character, saying nothing. */
   reading?: { block: number; char: number };
   /** The menu-bar window alone (src/Tray.tsx), shown by Rust. */
@@ -113,6 +116,7 @@ export function applyScene(sc: Scene) {
   if (sc.sideFolded) settings.update({ docSideFolded: true });
   if (sc.view) settings.update({ viewMemory: { ...settings.get().viewMemory, ...sc.view } });
   if (sc.screen) nav.replace({ screen: sc.screen, pane: sc.pane, path: sc.path, q: sc.q, view: sc.view });
+  if (sc.focus) focusMode.set(true);
   if (sc.dialog === "new-note") noteDialog.set({ kind: "new", template: sc.template });
   if (sc.dialog === "rename" && sc.path) noteDialog.set({ kind: "rename", path: sc.path, title: sc.title });
   // Fix name: `q` the name as written, `title` the right one.

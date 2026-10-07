@@ -1452,6 +1452,36 @@ mark.search-hit {
 .docgrid.wide {
   grid-template-columns: minmax(0, 1fr);
 }
+
+/* Focus mode (src/focus.ts): no sidebar or side pane, the text across most of the window and a
+   size larger, as Two-edged Sword's. */
+.shell.focus {
+  grid-template-columns: minmax(0, 1fr);
+}
+.top.focusbar {
+  /* Room for the traffic lights, with no sidebar under them. */
+  padding-left: 88px;
+  border-bottom: 0;
+}
+.top.focusbar .focustitle {
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+  color: var(--ink2);
+}
+.top.focusbar .focustitle b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.docgrid.focus {
+  padding: 12px 10% 120px;
+}
+.docgrid.focus .prose,
+.docgrid.focus .editor .cm-content {
+  font-size: calc(var(--read-size, 15px) + 2px);
+  line-height: 1.85;
+}
 .doc {
   min-width: 0;
 }

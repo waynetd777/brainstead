@@ -90,6 +90,19 @@
     "docs": true
   },
   {
+    "name": "focus",
+    "screen": "doc",
+    "path": "wiki/entities/Orbit App.md",
+    "focus": true
+  },
+  {
+    "name": "focus-images",
+    "screen": "doc",
+    "path": "Idea. Images.md",
+    "docMode": "live",
+    "focus": true
+  },
+  {
     "name": "images",
     "screen": "doc",
     "path": "Idea. Images.md"

@@ -40,6 +40,7 @@ The sidebar has **Today**, **Inbox**, **Tasks**, **Projects**, **Weekly review**
 | ⌃⌥Space | Quick capture, from any app |
 | ⌘N | New note |
 | ⇧⌘P | Read the open note aloud, then play or pause |
+| ⌘. | Focus mode for the open note, wiki page or source; Esc leaves it |
 | ⌥⌘1 … ⌥⌘9, ⌥⌘0 | Today, Inbox, Tasks, Projects, Changes, Search, Ask, Notes, Wiki, Sources |
 | ⌘[ ⌘] | Back, forward |
 | ⌘Z | Undo the last change |

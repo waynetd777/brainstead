@@ -8,7 +8,7 @@
 
 A note opens in **View** (⌘1), rendered: properties, links, tables, tasks, callouts, diagrams and maths. **Edit** (⌘2) is the markdown with its syntax hidden away from the lines you're on; **Source** (⌘3) is the plain markdown in a monospaced font, with no formatting and no toolbar. Beside the note are **Linked from** (every note that links here, with the line), its **open tasks** to tick, and its **outline**. On a 1-1 note, **Last time with** and the person's name shows the previous 1-1 and the follow-ups still open with them.
 
-The top bar has **Ask** (a chat about the note, source or template), a bookmark, **Copy** (markdown, rich text, path or title), **Rename…** (⇧⌘R, with every link to the note rewritten), **Graph** and more; the **Note** menu in the menu bar has most of them. **Export PDF…** (⌘P) writes the note in its look with page numbers. Each note can have its own look (Brainstead, Business, Editorial, Modern, Minimal, Report or Technical) and colour, and documents can be light or dark on their own.
+The top bar has **Ask** (a chat about the note, source or template), a bookmark, **Copy** (markdown, rich text, path or title), **Rename…** (⇧⌘R, with every link to the note rewritten), **Graph**, **Focus mode** (⌘.: the text across the window with only Read aloud, Text size and Exit focus above it, in View, Edit or Source; Esc leaves it) and more; the **Note** menu in the menu bar has most of them. **Export PDF…** (⌘P) writes the note in its look with page numbers. Each note can have its own look (Brainstead, Business, Editorial, Modern, Minimal, Report or Technical) and colour, and documents can be light or dark on their own.
 
 ## Read aloud
 

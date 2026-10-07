@@ -53,7 +53,7 @@ In View, a quote that starts with `[!type]`, such as `> [!tip] Before you start`
 ## Change how the document looks
 The row under the note's details has two buttons. The sun or moon shows all documents light or dark. The look button (**Look:** and the theme) sets this note's theme and colour; **Use the defaults** drops the note's own look, and **Defaults…** opens [Settings › Notes](app:settings/notes). A note's own look is kept in Brainstead's settings, not in the note, and an assistant can read or change it as these buttons do.
 
-Notes, wiki pages, sources and templates have the same top-bar buttons in the same order: Bookmark, Copy, Rename (a pencil), Graph, Read aloud, Text size and ⋯, then Ask and help. One that doesn't apply, such as Graph on a template or Read aloud on a PDF, is greyed and its tooltip says why.
+Notes, wiki pages, sources and templates have the same top-bar buttons in the same order: Bookmark, Copy, Rename (a pencil), Graph, Read aloud, Text size, Focus mode and ⋯, then Ask and help. One that doesn't apply, such as Graph on a template or Read aloud on a PDF, is greyed and its tooltip says why.
 
 Some pages have buttons of their own before these. A wiki page has **Refresh from sources**. A captured email or Teams thread has **Draft a reply**, and another source has **Doc check**. A template has **Test run** and **Templater docs ↗**.
 
@@ -63,6 +63,9 @@ The text size button in the top bar sets the document text from 12 to 24 px. `�
 Rename edits the type, title and date separately, shows the new filename and every link that will change in other files, then **Rename & update links**. An assistant can list the links a rename would change in the same way before it renames. The note stays in its folder, and a message offers **Undo** (as `⌘Z` does).
 
 **Export PDF…** (`⌘P`) saves the note as a PDF: always light, in the note's look, with the title and page numbers in each page's footer. **Copy rich text** pastes formatted into email or a document. **Move to the Trash** is on the ⋯ menu and the Note menu, with Undo.
+
+## Focus mode
+Press `⌘.` (or the focus button on the top bar, or **Focus Mode** on the Note menu) to give the note, wiki page or source the whole window: the sidebar, the side pane and the note's details go, the text is centred a size larger, and the top bar keeps only the title, Read aloud, Text size and **Exit focus**. View, Edit and Source all work in it. `Esc`, `⌘.` again, or going to another screen leaves it.
 
 ## Read aloud
 Click the speaker on the top bar, or press `⇧⌘P`, to hear the note read aloud in View, a paragraph at a time with each word highlighted; to start from a paragraph, `⌥`-click it or right-click it and choose **Read aloud from here**. A player bar at the foot of the page has the controls, speed and voice, and reading stops when you leave the note; set the default voice and speed in [Settings › Notes](app:settings/notes).

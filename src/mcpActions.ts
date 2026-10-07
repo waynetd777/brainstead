@@ -87,7 +87,8 @@ import {
 import { DOC_ACCENTS, DOC_STYLES, docDefaults, lookOf, withOwnLook } from "./docLook";
 import { loadVoices, speechSettingsChanged, voiceLabel, voices } from "./speech/player";
 import { applyReadSize, applyTheme, READ_SIZE, settings } from "./store";
-import { nav, Screen, SettingsPane } from "./nav";
+import { nav, place, Screen, SettingsPane } from "./nav";
+import { focusMode } from "./focus";
 import { DEFAULT_SCHEDULE, DEFAULT_WEEKLY_REVIEW } from "./Jobs";
 import { foundDetail, handedOver, INSTALL, languageName, SCREEN_NAME, scriptsFolder, terminalCommands } from "./Settings";
 import { choice, prepStep, WEEKLY_STATE_CHANGED } from "./weeklyPrep";
@@ -3169,6 +3170,10 @@ async function openApp(a: Args): Promise<string> {
     [path] = await api.linksResolve([page.replace(/^\[\[|\]\]$/g, "")]);
     if (!path) throw new Error(`There's no page called ${page}.`);
   }
+  // Focus mode is a document's, as ⌘. is.
+  const focus = typeof a.focus === "boolean" ? a.focus : undefined;
+  if (focus && (path ? screen === "graph" : screen || place.get().place.screen !== "doc"))
+    throw new Error("Focus mode shows a note, wiki page or source: give page, or open one first.");
   await invoke("main_show", { screen: null });
   const lines = (Array.isArray(a.lines) ? a.lines : []).map((l) => String(l).trim()).filter(Boolean);
   // Graph with a page opens around it, as a note's Graph button (openGraph) does.
@@ -3178,7 +3183,11 @@ async function openApp(a: Args): Promise<string> {
   else if (screen === "search") nav.go({ screen, q: str(a, "query") ?? "" });
   else if (screen && file) nav.go({ screen, path: file });
   else if (screen) nav.go(screen);
+  if (focus !== undefined) focusMode.set(focus);
+  const how = focus ? " in focus mode" : "";
   if (path && screen === "graph") return `Brainstead is open on Graph, around ${pageName(path)}.`;
-  if (path) return `Brainstead is open on ${pageName(path)}.`;
+  if (path) return `Brainstead is open on ${pageName(path)}${how}.`;
+  if (focus !== undefined)
+    return focus ? `Brainstead shows ${pageName(place.get().place.path ?? "")} in focus mode.` : "Focus mode is off.";
   return `Brainstead is open${name ? ` on ${name.replace(/_/g, " ")}` : ""}${file ? ` with ${file}` : ""}.`;
 }
