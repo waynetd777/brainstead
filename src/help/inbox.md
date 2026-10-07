@@ -46,6 +46,6 @@ On a capture from Outlook or Teams, `R` and `⌫` change and three more choices 
 As a task, a capture starts as `Follow up on [[the capture]]`.
 
 ## Let the AI suggest
-**Suggest** on an open item asks the AI what it should become, with a project, context, effort, due date and why. **Suggest for all** in the top bar asks about the first 20 items at once (it reads **Suggest for all (first 20)** when there are more). Nothing happens until you accept; the row says what it suggests. Press `↩` or **Accept suggestion** to do it, which opens the form first for a next action or waiting-for. The model used is set in [Settings › AI assistants](app:settings/assistants), under Models by job.
+**Suggest** on an open item asks the AI what it should become, with a project, context, effort, due date and why. **Suggest for all** in the top bar asks about the first 20 items at once (it reads **Suggest for all (first 20)** when there are more). Nothing happens until you accept; the row says what it suggests. Press `↩` or **Accept suggestion** to do it, which opens the form first for a next action or waiting-for. The model used is set in [Settings › AI assistants](app:settings/assistants), under Models by job. An assistant can ask for the same suggestions, and accepts one only by clarifying the item as it says.
 
 When the [Weekly review](app:weekly) has been prepared for this week, its suggestions for Inbox items show on those items here too, until you click **Suggest** on one again.

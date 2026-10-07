@@ -13,7 +13,7 @@ These change things straight away, as the screens do, and each is undoable with 
 - The [Weekly review](app:weekly)'s prepared suggestions: accept one (it does what the suggestion's button does) or skip it.
 - Save an open [Ask](app:ask) chat to the vault as a note, as **Save** does (move it to the Trash from History to take it out again).
 - The Weekly review's **Finish and save**, which writes the week's review note.
-- Bookmarks, saved searches, restoring from the Trash (under another name too), adding files to Sources, Knowledge health's safe fixes, **Create** on a missing page, **Not duplicates**, moving an unused image to the Trash, and Fix a name everywhere.
+- Bookmarks, saved searches, restoring from the Trash (under another name too), adding files to Sources, Knowledge health's safe fixes, **Create** on a missing page, **Not duplicates**, moving an unused image to the Trash, and Fix a name everywhere (in every file, or only the files you'd tick).
 
 These happen at once with no `⌘Z`, and only when you ask:
 
@@ -24,11 +24,12 @@ These happen at once with no `⌘Z`, and only when you ask:
 - Knowledge health's **Ignore** for an issue with no fix, and **Show again**.
 - Going through the [Weekly review](app:weekly): start it, move on a step, add to its notes.
 - [Contradictions](app:contradictions): mark one resolved or ignored.
-- Ask's chats: list, read, rename or move one to the Trash.
+- Ask's chats: list, read, rename, pin or unpin, or move one to the Trash.
 - Tasks' saved lists: save one or remove one.
-- Settings: read them, or change one, such as a job's time or a switch. The vault, **Read-only** and the folders left out are yours to change.
+- Settings: read them, or change one, such as a job's time, a switch, **Open at login**, the model for new chats or for a job, the spelling language, the read-aloud voice and speed, or the document look. The vault, **Read-only** and the folders left out are yours to change, and so is a note's own look.
+- **Rebuild index** ([Settings › Vault](app:settings/vault)): every file is read again; nothing in the vault changes.
 - Find tasks and projects' suggestions: accept one (it's made as a change in [Changes](app:review), with Revert) or skip it.
-- Runs, with their progress and Stop: an ingest (notes, PDFs, Office files and images), the daily or weekly summary, the weekly review's preparation, the daily check, Find tasks and projects, a contradictions check, a meeting note from a transcript, Knowledge health's **Write Current state**, bookmark triage, a drafted reply (never sent) and a doc check. They use the models set in [Settings › AI assistants](app:settings/assistants). What a run changes in the vault is listed in Changes.
+- Runs, with their progress and Stop: an ingest (notes, PDFs, Office files and images), the daily or weekly summary, the weekly review's preparation, the daily check, Find tasks and projects, a contradictions check, a meeting note from a transcript, Knowledge health's **Write Current state**, bookmark triage, a drafted reply (never sent) and a doc check. They use the models set in [Settings › AI assistants](app:settings/assistants). What a run changes in the vault is listed in Changes. An assistant sees the last eight summary runs as [Settings › Jobs & schedule](app:settings/jobs) lists them, each with its change in Changes, and can revert one when you ask, as **Undo** does.
 
 ## Tasks, the Inbox, projects and prose
 These are made at once too, and each is listed in [Changes](app:review), where you can revert it (and `⌘Z` undoes it straight after):
@@ -45,12 +46,12 @@ A quote that isn't in its source is flagged there, once. A change to a template,
 An assistant can list changes and revert one when you ask it to, and reject a held one. It can accept a held change only while you're there, and only one held because a check failed: one held because it changes a template or a system note's header, adds code that runs, or comes from a job you set to hold its changes is yours to accept, on the Changes screen. An assistant nobody is watching can't accept anything, and can't start the Weekly review over or retire the other app's skills and scripts.
 
 ## What assistants can read
-Search, any page or one of its sections, backlinks, which page a name means, the facts ingest checked and kept for each wiki page, sources not yet in the wiki, Knowledge health's report (as the screen shows it, while Brainstead is open) and its Page shape check, the contradictions found, Ask's chats, your settings, your tasks by list (the Deferred list included), the Inbox, projects, the daily and weekly summaries (so it can answer "what did I do yesterday?"), the Weekly review's progress and suggestions, Changes, runs, transcripts, Activity, the links around a page, whether the app is running, and this help.
+Search, any page or one of its sections, backlinks, which page a name means, the facts ingest checked and kept for each wiki page, sources not yet in the wiki, Knowledge health's report (as the screen shows it, while Brainstead is open) and its Page shape check, the contradictions found, Ask's chats, your settings, your tasks by list (the Deferred list included, with the effort filter and **Group by**), the Inbox (and, when asked, the AI's suggestion for each of the first 20 items, as **Suggest** gives it), projects, the daily and weekly summaries (so it can answer "what did I do yesterday?"), the Weekly review's progress and suggestions, Changes, runs, transcripts, Activity (by action or words, as its filters do), the links around a page, whether the app is running, and this help.
 
 Reading is kept apart from changing: each of these is a tool of its own, marked as only reading, so you can let an assistant use them without asking you first.
 
 ## When Brainstead isn't open
-Reading pages, search, facts, the summaries, the health report and the Page shape check work whether the app is open or not. Every change, and tasks, the Inbox, projects, the Weekly review, Changes, runs and Activity, need the app: the assistant opens Brainstead and waits for it. An assistant can also bring Brainstead's window to the front when you ask to see something, on a screen, a Settings pane, a note (with lines highlighted, such as a page's claims with no citation) or a search. While the vault is read-only ([Settings › Vault](app:settings/vault)) nothing can be changed.
+Reading pages, search, facts, the summaries, the health report and the Page shape check work whether the app is open or not. Every change, and tasks, the Inbox, projects, the Weekly review, Changes, runs and Activity, need the app: the assistant opens Brainstead and waits for it. An assistant can also bring Brainstead's window to the front when you ask to see something, on a screen, a Settings pane, a note (with lines highlighted, such as a page's claims with no citation), a search, or Meeting notes, Draft a reply or Doc check with the transcript, thread or document to work on. What you're typing and haven't saved stays with the screen: no assistant reads or changes it. While the vault is read-only ([Settings › Vault](app:settings/vault)) nothing can be changed.
 
 ## Limits
 An assistant can make up to 120 tool calls a minute. Long lists (tasks, the Trash, Changes, chats, links to a page and the rest) come a page at a time, each saying how many there are, so an assistant can ask for the next page or narrow the list by words. Changes comes as one list, what's held for you first and then what was made, newest first. Search, projects, Changes, Activity and the links around a page give a short line each unless the assistant asks for more detail. Antigravity takes no outside tools in the mode Ask runs it, so it reads with its own tools only.

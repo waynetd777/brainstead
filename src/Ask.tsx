@@ -90,7 +90,12 @@ export function AskScreen() {
         <div className="sp" />
         {c && <ContextMeter c={c} />}
         {c && <SaveButton c={c} />}
-        <button type="button" className="btn" title="Find, reopen, pin or delete your chats, saved or not" onClick={() => setHistory(true)}>
+        <button
+          type="button"
+          className="btn"
+          title="Find, reopen, rename or pin your chats, saved or not, or move them to the Trash"
+          onClick={() => setHistory(true)}
+        >
           <Icon name="history" size={14} />
           History
         </button>

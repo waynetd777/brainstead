@@ -11,7 +11,8 @@ vi.mock("@tauri-apps/api/window", () => ({
   LogicalSize: class {},
 }));
 
-import { TrayData, trayFailed, trayStatus } from "./Tray";
+import type { CurrentStateRun, DailyCheckStatus, FindState, IngestRun, ReviewsStatus, WeekPrepJob } from "./api";
+import { runningOf, TrayData, trayFailed, trayStatus } from "./Tray";
 
 const base: TrayData = { overdue: 0, due: 0, waiting: 0, inbox: 0, held: 0, running: [], nextReview: null };
 const run = (label: string) => ({ key: label, label, doing: "", progress: null, stop: async () => {} });
@@ -36,5 +37,39 @@ describe("the menu-bar window", () => {
     expect(trayFailed(d)).toEqual(["tasks", "the Inbox"]);
     expect(trayStatus(d).headline).toBe("Couldn't load tasks and the Inbox");
     expect(trayStatus({ ...base, held: null }).headline).toBe("Couldn't load Changes");
+  });
+
+  it("lists every run going, as run_status does", () => {
+    const ingest = (id: string, kind: string, source: string) =>
+      ({ id, kind, source, status: "running", steps: [] }) as unknown as IngestRun;
+    const going = runningOf({
+      ingests: [ingest("i1", "ingest", "sources/Plan.pdf"), ingest("m1", "meeting", "sources/Standup transcript.vtt")],
+      dailyCheck: { running: false } as DailyCheckStatus,
+      reviews: { runs: [], next: { daily: null, weekly: null }, running: ["daily"] } as unknown as ReviewsStatus,
+      contradictions: true,
+      weekprep: { running: "2026-W41" } as WeekPrepJob,
+      find: { run: { status: "running", done: 2, batches: 4, found: 3 } } as FindState,
+      currentState: { running: true, done: 1, total: 5 } as CurrentStateRun,
+    });
+    expect(going.map((r) => r.label)).toEqual([
+      "Ingesting Plan.pdf",
+      "Writing a meeting note from Standup transcript.vtt",
+      "Writing the daily summary",
+      "Checking for contradictions",
+      "Preparing the weekly review",
+      "Finding tasks and projects",
+      "Writing Current state",
+    ]);
+    expect(going.find((r) => r.key === "find")!.progress).toBe(0.5);
+    const idle = runningOf({
+      ingests: [],
+      dailyCheck: { running: false } as DailyCheckStatus,
+      reviews: { runs: [], next: { daily: null, weekly: null }, running: [] } as unknown as ReviewsStatus,
+      contradictions: false,
+      weekprep: null,
+      find: { run: { status: "done" } } as FindState,
+      currentState: { running: false } as CurrentStateRun,
+    });
+    expect(idle).toEqual([]);
   });
 });

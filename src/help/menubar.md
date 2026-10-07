@@ -8,7 +8,7 @@ summary: Brainstead's menu-bar icon and its window: today at a glance, a capture
 Brainstead puts an icon in the menu bar while it runs. Click it for a small window; click the icon again, click elsewhere or press `Esc` to close it. Turn the icon off, or keep Brainstead in the menu bar alone, in [Settings › General](app:settings/general).
 
 ## What the icon says
-The icon is plain when there's nothing to see. Three dots at its foot mean a run is going: an ingest, a daily or weekly summary, the daily check or a contradictions check. A dot at its corner means something waits for you: a task overdue, changes held for you, or items in the Inbox.
+The icon is plain when there's nothing to see. Three dots at its foot mean a run is going: an ingest, a meeting note being written, a daily or weekly summary, the daily check, the weekly review's preparation, Find tasks and projects, a contradictions check or Knowledge health's **Write Current state**. A dot at its corner means something waits for you: a task overdue, changes held for you, or items in the Inbox.
 
 ## What the window shows
 - A headline that sums it up: **All clear**, **Things need you** or how many runs are going. If tasks, the Inbox or Changes can't be read, it says so and their counts show "–". While the vault is read-only, a **Read-only** pill sits beside it; click it to open [Settings › Vault](app:settings/vault), where read-only is turned off.

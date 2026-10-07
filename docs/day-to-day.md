@@ -12,7 +12,7 @@ Brainstead's icon in the menu bar shows three dots while a run is going, and a d
 
 - A headline summing it up (**All clear**, **Things need you**, runs going, or what couldn't load), with a **Read-only** pill while the vault is read-only that opens Settings › Vault, and **Overdue**, **Due today** and **Waiting for** counts that open Today.
 - A capture box, the same as Quick capture.
-- Each run that's going, with its progress and **Stop**.
+- Each run that's going, with its progress and **Stop**: ingests and meeting notes, the summaries, the daily check, the weekly review's preparation, Find tasks and projects, a contradictions check and Write Current state.
 - Changes held for you and items in the Inbox, each opening its screen.
 - **Open Brainstead** (⌘O), **Today** (⌘T), **Ask** (⌘J), **Run the daily check now**, **Settings…** (⌘,) and **Quit Brainstead** (⌘Q).
 

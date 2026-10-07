@@ -648,6 +648,7 @@ fn a_read_tool_never_changes_anything() {
     for (tool_name, args) in [
         ("list_changes", json!({"action": "revert", "id": "1"})),
         ("list_chats", json!({"action": "trash", "chat": "x"})),
+        ("list_chats", json!({"action": "pin", "chat": "x"})),
         ("list_trash", json!({"action": "restore", "id": "t1"})),
         ("list_settings", json!({"action": "set", "key": "theme", "value": "dark"})),
         ("list_suggestions", json!({"action": "accept", "id": "s1"})),
@@ -676,4 +677,35 @@ fn a_read_tool_never_changes_anything() {
     let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
     ok(&f.ctx, "triage_bookmarks", json!({"items": [{"target": "a", "path": "a.md"}]}));
     assert_eq!(app.join().unwrap().action, "triage.suggest");
+}
+
+#[test]
+fn rebuilding_the_index_and_pinning_a_chat_go_to_the_app() {
+    let f = fixture();
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Rebuilding the index"), error: None });
+    ok(&f.ctx, "rebuild_index", json!({}));
+    assert_eq!(app.join().unwrap().action, "index.rebuild");
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Pinned"), error: None });
+    ok(&f.ctx, "chats", json!({"action": "pin", "chat": "Orbit App plan"}));
+    let req = app.join().unwrap();
+    assert_eq!((req.action.as_str(), req.args["action"].as_str()), ("chats", Some("pin")));
+    // The new arguments are in the schemas, so a client can pass them.
+    let list = tools();
+    let props = |n: &str| list.iter().find(|t| t["name"] == n).unwrap()["inputSchema"]["properties"].clone();
+    for (tool_name, arg) in [
+        ("list_tasks", "effort"),
+        ("list_tasks", "group"),
+        ("list_inbox", "suggest"),
+        ("fix_name", "files"),
+        ("activity", "action"),
+        ("open", "transcript"),
+        ("open", "thread"),
+        ("open", "document"),
+    ] {
+        assert!(props(tool_name).get(arg).is_some(), "{tool_name} takes {arg}");
+    }
+    let screens = props("open")["screen"]["enum"].clone();
+    for s in ["meeting", "reply", "doc_check"] {
+        assert!(screens.as_array().unwrap().iter().any(|x| x == s), "open on {s}");
+    }
 }

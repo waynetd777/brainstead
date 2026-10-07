@@ -302,13 +302,15 @@ pub fn tools() -> Vec<Value> {
             }), &[])),
         // Tasks.
         tool("list_tasks", "List tasks", Read,
-            "Tasks as Brainstead's lists show them (needs the app). Each line gives the task, its dates and chips, and its id (path:line) to act on it with edit_task, move_task or delete_task. Narrow with view, project, context, query (every word in the task's line) or a saved list rather than raising limit; offset gives the next page, as the reply says.",
+            "Tasks as Brainstead's lists show them (needs the app). Each line gives the task, its dates and chips, and its id (path:line) to act on it with edit_task, move_task or delete_task. Narrow with view, project, context, effort, query (every word in the task's line) or a saved list rather than raising limit; offset gives the next page, as the reply says. group puts them under headings, as the Tasks screen's Group by does.",
             schema(json!({
                 "view": {"type": "string", "enum": ["today", "next", "followups", "waiting", "deferred", "someday", "done-this-week", "done-last-week", "all"], "description": "today: overdue, due and deferred until today, leaving out tasks deferred to a later day. next: open tasks that aren't follow-ups, waiting, someday, deferred or still in the Inbox (the default). deferred: the Deferred list, tasks deferred to a later day. all: every open task."},
                 "project": {"type": "string", "description": "Only this project's tasks, by its name."},
                 "context": {"type": "string", "description": "Only tasks with this context: calls, office…"},
+                "effort": {"type": "integer", "enum": [15, 30, 60], "description": "Only tasks of this many minutes or less, as the Tasks screen's effort filter (15 min or less, 30 min or less, 1 hour or less); any effort when left out."},
+                "group": {"type": "string", "enum": ["none", "project", "context", "due"], "description": "Group by, as the Tasks screen does: under each project, context or due date (Overdue, Today, This week, Later, No due date). Default none."},
                 "detail": {"type": "boolean", "description": "Also the heading, effort, created and done dates."},
-                "list": {"type": "string", "description": "A saved list's name (list_task_lists): its view, context and effort, instead of view and context."}
+                "list": {"type": "string", "description": "A saved list's name (list_task_lists): its view, context, effort and grouping, instead of view, context, effort and group."}
             }), &[])),
         tool("edit_task", "Change a task", Change,
             "Changes a task, as the task screens do (needs the app): made straight away and recorded in Changes, where the user can revert it (⌘Z undoes it too). Give only the fields to change; several at once is fine, made as one change. Ticking a recurring task adds its next occurrence, as in the app.",
@@ -345,8 +347,8 @@ pub fn tools() -> Vec<Value> {
             schema(json!({"task": task, "text": task_text, "reason": reason}), &["task", "text"])),
         // Inbox and projects.
         tool("list_inbox", "List the Inbox", Read,
-            "What's waiting in the Inbox to clarify (needs the app): captures from Outlook and Teams, Scratchpad thoughts and tasks under Other on the To Do list. Each row has its id (task:14, capture:…) for clarify_inbox. Clarified items aren't listed.",
-            schema(json!({}), &[])),
+            "What's waiting in the Inbox to clarify (needs the app): captures from Outlook and Teams, Scratchpad thoughts and tasks under Other on the To Do list. Each row has its id (task:14, capture:…) for clarify_inbox. Clarified items aren't listed. With suggest, the model suggests what each of the first 20 rows shown is, as the Inbox's Suggest does; nothing changes, and accepting one is clarify_inbox with its values.",
+            schema(json!({"suggest": {"type": "boolean", "description": "true asks the model what each of the first 20 rows shown is (a run on the user's account): becomes, text, project, context, effort, due and why, as clarify_inbox takes them."}}), &[])),
         tool("clarify_inbox", "Clarify an Inbox item", Change,
             "Decides what an Inbox item is, as the Inbox screen does (needs the app); its edits to notes are recorded in Changes, where the user can revert them, and held together when one is held. next and waiting write a task (to a project's Next actions when project is given); someday writes a #someday-maybe task; project makes a new project from it; done ticks or clears it; reference files it in a note (note or new_note), or keeps a capture in Sources; ingest ingests a capture into the wiki; delete takes it out (a capture goes to the Trash).",
             schema(json!({
@@ -464,7 +466,7 @@ pub fn tools() -> Vec<Value> {
                 "date": {"type": "string", "pattern": DATE, "description": "For meeting_note: the meeting's day, YYYY-MM-DD; needed when list_transcripts says the date is only the capture day (ask the user). For daily_summary: the day to summarise (default yesterday); for weekly_summary: a day in the week to summarise."}
             }), &["run"])),
         tool("run_status", "How runs are going", Read,
-            "How Brainstead's runs are going (needs the app): ingests running and lately done, the daily check, the daily and weekly summaries, the weekly review's preparation, Find tasks and projects, the contradictions check, meeting notes being written and Write Current state. Each says whether it's running, done or failed, with its progress; ingests and meeting notes give their ids, for stop_run. Use it after start_run, rather than starting a run again; stop_run stops one.",
+            "How Brainstead's runs are going (needs the app): ingests running and lately done, the daily check, the daily and weekly summaries, the weekly review's preparation, Find tasks and projects, the contradictions check, meeting notes being written and Write Current state. Each says whether it's running, done or failed, with its progress; ingests and meeting notes give their ids, for stop_run. Then the last eight summary runs, as Settings › Jobs & schedule's Recent runs lists them: kind, day, when, how it was started, its status and its note, and the id of its change in Changes (changes revert with that id undoes it, as Recent runs' Undo does). Use it after start_run, rather than starting a run again; stop_run stops one.",
             schema(json!({}), &[])),
         tool("stop_run", "Stop a run", Destroy,
             "Stops a run that's going (needs the app), as its Stop button does. What it already changed stays, listed in Changes; the part not yet done is dropped, so start it again with start_run to finish. Stopping a run that isn't going does nothing. Only when the user asks.",
@@ -502,15 +504,15 @@ pub fn tools() -> Vec<Value> {
                 "title": {"type": "string", "description": "The chat's title, as its tab shows it. The chat open in Ask when left out."}
             }), &[])),
         tool("list_chats", "Ask's chats", Read,
-            "Brainstead's Ask chats (needs the app): list gives them, newest first, with each one's file and whether it's saved in the vault; read gives one's messages. Rename or trash one with chats; save one to the vault with save_chat.",
+            "Brainstead's Ask chats (needs the app): list gives them, newest first, with each one's file, whether it's saved in the vault and whether it's pinned; read gives one's messages. Rename, pin or trash one with chats; save one to the vault with save_chat.",
             schema(json!({
                 "action": {"type": "string", "enum": ["list", "read"], "description": "Default list."},
                 "chat": {"type": "string", "description": "For read: the chat's file or title, from list."}
             }), &[])),
-        tool("chats", "Rename or trash a chat", Destroy,
-            "Changes one of Brainstead's Ask chats (needs the app): rename renames it (its tab and, when saved, its note); trash moves it to the Trash, as History's Move to the Trash does. list_chats lists them. Rename or trash only when the user asks.",
+        tool("chats", "Rename, pin or trash a chat", Destroy,
+            "Changes one of Brainstead's Ask chats (needs the app): rename renames it (its tab and, when saved, its note); pin and unpin are History's Pin and Unpin (a pinned chat is kept whatever happens; closed chats that aren't saved or pinned are deleted once 20 newer ones are in History); trash moves it to the Trash, as History's Move to the Trash does. list_chats lists them. Only when the user asks.",
             schema(json!({
-                "action": {"type": "string", "enum": ["rename", "trash"]},
+                "action": {"type": "string", "enum": ["rename", "pin", "unpin", "trash"]},
                 "chat": {"type": "string", "description": "The chat's file or title, from list_chats."},
                 "title": {"type": "string", "description": "For rename: the new title."}
             }), &["action", "chat"])),
@@ -562,11 +564,12 @@ pub fn tools() -> Vec<Value> {
                 "stop": {"type": "boolean", "description": "true stops the run after the page it's on."}
             }), &[])),
         tool("fix_name", "Fix a name everywhere", Change,
-            "Corrects a misspelt name across the notes and wiki, as Fix name does (needs the app); sources are left alone. Without apply it only says what would change; with apply true it changes the files (undoable).",
+            "Corrects a misspelt name across the notes and wiki, as Fix name does (needs the app); sources are left alone. Without apply it only says what would change, file by file; with apply true it changes the files (undoable), or with files only those, as ticking files in Fix name does.",
             schema(json!({
                 "written_as": {"type": "string", "description": "Written as: the name as it's misspelt, Lenna."},
                 "correct_spelling": {"type": "string", "description": "Correct spelling: the name as it should be, Lena."},
                 "apply": {"type": "boolean", "description": "true makes the change; left out, it only says what would change."},
+                "files": {"type": "array", "items": {"type": "string"}, "description": "With apply: only these files, by their path as the preview lists them (the ticked files); every file the preview would change when left out."},
                 "remember": {"type": "boolean", "description": "Remember this correction: also correct it in future captures, transcripts and ingests."}
             }), &["written_as", "correct_spelling"])),
         // The skill screens.
@@ -588,8 +591,8 @@ pub fn tools() -> Vec<Value> {
             schema(json!({"document": {"type": "string", "description": "Document to check, by path."}, "governing_document": {"type": "string", "description": "For version_in_force: the governing document, by its name in the register."}, "mode": {"type": "string", "enum": ["version_in_force", "earlier_feedback"], "description": "The screen's modes: version_in_force (Against the version in force, the default) lists where the document differs from the governing document; earlier_feedback (Against my earlier feedback) checks each point of the user's feedback on the last version against this one."}}), &[])),
         // Around the vault.
         tool("activity", "Recent activity", Read,
-            "log.md, newest first: what Brainstead and the assistants changed in the vault (needs the app), a line an entry with its date, action and title. With date, the files changed that day instead. detail adds each entry's time and description.",
-            schema(json!({"date": day("the files changed that day."), "detail": detail}), &[])),
+            "log.md, newest first: what Brainstead and the assistants changed in the vault (needs the app), a line an entry with its date, action and title. action keeps one kind of entry, as the Activity screen's action chips do; query keeps the entries with all its words in their title, description or action, as its search does. With date, the files changed that day instead. detail adds each entry's time and description.",
+            schema(json!({"date": day("the files changed that day."), "action": {"type": "string", "description": "Only entries of this action, as the log names it or its chip on the Activity screen does: ingest, review, trash…"}, "detail": detail}), &[])),
         tool("graph", "Links around a page", Read,
             "The pages linked to and from a page, to a depth of 1 to 3 (needs the app), as the Graph screen draws it; the whole wiki without page. It lists the links between them, one `from → to` a line. detail lists the pages too, each with its type, how far it is from the page and how many links it has.",
             schema(json!({"page": page, "depth": {"type": "integer", "minimum": 1, "maximum": 3, "description": "How many links away to go. Default 1."}, "detail": detail}), &[])),
@@ -632,13 +635,13 @@ pub fn tools() -> Vec<Value> {
                 "group": {"type": "string", "enum": ["none", "project", "context", "due"], "description": "For save: default none."}
             }), &["action", "name"])),
         tool("list_settings", "Brainstead's settings", Read,
-            "Brainstead's settings that settings can change, as the Settings screen shows them (needs the app): each one's key, pane, label and value. The vault, Read-only and the folders left out aren't listed: they're the user's to change, in the app.",
+            "Brainstead's settings that settings can change, as the Settings screen shows them (needs the app): each one's key, pane, label and value, and for a choice its choices. The vault, Read-only and the folders left out aren't listed: they're the user's to change, in the app.",
             schema(json!({}), &[])),
         tool("settings", "Change a setting", Change,
-            "Changes one of Brainstead's settings by its key from list_settings, as the Settings screen does (needs the app). The value is checked against the setting's kind: true or false, a time HH:MM, a day (mon…sun), a number from its choices, or text. Change only what the user asked for; ⌘Z doesn't undo it.",
+            "Changes one of Brainstead's settings by its key from list_settings, as the Settings screen does (needs the app). The value is checked against the setting's kind: true or false, a time HH:MM, a day (mon…sun), a number from its choices, one of the choices list_settings gives (a model's id, a voice, a language, a document theme or colour), or text; null puts a setting with a default choice back to it (As new chats, As macOS, System voice, As the app). Change only what the user asked for; ⌘Z doesn't undo it.",
             schema(json!({
                 "key": {"type": "string", "description": "The setting's key from list_settings."},
-                "value": {"type": ["boolean", "number", "string"], "description": "The new value, of the kind list_settings shows: true or false, a number, a time HH:MM, a day, or text."}
+                "value": {"type": ["boolean", "number", "string", "null"], "description": "The new value, of the kind list_settings shows: true or false, a number, a time HH:MM, a day, one of its choices, or text; null for its default choice."}
             }), &["key", "value"])),
         tool("import_sources", "Add files to Sources", Change,
             "Copies files from the Mac into sources/, as Sources' Import does (needs the app): PDFs, Office files, images, notes and the rest, up to 200 MB each. New sources are then ingested as they arrive when the user has that on (Settings › AI assistants). Only files the user named.",
@@ -651,16 +654,22 @@ pub fn tools() -> Vec<Value> {
                 "reason": reason
             }), &["name", "content"])),
         tool("open", "Open Brainstead", Read,
-            "Opens Brainstead (starting it when it isn't running) and brings its window to the front, on a screen, a Settings pane, a note or a search when given; it changes nothing. Only when the user asks to see something.",
+            "Opens Brainstead (starting it when it isn't running) and brings its window to the front, on a screen, a Settings pane, a note or a search when given; it changes nothing. meeting (Meeting note from a transcript) opens on transcript when given, reply (Draft a reply) on thread, doc_check (Check a document) on document, ready for the user to go on there. Only when the user asks to see something.",
             schema(json!({
-                "screen": {"type": "string", "enum": ["today", "inbox", "tasks", "projects", "weekly_review", "changes", "ask", "search", "notes", "wiki", "sources", "templates", "graph", "knowledge_health", "contradictions", "activity", "triage", "trash", "settings"], "description": "The screen, as the sidebar names it; the one showing when left out."},
+                "screen": {"type": "string", "enum": ["today", "inbox", "tasks", "projects", "weekly_review", "changes", "ask", "search", "notes", "wiki", "sources", "templates", "graph", "knowledge_health", "contradictions", "activity", "triage", "meeting", "reply", "doc_check", "trash", "settings"], "description": "The screen, as the sidebar or the command palette names it; the one showing when left out."},
                 "pane": {"type": "string", "enum": ["general", "notes", "vault", "assistants", "jobs", "capture", "permissions", "about"], "description": "With screen settings: the pane."},
                 "page": page,
                 "lines": {"type": "array", "items": {"type": "string"}, "description": "With page: lines of it to highlight, scrolled to the first, each as its text (as lint gives a claim with no citation)."},
-                "query": {"type": "string", "description": "With screen search: what to search for."}
+                "query": {"type": "string", "description": "With screen search: what to search for."},
+                "transcript": {"type": "string", "description": "With screen meeting: the transcript's path (list_transcripts)."},
+                "thread": {"type": "string", "description": "With screen reply: the email thread's path in sources/, as draft_reply takes it."},
+                "document": {"type": "string", "description": "With screen doc_check: the document to check, by path, as doc_check takes it."}
             }), &[])),
         tool("app_status", "Brainstead's state", Read,
             "The vault, whether it's read-only (then nothing can be changed until the user switches it off in Settings › Vault), the index, whether Brainstead runs the daily and weekly summaries, whether the previous app's skills are still in the vault (moving_over retires them), and what ⌘Z would undo (needs the app).",
+            schema(json!({}), &[])),
+        tool("rebuild_index", "Rebuild the index", Run,
+            "Reads every file in the vault again and rebuilds Brainstead's index from scratch, as Settings › Vault's Rebuild index does (needs the app); the files aren't changed. It returns once started; app_status says how the index stands. For when search, tasks or links seem out of date with the files; only when the user asks.",
             schema(json!({}), &[])),
     ];
     let outputs = outputs();
@@ -737,7 +746,9 @@ fn outputs() -> std::collections::HashMap<&'static str, Value> {
         "history": {"type": "object", "properties": {"days": s("integer"), "mb": s("integer")}}
     }});
     changes["description"] = json!("list gives held and made: one page of the list (held first, then made), split in two, each with its own total and matching and the same offset and next_offset; show gives change; history gives history.");
-    let mut chats = page_schema(json!({"file": s("string"), "title": s("string"), "updated": s("string"), "saved": s("boolean")}));
+    let mut chats = page_schema(
+        json!({"file": s("string"), "title": s("string"), "updated": s("string"), "saved": s("boolean"), "pinned": s("boolean")}),
+    );
     chats["properties"]["chat"] = json!({"type": "object", "description": "read: the chat's title and messages."});
     chats["required"] = json!([]);
     std::collections::HashMap::from([
@@ -750,12 +761,14 @@ fn outputs() -> std::collections::HashMap<&'static str, Value> {
         (
             "list_tasks",
             page_schema(
-                json!({"id": s("string"), "text": s("string"), "path": s("string"), "due": sn(), "defer": {"type": ["string", "null"], "description": "Deferred until, as edit_task's defer sets it."}, "start": sn(), "done": s("boolean"), "doneOn": sn(), "project": sn(), "contexts": {"type": "array", "items": s("string")}, "effort": sn(), "heading": sn()}),
+                json!({"id": s("string"), "text": s("string"), "path": s("string"), "due": sn(), "defer": {"type": ["string", "null"], "description": "Deferred until, as edit_task's defer sets it."}, "start": sn(), "done": s("boolean"), "doneOn": sn(), "project": sn(), "contexts": {"type": "array", "items": s("string")}, "effort": sn(), "heading": sn(), "group": {"type": ["string", "null"], "description": "With group: the heading it's under, as the Tasks screen shows it."}}),
             ),
         ),
         (
             "list_inbox",
-            page_schema(json!({"id": s("string"), "kind": s("string"), "text": s("string"), "path": s("string"), "stamp": sn()})),
+            page_schema(
+                json!({"id": s("string"), "kind": s("string"), "text": s("string"), "path": s("string"), "stamp": sn(), "suggestion": {"type": ["object", "null"], "description": "With suggest: what the model suggests it becomes, with text, project, context, effort, due and why."}}),
+            ),
         ),
         (
             "list_projects",
@@ -995,7 +1008,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         "save_chat" => act("chat.save", obj),
         "weekly_step" => act("weekly.step", obj),
         "list_chats" => act("chats", acting(obj, name, &["list", "read"], "list", &["title"])?),
-        "chats" => act("chats", acting(obj, name, &["rename", "trash"], "", &[])?),
+        "chats" => act("chats", acting(obj, name, &["rename", "pin", "unpin", "trash"], "", &[])?),
         "health_issue" => act("health.issue", obj),
         "list_contradictions" => act("contradictions", acting(obj, name, &["list"], "list", &["id", "as"])?),
         "contradictions" => act("contradictions", acting(obj, name, &["mark", "save"], "", &["all"])?),
@@ -1029,6 +1042,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         "graph" => act("graph", obj),
         "open" => act("open", obj),
         "app_status" => act("status", obj),
+        "rebuild_index" => act("index.rebuild", obj),
         "list_automated_tools" => act("automated", acting(obj, name, &["list"], "list", &["name", "folder", "opening"])?),
         "automated_tools" => act("automated", acting(obj, name, &["add", "remove"], "", &[])?),
         "list_suggestions" => act("suggestions", acting(obj, name, &["list"], "list", &["id", "text", "done_looks_like"])?),

@@ -635,6 +635,10 @@ fn revert_one(app: &AppHandle, id: &str) -> Res<Reverted> {
     c.status = Status::Reverted;
     c.decided = Some(proposals::now_local());
     st.save(&c)?;
+    // A summary's block reverted here is its run undone, as Recent runs' Undo leaves it.
+    if let Some(run) = c.origin.run.as_deref().filter(|r| c.origin.kind == "review" && r.starts_with("summary-")) {
+        crate::reviews::reverted_in_changes(app, run);
+    }
     emit_changed(app);
     Ok(Reverted { ok: true, message, before: None })
 }

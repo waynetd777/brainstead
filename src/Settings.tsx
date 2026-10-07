@@ -21,7 +21,7 @@ import { errText } from "./notes/actions";
 import { Switchover } from "./Switchover";
 import { TopBar } from "./TopBar";
 import { Jobs } from "./Jobs";
-import { CLI_LABEL, clis, DEFAULT_MODEL, findClis, modelLabel } from "./askState";
+import { CLI_LABEL, clis, DEFAULT_MODEL, findClis, MODEL_JOBS, modelLabel } from "./askState";
 import { ModelMenu } from "./Ask";
 import { ago, fmtCount, Popover, Seg, Switch } from "./ui";
 import { sayTest, speechSettingsChanged, voices } from "./speech/player";
@@ -175,18 +175,6 @@ function CaptureShortcut() {
   );
 }
 
-const JOBS: [string, string, string][] = [
-  ["summaries", "Daily and weekly summaries", "calendar"],
-  ["weekprep", "Weekly review preparation", "review"],
-  ["find", "Find tasks and projects", "zap"],
-  ["ingest", "Ingest", "wiki"],
-  ["meeting", "Meeting notes from transcripts", "note"],
-  ["clarify", "Clarify suggestions", "inbox"],
-  ["contradictions", "Contradiction checks", "shield"],
-  ["skills", "Triage, Draft reply and Doc check", "send"],
-  ["suggest", "Next-message suggestions in Ask", "ask"],
-];
-
 /** A model for each background job, or the default (Settings › AI assistants). */
 function JobModels({ found, fallback }: { found: CliInfo[] | null; fallback: string }) {
   const s = useStore(settings);
@@ -199,7 +187,7 @@ function JobModels({ found, fallback }: { found: CliInfo[] | null; fallback: str
     <section className="sgroup">
       <h2 className="h3">Models by job</h2>
       <div className="card">
-        {JOBS.map(([job, label, icon]) => (
+        {MODEL_JOBS.map(([job, label, icon]) => (
           <div key={job} className="srow">
             <Icon name={icon} />
             <div className="t">

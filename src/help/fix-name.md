@@ -19,7 +19,7 @@ Each file is marked with what the fix will do:
 - **Guarded: someone else**: a file about someone whose real name is the "wrong" spelling.
 - **Skipped**: a conflicted copy of this file exists.
 
-A file whose name holds the wrong spelling is marked **In the file name: rename it separately**. Untick any file you want left as it is.
+A file whose name holds the wrong spelling is marked **In the file name: rename it separately**. Untick any file you want left as it is. An assistant fixing a name for you can do the same: it names the files to change, and the rest are left alone.
 
 ## Protect someone with that name
 If the wrong spelling is also someone else's real name, type part of the file names about them, such as "Lina Park", in the box below the names, with commas between several. Those files are never touched. **Ask about each file** starts every note to rewrite unticked, so you tick each one after reading it, and an ingest never applies an ambiguous correction on its own.

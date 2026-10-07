@@ -45,6 +45,19 @@ export function cliOf(model: string): CliName {
 
 export const DEFAULT_MODEL = "claude:sonnet";
 
+/** The background jobs that can each have a model (Settings › AI assistants › Models by job): id, label, icon. */
+export const MODEL_JOBS: [job: string, label: string, icon: string][] = [
+  ["summaries", "Daily and weekly summaries", "calendar"],
+  ["weekprep", "Weekly review preparation", "review"],
+  ["find", "Find tasks and projects", "zap"],
+  ["ingest", "Ingest", "wiki"],
+  ["meeting", "Meeting notes from transcripts", "note"],
+  ["clarify", "Clarify suggestions", "inbox"],
+  ["contradictions", "Contradiction checks", "shield"],
+  ["skills", "Triage, Draft reply and Doc check", "send"],
+  ["suggest", "Next-message suggestions in Ask", "ask"],
+];
+
 /** "Claude Code · Sonnet" for a model id, from the CLIs found. */
 export function modelLabel(model: string, clis: CliInfo[] | null): string {
   const cli = cliOf(model);

@@ -17,8 +17,10 @@ import {
   api,
   BookmarkRow,
   ChangeKind,
+  ClarifySuggestion,
   ChangeOrigin,
   ChangeOutcome,
+  ChangeRow,
   ChangeSubmit,
   CurrentStateRun,
   Instruction,
@@ -27,6 +29,7 @@ import {
   InboxItem,
   LogEntry,
   ProjectRow,
+  ReviewRun,
   Settings,
   ChatSummary,
   TaskDateKind,
@@ -35,6 +38,7 @@ import {
   WeeklyState,
   WeekPrepSuggestion,
 } from "./api";
+import { chosenRows } from "./FixName";
 import { contextName, projectName } from "./gtd";
 import { taskLine, unclarified } from "./Inbox";
 import { appendAsReference, newReferenceNote, settleInboxItem } from "./inboxActions";
@@ -49,7 +53,21 @@ import type { PriorityName } from "./tasksq/fields";
 import { toast } from "./Toast";
 import { fmtBytes } from "./ui";
 import { fresh, keepsPaused, reviewBody, reviewWeek, scheduleLabel, STEPS } from "./Weekly";
-import { ask, isSaved, keepChat, renameSaved, trashSaved } from "./askState";
+import {
+  ask,
+  clis,
+  DEFAULT_MODEL,
+  findClis,
+  isSaved,
+  keepChat,
+  MODEL_JOBS,
+  modelLabel,
+  pinSaved,
+  renameSaved,
+  trashSaved,
+} from "./askState";
+import { DOC_ACCENTS, DOC_STYLES } from "./docLook";
+import { loadVoices, speechSettingsChanged, voiceLabel, voices } from "./speech/player";
 import { applyTheme, settings } from "./store";
 import { nav, Screen, SettingsPane } from "./nav";
 import { DEFAULT_SCHEDULE, DEFAULT_WEEKLY_REVIEW } from "./Jobs";
@@ -57,7 +75,8 @@ import { choice, prepStep, WEEKLY_STATE_CHANGED } from "./weeklyPrep";
 import { draftNotes, followThrough, isTranscriptPath } from "./meetingFlow";
 import { reportMarkdown } from "./Contradictions";
 import { ingestable } from "./Lists";
-import { EFFORT_LIMITS, withinEffort } from "./taskGroups";
+import { actionLabel, actionsIn, filterLog } from "./activityModel";
+import { EFFORT_LIMITS, GroupBy, groupTasks, withinEffort } from "./taskGroups";
 
 const TODO_LIST = "Me. To Do List.md";
 
@@ -226,7 +245,7 @@ async function listTasks(a: Args): Promise<Listing> {
     throw new Error(
       `No saved list “${saved}”. list_task_lists lists them: ${(settings.get().taskLists ?? []).map((l) => l.name).join(", ") || "none"}.`,
     );
-  if (named) a = { ...a, view: named.view, context: named.context || undefined };
+  if (named) a = { ...a, view: named.view, context: named.context || undefined, effort: named.effort || undefined, group: named.group };
   const asked = str(a, "view") ?? "next";
   const view = asked === "deferred" ? "scheduled" : asked;
   let rows: TaskRow[];
@@ -244,16 +263,34 @@ async function listTasks(a: Args): Promise<Listing> {
   if (project) rows = rows.filter((t) => t.project && projectName(t.project).toLowerCase() === project.replace(/^project\. /, ""));
   const context = str(a, "context");
   if (context) rows = rows.filter((t) => (t.contexts ?? []).includes(contextName(context)));
-  if (named?.effort) rows = rows.filter((t) => withinEffort(t, named.effort));
+  // The effort filter's choices, in minutes, as the screen and its saved lists have them.
+  const effort = a.effort == null || a.effort === "" ? "" : String(a.effort);
+  if (effort && !EFFORT_LIMITS.some(([v]) => v === effort)) throw new Error("effort is 15, 30 or 60 (minutes), or left out.");
+  if (effort) rows = rows.filter((t) => withinEffort(t, effort));
+  const group = (str(a, "group") ?? "none") as GroupBy;
+  if (!["none", "project", "context", "due"].includes(group)) throw new Error("group is none, project, context or due.");
+  // Grouped as the screen groups them: each group's rows together, under its heading.
+  const under = new Map<TaskRow, string>();
+  if (group !== "none") {
+    const groups = groupTasks(rows, group, today);
+    rows = groups.flatMap((g) => g.rows);
+    for (const g of groups) for (const t of g.rows) under.set(t, g.label);
+  }
   // A page at a time, query's words all in the task's line, as every listing tool pages.
   const shown = viewName(view);
-  return listed(a, rows, {
+  const out = listed(a, rows, {
     text: (t) => t.text,
     noun: [`task in ${shown}`, `tasks in ${shown}`],
     line: (t) => taskLineOut(t, a.detail === true),
-    item: taskItem,
-    empty: `No tasks in ${shown}${project || context ? " with those filters" : ""}.`,
+    item: (t) => (group === "none" ? taskItem(t) : { ...taskItem(t), group: under.get(t) ?? null }),
+    empty: `No tasks in ${shown}${project || context || effort ? " with those filters" : ""}.`,
   });
+  if (group === "none") return out;
+  // A heading line where each group starts on the page.
+  const [head, ...lines] = out.text.split("\n");
+  const items = out.structured.items as { group: string | null }[];
+  const text = [head, ...lines.flatMap((l, i) => (i === 0 || items[i].group !== items[i - 1].group ? [`${items[i].group}:`, l] : [l]))];
+  return { ...out, text: text.join("\n") };
 }
 
 /** A task as list_tasks' data gives it. */
@@ -404,17 +441,70 @@ async function projectPath(name: string): Promise<string> {
 
 const inboxKey = (i: InboxItem) => `${i.kind}:${i.line + 1}`;
 
+/** How many items Suggest asks about at once, as the Inbox's Suggest for all (first 20) does. */
+const SUGGEST_AT_MOST = 20;
+
 async function listInbox(a: Args): Promise<Listing> {
   const items = (await api.inboxList()).filter(unclarified);
   const where = (i: InboxItem) =>
     i.kind === "capture" ? `capture ${i.path}` : i.kind === "thought" ? `Scratchpad ${i.stamp ?? ""}` : "To Do list › Other";
   const line = (i: InboxItem) => `- ${i.text.replace(/\n/g, " ").slice(0, 200)} — ${where(i)}  (${inboxKey(i)})`;
+  // Suggest: the model's suggestion for the first rows shown, asked as the Inbox screen asks it
+  // (each item's text, and the active projects' names).
+  const sugg = new Map<string, ClarifySuggestion>();
+  if (a.suggest === true) {
+    const ask = pagedRows(a, items, line, ["", ""]).shown.slice(0, SUGGEST_AT_MOST);
+    if (ask.length) {
+      const active = (await api.projectsList()).filter((p) => p.status === "active").map((p) => p.name);
+      const got = await api.clarifySuggest(
+        ask.map((i) => ({ id: inboxKey(i), kind: i.kind, text: i.text.trim() })),
+        active,
+      );
+      for (const g of got) sugg.set(g.id, g);
+    }
+  }
+  const suggested = (i: InboxItem) => {
+    const g = sugg.get(inboxKey(i));
+    if (!g) return "";
+    const bits = [
+      g.text && g.becomes !== "delete" && `“${g.text}”`,
+      g.project && `project ${g.project}`,
+      g.context && `@${g.context}`,
+      g.effort && `effort ${g.effort}`,
+      g.due && `due ${g.due}`,
+    ].filter(Boolean);
+    // meeting and reply have no clarify_inbox answer: their own tools do them.
+    const how = g.becomes === "meeting" ? " (start_run meeting_note)" : g.becomes === "reply" ? " (draft_reply)" : "";
+    return `\n  suggests ${g.becomes}${how}${bits.length ? `: ${bits.join(" · ")}` : ""}${g.why ? ` — ${g.why}` : ""}`;
+  };
   return listed(a, items, {
     text: line,
     noun: ["item to clarify", "items to clarify"],
-    line,
-    item: (i) => ({ id: inboxKey(i), kind: i.kind, text: i.text, path: i.path, stamp: i.stamp }),
+    line: (i) => line(i) + suggested(i),
+    item: (i) => {
+      const g = sugg.get(inboxKey(i));
+      return {
+        id: inboxKey(i),
+        kind: i.kind,
+        text: i.text,
+        path: i.path,
+        stamp: i.stamp,
+        ...(a.suggest === true
+          ? {
+              suggestion: g
+                ? { becomes: g.becomes, text: g.text, project: g.project, context: g.context, effort: g.effort, due: g.due, why: g.why }
+                : null,
+            }
+          : {}),
+      };
+    },
     empty: "The Inbox is empty.",
+    before:
+      a.suggest === true && items.length
+        ? [
+            "Suggestions only, nothing changed: accept one with clarify_inbox, becomes as suggested and its values (its text as text, or as project_name for a project and note for reference).",
+          ]
+        : [],
   });
 }
 
@@ -963,8 +1053,43 @@ async function startRun(a: Args): Promise<string> {
   }
 }
 
+/** How many summary runs Settings › Jobs & schedule's Recent runs lists. */
+const RECENT_SUMMARIES = 8;
+
+/** A summary run as Recent runs shows it, with its change in Changes: a summary's block is written
+ *  (or held) as an agent change in the run's group (src-tauri/src/reviews.rs), so changes revert
+ *  with its id undoes it, as Undo does. */
+export function summaryRunLine(r: ReviewRun, changes: ChangeRow[]): string {
+  const name = `${r.kind === "daily" ? "Daily summary" : "Weekly summary"} ${r.target}`;
+  const how = r.trigger === "schedule" ? "scheduled" : r.trigger === "manual" ? "run now" : r.trigger;
+  const when = r.startedAt.slice(0, 16).replace("T", " ");
+  const c = changes.find((x) => x.group === r.id);
+  const state =
+    r.status === "error"
+      ? `failed: ${r.error ?? "no reason given"}`
+      : r.status === "running"
+        ? "running"
+        : r.status === "stopped"
+          ? "stopped"
+          : r.undone || c?.status === "reverted"
+            ? `undone${r.file ? `, in ${r.file}` : ""}`
+            : c?.status === "held"
+              ? `held in Changes for ${r.file ?? "its note"}`
+              : r.file
+                ? `${r.replaced ? "replaced its block in" : "written to"} ${r.file}`
+                : r.status;
+  const change = !c
+    ? ""
+    : c.status === "applied"
+      ? ` · change ${c.id} (changes revert with it undoes the summary)`
+      : c.status === "held"
+        ? ` · change ${c.id} (held for the user)`
+        : ` · change ${c.id} (${c.status})`;
+  return `- ${name} · ${how} · ${when} · ${state}${change}`;
+}
+
 async function runStatus(): Promise<string> {
-  const [runs, check, reviews, prep, find, contra, cs] = await Promise.all([
+  const [runs, check, reviews, prep, find, contra, cs, changes] = await Promise.all([
     api.ingestRuns(),
     api.dailyCheckStatus(),
     api.reviewsStatus(),
@@ -972,8 +1097,10 @@ async function runStatus(): Promise<string> {
     api.findStatus().catch(() => null),
     api.contradictionsReport().catch(() => null),
     api.currentStateStatus().catch(() => null),
+    api.changesList().catch(() => [] as ChangeRow[]),
   ]);
   const f = find?.run;
+  const summaries = (reviews.runs ?? []).slice(0, RECENT_SUMMARIES);
   const c = contra?.last;
   // Meeting notes are runs in the ingest queue of their own kind: each listed apart, with its id
   // for stop_run.
@@ -1013,6 +1140,9 @@ async function runStatus(): Promise<string> {
     `Write Current state: ${
       !cs?.total ? "not run" : `${cs.running ? "running" : "last run"}: ${cs.done} of ${cs.total} pages done, ${cs.written} written`
     }`,
+    summaries.length
+      ? `Recent summary runs (Settings › Jobs & schedule), newest first:\n${summaries.map((r) => summaryRunLine(r, changes ?? [])).join("\n")}`
+      : "Recent summary runs: none yet.",
   ].join("\n");
 }
 
@@ -1260,10 +1390,22 @@ async function fixName(a: Args): Promise<string> {
     return [
       `Fixing “${wrong}” → “${right}” would change ${rows.length} file${rows.length === 1 ? "" : "s"}:`,
       ...rows.slice(0, 40).map((r) => `- ${r.file}: ${r.count} × (${r.action})`),
-      "Call again with apply true to make the change.",
+      "Call again with apply true to make the change, and files to make it only in those.",
     ].join("\n");
   }
-  const said = await api.fixnameApply({ ...req, rightPage: plan.rightPage }, plan.rows);
+  // files: the ticked files, as Fix name's ticks are; the rest stay as they are.
+  const files = Array.isArray(a.files) ? a.files.map(String).filter((f) => f.trim()) : null;
+  const can = chosenRows(plan.rows, new Set());
+  if (files) {
+    const unknown = files.filter((f) => !can.some((r) => r.file === f));
+    if (unknown.length)
+      throw new Error(
+        `Not among the files the fix would change: ${unknown.join(", ")}. They are: ${can.map((r) => r.file).join(", ") || "none"}.`,
+      );
+  }
+  const take = files ? chosenRows(plan.rows, new Set(can.map((r) => r.file).filter((f) => !files.includes(f)))) : can;
+  if (!take.length) return "Nothing to change: no file given.";
+  const said = await api.fixnameApply({ ...req, rightPage: plan.rightPage }, take);
   told(`fixed the name “${wrong}” → “${right}”`);
   return said;
 }
@@ -1361,11 +1503,18 @@ async function activity(a: Args): Promise<Listing> {
       empty: `Nothing changed on ${date}.`,
     });
   }
-  const { log } = await api.activity();
+  const { log: all } = await api.activity();
   const full = (e: LogEntry) =>
     `- ${e.date}${e.time ? ` ${e.time}` : ""} ${e.action} ${e.title}${e.description ? ` — ${e.description}` : ""}`;
+  // The screen's action chips: an action as the log names it or as its chip says it.
+  const actions = actionsIn(all);
+  const want = str(a, "action")?.toLowerCase();
+  const action = want ? actions.find((x) => x.toLowerCase() === want || actionLabel(x).toLowerCase() === want) : undefined;
+  if (want && !action) throw new Error(`No “${want}” entries in log.md. Its actions: ${actions.join(", ") || "none"}.`);
+  const log = action ? filterLog(all, { action, day: null, q: "" }) : all;
   return listed(a, log, {
-    text: full,
+    // query's words in the entry's title, description or action, as the screen's search looks, or its date.
+    text: (e) => `${e.date}\n${e.title}\n${e.description}\n${e.action}\n${actionLabel(e.action)}`,
     noun: ["entry in log.md, newest first", "entries in log.md, newest first"],
     def: 30,
     // Short: the day, what and which; detail adds the time and the description.
@@ -1407,6 +1556,15 @@ async function status(): Promise<string> {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/** Settings › Vault's Rebuild index: every file read again; the files aren't changed. */
+async function rebuildIndex(): Promise<string> {
+  const v = await api.vaultStatus();
+  if (v.state === "indexing") return "The index is being built already; app_status says how it stands.";
+  await api.rebuildIndex();
+  noted("started rebuilding the index");
+  return "Rebuilding the index: every file in the vault is read again, and the files aren't changed. app_status says how it stands.";
 }
 
 /** The user's tools that start Claude Code sessions: list them (and suggestions), add or remove one. */
@@ -1533,6 +1691,7 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   activity: activity,
   graph: graph,
   status: status,
+  "index.rebuild": rebuildIndex,
   automated: automated,
   suggestions: suggestions,
   "triage.suggest": (a) => api.bookmarksSuggest((Array.isArray(a.items) ? a.items : []) as { target: string; path: string }[]),
@@ -1788,7 +1947,7 @@ async function chatsTool(a: Args): Promise<string | Listing> {
   const saved = (c: ChatSummary) => !c.filename.startsWith("local:");
   if (action === "list") {
     const line = (c: ChatSummary) =>
-      `- ${c.title} · ${c.updatedAt.slice(0, 16).replace("T", " ")} · ${saved(c) ? `saved as ${c.filename}` : "not saved"}  (${c.filename})`;
+      `- ${c.title} · ${c.updatedAt.slice(0, 16).replace("T", " ")} · ${saved(c) ? `saved as ${c.filename}` : "not saved"}${c.state === "pinned" ? " · pinned" : ""}  (${c.filename})`;
     return listed(
       a,
       [...all].sort((x, y) => y.updatedAt.localeCompare(x.updatedAt)),
@@ -1796,7 +1955,7 @@ async function chatsTool(a: Args): Promise<string | Listing> {
         text: line,
         noun: ["chat, newest first", "chats, newest first"],
         line,
-        item: (c) => ({ file: c.filename, title: c.title, updated: c.updatedAt, saved: saved(c) }),
+        item: (c) => ({ file: c.filename, title: c.title, updated: c.updatedAt, saved: saved(c), pinned: c.state === "pinned" }),
         empty: "No chats.",
       },
     );
@@ -1823,12 +1982,21 @@ async function chatsTool(a: Args): Promise<string | Listing> {
     noted(`renamed the chat “${c.title}” to “${title}”`);
     return `Renamed “${c.title}” to “${title}”.`;
   }
+  if (action === "pin" || action === "unpin") {
+    const pin = action === "pin";
+    if ((c.state === "pinned") === pin) return `“${c.title}” is ${pin ? "pinned" : "not pinned"} already.`;
+    await pinSaved(c, pin);
+    noted(`${pin ? "pinned" : "unpinned"} the chat “${c.title}”`);
+    return pin
+      ? `Pinned “${c.title}”: it's kept whatever happens.`
+      : `Unpinned “${c.title}”${saved(c) ? "" : "; as it isn't saved, it's deleted once it's closed and 20 newer chats are in History"}.`;
+  }
   if (action === "trash") {
     await trashSaved(c);
     noted(`moved the chat “${c.title}” to the Trash`);
     return `Moved “${c.title}” to the Trash.`;
   }
-  throw new Error("action is list, read, rename or trash.");
+  throw new Error("action is list, read, rename, pin, unpin or trash.");
 }
 
 // ---- Tasks' saved lists
@@ -1878,19 +2046,80 @@ async function taskLists(a: Args): Promise<string> {
 
 // ---- Settings
 
-type SettingKind = "bool" | "time" | "text" | "number" | "day" | "theme";
-/** What the settings tool can change, by key: its pane, label, kind and default. The vault, Read-only
- *  and the excluded folders stay the user's (D-20261006-20). */
-const SETTINGS: [string, string, string, SettingKind, unknown][] = [
+type SettingKind = "bool" | "time" | "text" | "number" | "day" | "theme" | "choice" | "model" | "speed";
+/** A choice setting's choices, as its menu offers them: each value and how the screen names it. */
+type Choices = () => Promise<[string, string][]> | [string, string][];
+/** What the settings tool can change, by key: its pane, label, kind and default, a choice's
+ *  choices, and the name of its default choice when it has one (set by null: As macOS…). The vault,
+ *  Read-only and the excluded folders stay the user's (D-20261006-20); a note's own look stays with
+ *  the note (look: in it). */
+type SettingRow = [key: string, pane: string, label: string, kind: SettingKind, def: unknown, choices?: Choices, none?: string];
+
+/** The models the assistants found offer, as Ask's model menu lists them. */
+async function modelChoices(): Promise<[string, string][]> {
+  // Looked up again when none were found, as Ask does when it opens: one may be installed since.
+  await findClis(!clis.get()?.length);
+  const found = clis.get() ?? [];
+  return found.filter((c) => c.path).flatMap((c) => c.models.map((m) => [m.id, modelLabel(m.id, found)] as [string, string]));
+}
+
+const SETTINGS: SettingRow[] = [
   ["ownerName", "General", "Your name", "text", ""],
   ["theme", "General", "Appearance (system, light or dark)", "theme", "system"],
+  ["openAtLogin", "General", "Open at login", "bool", false],
   ["menuBar", "General", "Show in the menu bar", "bool", true],
   ["menuBarOnly", "General", "Only in the menu bar when the window is closed", "bool", false],
   ["captureShortcut", "General", "Quick capture shortcut", "text", "Control+Alt+Space"],
   ["spellCheck", "Notes", "Check spelling", "bool", true],
   ["grammarCheck", "Notes", "Check grammar", "bool", true],
+  [
+    "spellLanguage",
+    "Notes",
+    "Spelling language",
+    "choice",
+    null,
+    async () => (await api.spellLanguages())[0].map((l) => [l, l]),
+    "As macOS",
+  ],
+  [
+    "speechVoice",
+    "Notes",
+    "Read aloud › Voice",
+    "choice",
+    null,
+    async () => {
+      if (!voices.get().length) await loadVoices();
+      return voices.get().map((v) => [v.id, voiceLabel(v)]);
+    },
+    "System voice",
+  ],
+  ["speechRate", "Notes", "Read aloud › Speed (0.5 to 2)", "speed", 1],
   ["speechHighlight", "Notes", "Highlight each word (read aloud)", "bool", true],
+  ["docStyle", "Notes", "Document look › Theme", "choice", "brainstead", () => DOC_STYLES.map(([id, name]) => [id, name])],
+  ["docAccent", "Notes", "Document look › Colour", "choice", "brainstead", () => DOC_ACCENTS.map(([id, name]) => [id, name])],
+  [
+    "docTheme",
+    "Notes",
+    "Light or dark › Documents",
+    "choice",
+    null,
+    () => [
+      ["light", "Light"],
+      ["dark", "Dark"],
+    ],
+    "As the app",
+  ],
   ["templateScripts", "Notes", "User scripts folder", "text", "Templates/scripts"],
+  ["askModel", "AI assistants", "New chats use", "model", DEFAULT_MODEL, modelChoices],
+  ...MODEL_JOBS.map(([job, label]): SettingRow => [
+    `jobModels.${job}`,
+    "AI assistants",
+    `Models by job › ${label}`,
+    "model",
+    null,
+    modelChoices,
+    job === "weekprep" ? "As the summaries, else as new chats" : "As new chats",
+  ]),
   ["askSuggest", "AI assistants", "Suggest a next message", "bool", true],
   ["meetingIngest", "AI assistants", "Ingest a meeting note once it's made", "bool", true],
   ["meetingTrash", "AI assistants", "Then move the transcript to the Trash", "bool", true],
@@ -1914,34 +2143,55 @@ const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 async function settingsTool(a: Args): Promise<string> {
   const s = settings.get();
-  /** The two settings kept as objects, with their defaults filled in. */
+  /** The settings kept as objects, with their defaults filled in. */
   const nested: Record<string, Record<string, unknown>> = {
     summaries: { ...DEFAULT_SCHEDULE, ...s.summaries },
     weeklyReview: { ...DEFAULT_WEEKLY_REVIEW, ...s.weeklyReview },
+    jobModels: { ...s.jobModels },
   };
+  // Open at login is macOS's login item, not a setting in the file; null where macOS can't say
+  // (a copy run from a folder), and then it isn't offered, as the screen hides it.
+  const login = (await api.loginItem().catch(() => null)) ?? null;
+  const offered = SETTINGS.filter(([k]) => k !== "openAtLogin" || login !== null);
   const valueOf = (key: string, def: unknown) => {
+    if (key === "openAtLogin") return login;
     const [head, sub] = key.split(".");
     const v = sub ? nested[head][sub] : (s as unknown as Record<string, unknown>)[key];
     return v ?? def;
   };
+  const shown = (v: unknown, none?: string) => (v == null && none ? `null (${none})` : JSON.stringify(v));
   const action = str(a, "action") ?? "get";
-  if (action === "get")
-    return paged(
-      a,
-      SETTINGS.map(([k, pane, label, , def]) => `- ${k} · Settings › ${pane} › ${label}: ${JSON.stringify(valueOf(k, def))}`),
-      ["setting", "settings"],
-      100,
+  if (action === "get") {
+    // A choice's choices once: the models only under New chats use, which every job's model takes.
+    const lines = await Promise.all(
+      offered.map(async ([k, pane, label, kind, def, choices, none]) => {
+        let extra = "";
+        if (kind === "model" && k !== "askModel") extra = ` (a model, as askModel's; null for ${none})`;
+        else if (choices) {
+          const cs = await Promise.resolve(choices()).catch(() => [] as [string, string][]);
+          const list = cs.map(([v, l]) => (v === l ? v : `${v} (${l})`)).join(", ");
+          extra = ` (one of: ${list || "none here"}${none ? `; null for ${none}` : ""})`;
+        }
+        return `- ${k} · Settings › ${pane} › ${label}: ${shown(valueOf(k, def), none)}${extra}`;
+      }),
     );
+    return paged(a, lines, ["setting", "settings"], 100);
+  }
   if (action !== "set") throw new Error("action is get or set.");
   const key = str(a, "key");
-  const row = SETTINGS.find(([k]) => k === key);
+  const row = offered.find(([k]) => k === key);
   if (!row)
     throw new Error(
-      `Not a setting this tool changes: ${key}. list_settings lists them; the vault, Read-only and the folders left out are the user's, in the app.`,
+      key === "openAtLogin"
+        ? "Open at login can't be changed for this copy of Brainstead (macOS manages it only for the installed app)."
+        : `Not a setting this tool changes: ${key}. list_settings lists them; the vault, Read-only and the folders left out are the user's, in the app.`,
     );
-  const [, pane, label, kind] = row;
+  const [, pane, label, kind, , choices, none] = row;
   let v: unknown = a.value;
-  if (kind === "bool") {
+  if (v === null) {
+    if (!none) throw new Error(`${key} has no default choice to go back to: give a value.`);
+    v = undefined;
+  } else if (kind === "bool") {
     if (typeof v === "string") v = v === "true" ? true : v === "false" ? false : v;
     if (typeof v !== "boolean") throw new Error(`${key} is true or false.`);
   } else if (kind === "time") {
@@ -1956,16 +2206,37 @@ async function settingsTool(a: Args): Promise<string> {
   } else if (kind === "number") {
     v = Number(v);
     if (![7, 14, 30, 90].includes(v as number)) throw new Error(`${key} is 7, 14, 30 or 90.`);
+  } else if (kind === "speed") {
+    v = Number(v);
+    if (!Number.isFinite(v) || (v as number) < 0.5 || (v as number) > 2) throw new Error(`${key} is a number from 0.5 to 2.`);
+    // The slider's steps.
+    v = Math.round((v as number) * 20) / 20;
+  } else if (kind === "choice" || kind === "model") {
+    const cs = await Promise.resolve(choices!());
+    const want = String(v).trim().toLowerCase();
+    const hit = cs.find(([id, name]) => id.toLowerCase() === want || name.toLowerCase() === want);
+    if (!hit)
+      throw new Error(
+        `${key} is one of: ${cs.map(([id]) => id).join(", ") || "none here"}${none ? `, or null for ${none}` : ""}. list_settings lists them.`,
+      );
+    v = hit[0];
   } else v = String(v ?? "").trim() || undefined;
   const [head, sub] = key!.split(".");
-  if (sub) settings.update({ [head]: { ...nested[head], [sub]: v } } as Partial<Settings>);
-  else if (kind === "theme") {
+  if (key === "openAtLogin") {
+    await api.loginItemSet(v as boolean);
+  } else if (sub) {
+    const next = { ...nested[head], [sub]: v };
+    if (v === undefined) delete next[sub];
+    settings.update({ [head]: next } as Partial<Settings>);
+  } else if (kind === "theme") {
     settings.update({ theme: v as Settings["theme"], docTheme: undefined });
     applyTheme(v as Settings["theme"]);
   } else settings.update({ [key!]: v } as Partial<Settings>);
   await settings.flush();
-  noted(`set ${label} to ${JSON.stringify(v ?? "")}`);
-  return `Settings › ${pane} › ${label} is now ${JSON.stringify(v ?? "")}.`;
+  if (key === "speechVoice" || key === "speechRate") speechSettingsChanged();
+  const said = v === undefined ? (none ?? "its default") : JSON.stringify(v);
+  noted(`set ${label} to ${said}`);
+  return `Settings › ${pane} › ${label} is now ${said}.`;
 }
 
 // ---- Sources' Import
@@ -1991,7 +2262,15 @@ async function importSources(a: Args): Promise<string> {
 // ---- the window
 
 /** The sidebar's names for the screens open takes, where they differ from the app's. */
-const SCREEN_IDS: Record<string, Screen> = { weekly_review: "weekly", changes: "review", knowledge_health: "health" };
+const SCREEN_IDS: Record<string, Screen> = {
+  weekly_review: "weekly",
+  changes: "review",
+  knowledge_health: "health",
+  doc_check: "doccheck",
+};
+
+/** The screens that open on a file of their own, and the argument that names it (as their tools name it). */
+const SCREEN_FILE: Partial<Record<Screen, string>> = { meeting: "transcript", reply: "thread", doccheck: "document" };
 
 /** open: the window to the front, on a screen, a Settings pane, a note or a search. */
 async function openApp(a: Args): Promise<string> {
@@ -1999,6 +2278,20 @@ async function openApp(a: Args): Promise<string> {
   const name = str(a, "screen");
   const screen = name ? (SCREEN_IDS[name] ?? (name as Screen)) : null;
   let path: string | null = null;
+  // meeting, reply and doc_check open on their transcript, thread or document, as the Inbox and a
+  // note's buttons open them; the file must be in the vault.
+  const fileArg = screen ? SCREEN_FILE[screen] : undefined;
+  const asked = fileArg ? str(a, fileArg) : undefined;
+  let file: string | null = null;
+  if (asked && screen === "meeting") {
+    const all = await api.meetingTranscripts();
+    if (!all.some((t) => t.path === asked))
+      throw new Error(`No transcript at ${asked}. list_transcripts lists them: ${all.map((t) => t.path).join(", ") || "none"}.`);
+    file = asked;
+  } else if (asked) {
+    [file] = await api.linksResolve([asked.replace(/^\[\[|\]\]$/g, "")]);
+    if (!file) throw new Error(`There's no ${asked} in the vault.`);
+  }
   if (page) {
     [path] = await api.linksResolve([page.replace(/^\[\[|\]\]$/g, "")]);
     if (!path) throw new Error(`There's no page called ${page}.`);
@@ -2008,6 +2301,8 @@ async function openApp(a: Args): Promise<string> {
   if (path) nav.go({ screen: "doc", path, ...(lines.length ? { lines } : {}) });
   else if (screen === "settings") nav.go({ screen, pane: (str(a, "pane") as SettingsPane | undefined) ?? "general" });
   else if (screen === "search") nav.go({ screen, q: str(a, "query") ?? "" });
+  else if (screen && file) nav.go({ screen, path: file });
   else if (screen) nav.go(screen);
-  return path ? `Brainstead is open on ${pageName(path)}.` : `Brainstead is open${name ? ` on ${name.replace(/_/g, " ")}` : ""}.`;
+  if (path) return `Brainstead is open on ${pageName(path)}.`;
+  return `Brainstead is open${name ? ` on ${name.replace(/_/g, " ")}` : ""}${file ? ` with ${file}` : ""}.`;
 }

@@ -619,6 +619,14 @@ pub fn review_undo(app: AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// A summary's change reverted in Changes: the run is undone, as its own Undo leaves it, and has
+/// nothing left to undo.
+pub fn reverted_in_changes(app: &AppHandle, run: &str) {
+    let _ = std::fs::remove_file(dir().join("undo").join(format!("{run}.json")));
+    app.state::<Reviews>().update_run(run, |r| r.undone = true);
+    let _ = app.emit("reviews-changed", ());
+}
+
 fn notify(app: &AppHandle, kind: ReviewKind, w: &Window, result: &Result<String, String>, retrying: bool) {
     use tauri_plugin_notification::NotificationExt;
     let (title, body) = match result {

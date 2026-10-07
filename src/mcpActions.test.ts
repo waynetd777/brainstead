@@ -849,6 +849,246 @@ describe("MCP actions", () => {
       answers.ingest_runs = () => [];
       expect(await run("run.stop", { run: "meeting_note" })).toBe("No meeting note is being written.");
     });
+
+    it("filters tasks by effort and groups them, as the Tasks screen does", async () => {
+      answers.tasks_all = () => [
+        row({ text: "Call Sam", effortMin: 10, project: "Project. Orbit App launch.md" }),
+        row({ line: 3, text: "Write the plan", effortMin: 120, project: "Project. Orbit App launch.md" }),
+        row({ line: 4, text: "Book the room", effortMin: 15 }),
+      ];
+      answers.inbox_list = () => [];
+      expect(await run("tasks.list", { view: "all", effort: 15 })).toMatch(/^2 tasks in all:/);
+      await expect(run("tasks.list", { view: "all", effort: 45 })).rejects.toThrow(/15, 30 or 60/);
+      const out = (await run("tasks.list", { view: "all", group: "project" })) as string;
+      expect(out.split("\n").filter((l) => !l.startsWith("- "))).toEqual(["3 tasks in all:", "Orbit App launch:", "No project:"]);
+      const items = (await data("tasks.list", { view: "all", group: "project" })).items as { text: string; group: string }[];
+      expect(items.map((t) => t.group)).toEqual(["Orbit App launch", "Orbit App launch", "No project"]);
+      await expect(run("tasks.list", { group: "size" })).rejects.toThrow(/group is none/);
+      // A saved list brings its effort and grouping.
+      answers.settings_write = (a) => a!.settings;
+      await run("task_lists", { action: "save", name: "Short by project", view: "next", effort: 15, group: "project" });
+      expect(await run("tasks.list", { list: "Short by project" })).toMatch(/^2 tasks in next:\nOrbit App launch:\n- \[ \] Call Sam/);
+      await run("task_lists", { action: "remove", name: "Short by project" });
+    });
+
+    it("suggests what Inbox items are, as Suggest does, without changing anything", async () => {
+      const item: InboxItem = {
+        kind: "task",
+        path: "Me. To Do List.md",
+        line: 13,
+        text: "Call Sam about the beta",
+        lineText: "- [ ] Call Sam about the beta",
+        stamp: null,
+      };
+      answers.inbox_list = () => [item];
+      answers.projects_list = () => [
+        { name: "Orbit App launch", status: "active", path: "Project. Orbit App launch.md" },
+        { name: "Garden", status: "someday", path: "Project. Garden.md" },
+      ];
+      answers.clarify_suggest = (a) =>
+        (a!.items as { id: string }[]).map((i) => ({
+          id: i.id,
+          becomes: "next",
+          text: "Call Sam about the beta",
+          project: "Orbit App launch",
+          context: "calls",
+          effort: "15m",
+          due: null,
+          why: "A call to make for the launch.",
+        }));
+      expect(await run("inbox.list")).not.toMatch(/suggests/);
+      expect(calls.some(([c]) => c === "clarify_suggest")).toBe(false);
+      const out = (await run("inbox.list", { suggest: true })) as string;
+      expect(out).toContain("suggests next: “Call Sam about the beta” · project Orbit App launch · @calls · effort 15m — A call to make");
+      expect(calls.find(([c]) => c === "clarify_suggest")![1]).toEqual({
+        items: [{ id: "task:14", kind: "task", text: "Call Sam about the beta" }],
+        projects: ["Orbit App launch"],
+      });
+      const [first] = (await data("inbox.list", { suggest: true })).items as Record<string, Record<string, unknown>>[];
+      expect(first.suggestion).toMatchObject({ becomes: "next", project: "Orbit App launch", context: "calls" });
+      expect(calls.some(([c]) => c.startsWith("change"))).toBe(false);
+    });
+
+    it("lists the recent summary runs with their change, which changes revert undoes", async () => {
+      const summary = (id: string, over: Record<string, unknown> = {}) => ({
+        id,
+        kind: "daily",
+        target: "2026-10-06",
+        trigger: "manual",
+        model: "claude:haiku",
+        startedAt: "2026-10-07T08:00:00",
+        finishedAt: "2026-10-07T08:01:00",
+        status: "done",
+        error: null,
+        file: "Me. Summaries - 2026-10.md",
+        replaced: false,
+        undone: false,
+        chat: null,
+        ...over,
+      });
+      answers.ingest_runs = () => [];
+      answers.daily_check_status = () => ({ running: false, progress: 0 });
+      answers.weekprep_job = () => ({ running: null, last: null, next: null });
+      answers.reviews_status = () => ({
+        running: [],
+        next: {},
+        runs: [
+          summary("summary-1", {}),
+          summary("summary-2", { kind: "weekly", target: "2026-W40", trigger: "schedule", status: "error", error: "No model", file: null }),
+          ...Array.from({ length: 8 }, (_, i) => summary(`summary-old-${i}`)),
+        ],
+      });
+      answers.changes_list = () => [{ id: "c9", group: "summary-1", status: "applied" }];
+      const out = (await run("run.status")) as string;
+      expect(out).toContain(
+        "- Daily summary 2026-10-06 · run now · 2026-10-07 08:00 · written to Me. Summaries - 2026-10.md · change c9 (changes revert with it undoes the summary)",
+      );
+      expect(out).toContain("- Weekly summary 2026-W40 · scheduled · 2026-10-07 08:00 · failed: No model");
+      expect(out.split("\n").filter((l) => l.startsWith("- ") && l.includes("summary"))).toHaveLength(8);
+      answers.changes_list = () => [{ id: "c9", group: "summary-1", status: "reverted" }];
+      expect(await run("run.status")).toMatch(
+        /Daily summary 2026-10-06 · run now · 2026-10-07 08:00 · undone, in Me\. Summaries - 2026-10\.md · change c9 \(reverted\)/,
+      );
+    });
+
+    it("pins and unpins a chat, and lists which are pinned", async () => {
+      const c = {
+        filename: "Chat. Orbit App plan.md",
+        id: "a",
+        title: "Orbit App plan",
+        updatedAt: "2026-10-05T09:00:00",
+        state: "archived",
+      };
+      answers.chats_list = () => [c];
+      answers.chat_read = () => ({ ...c, transcript: [] });
+      await run("chats", { action: "pin", chat: "Orbit App plan" });
+      expect(calls.find(([x]) => x === "chat_save")![1]!.chat).toMatchObject({ state: "pinned" });
+      answers.chats_list = () => [{ ...c, state: "pinned" }];
+      expect(await run("chats")).toMatch(/saved as Chat\. Orbit App plan\.md · pinned/);
+      expect(((await data("chats")).items as Record<string, unknown>[])[0].pinned).toBe(true);
+      expect(await run("chats", { action: "pin", chat: "Orbit App plan" })).toMatch(/pinned already/);
+      expect(await run("chats", { action: "unpin", chat: "Orbit App plan" })).toBe("Unpinned “Orbit App plan”.");
+      expect(calls.filter(([x]) => x === "chat_save").at(-1)![1]!.chat).toMatchObject({ state: "archived" });
+    });
+
+    it("rebuilds the index, unless it's being built already", async () => {
+      answers.vault_status = () => ({ state: "ready" });
+      expect(await run("index.rebuild")).toMatch(/^Rebuilding the index/);
+      expect(calls.some(([c]) => c === "rebuild_index")).toBe(true);
+      calls.length = 0;
+      answers.vault_status = () => ({ state: "indexing" });
+      expect(await run("index.rebuild")).toMatch(/being built already/);
+      expect(calls.some(([c]) => c === "rebuild_index")).toBe(false);
+    });
+
+    it("fixes a name only in the files given, as ticking them does", async () => {
+      const r = (file: string, action = "rewrite") => ({ file, layer: "note", inFilename: false, count: 1, lines: [], action });
+      answers.fixname_plan = () => ({ rows: [r("Idea. A.md"), r("Idea. B.md"), r("Idea. C.md", "guarded")], rightPage: null });
+      answers.fixname_apply = () => "Fixed the name in 1 file.";
+      const args = { written_as: "Lenna", correct_spelling: "Lena", apply: true };
+      await run("fix_name", { ...args, files: ["Idea. B.md"] });
+      const rows = () => (calls.filter(([c]) => c === "fixname_apply").at(-1)![1]!.rows as { file: string }[]).map((x) => x.file);
+      expect(rows()).toEqual(["Idea. B.md"]);
+      await run("fix_name", args);
+      expect(rows()).toEqual(["Idea. A.md", "Idea. B.md"]);
+      await expect(run("fix_name", { ...args, files: ["Idea. C.md"] })).rejects.toThrow(
+        /Not among the files.*They are: Idea\. A\.md, Idea\. B\.md/,
+      );
+    });
+
+    it("opens Meeting notes, Draft a reply and Doc check on their file", async () => {
+      answers.meeting_transcripts = () => [{ path: "sources/Standup transcript.vtt", done: false, inferred: {} }];
+      expect(await run("open", { screen: "meeting", transcript: "sources/Standup transcript.vtt" })).toBe(
+        "Brainstead is open on meeting with sources/Standup transcript.vtt.",
+      );
+      await expect(run("open", { screen: "meeting", transcript: "sources/Other.vtt" })).rejects.toThrow(
+        /No transcript at sources\/Other\.vtt/,
+      );
+      answers.links_resolve = (a) => [(a!.targets as string[])[0] === "Nowhere" ? null : "sources/Thread.eml"];
+      expect(await run("open", { screen: "reply", thread: "sources/Thread.eml" })).toBe(
+        "Brainstead is open on reply with sources/Thread.eml.",
+      );
+      expect(await run("open", { screen: "doc_check" })).toBe("Brainstead is open on doc check.");
+      await expect(run("open", { screen: "doc_check", document: "Nowhere" })).rejects.toThrow(/no Nowhere in the vault/);
+    });
+
+    it("filters Activity by action and by the screen's search", async () => {
+      answers.activity = () => ({
+        log: [
+          { date: "2026-10-02", time: "10:00", action: "trash", title: "Idea. Old", description: "" },
+          { date: "2026-10-01", time: "09:30", action: "ingest", title: "Orbit", description: "two pages" },
+          { date: "2026-09-30", time: "09:00", action: "ingest", title: "Hub Platform", description: "one page" },
+        ],
+      });
+      expect(await run("activity", { action: "ingest" })).toBe(
+        "2 entries in log.md, newest first:\n- 2026-10-01 ingest Orbit\n- 2026-09-30 ingest Hub Platform",
+      );
+      expect(await run("activity", { action: "ingest", query: "two pages" })).toMatch(
+        /^1 entry in log\.md, newest first matching “two pages”, of 2:\n- 2026-10-01 ingest Orbit$/,
+      );
+      await expect(run("activity", { action: "rename" })).rejects.toThrow(/Its actions: ingest, trash/);
+    });
+
+    it("reads and changes the newer settings: login, models, spelling, read aloud and the document look", async () => {
+      answers.settings_write = (a) => a!.settings;
+      let login = false;
+      answers.login_item = () => login;
+      answers.login_item_set = (a) => (login = a!.on as boolean);
+      answers.ask_clis = () => [
+        {
+          cli: "claude",
+          path: "/usr/local/bin/claude",
+          version: "2",
+          models: [
+            { id: "claude:haiku", name: "Haiku" },
+            { id: "claude:sonnet", name: "Sonnet" },
+          ],
+        },
+      ];
+      answers.spell_languages = () => [["en_GB", "en_US"], "en_GB"];
+      answers.tts_voices = () => [{ id: "zoe", name: "Zoe", lang: "en-US", quality: "premium", default: false }];
+      const all = (await run("settings")) as string;
+      expect(all).toContain("openAtLogin · Settings › General › Open at login: false");
+      expect(all).toMatch(
+        /askModel · Settings › AI assistants › New chats use: "claude:sonnet" \(one of: claude:haiku \(Claude Code · Haiku\), claude:sonnet/,
+      );
+      expect(all).toContain(
+        "jobModels.summaries · Settings › AI assistants › Models by job › Daily and weekly summaries: null (As new chats)",
+      );
+      expect(all).toContain(
+        "spellLanguage · Settings › Notes › Spelling language: null (As macOS) (one of: en_GB, en_US; null for As macOS)",
+      );
+      expect(all).toContain("docTheme · Settings › Notes › Light or dark › Documents: null (As the app)");
+      await run("settings", { action: "set", key: "openAtLogin", value: true });
+      expect(login).toBe(true);
+      await run("settings", { action: "set", key: "jobModels.summaries", value: "Claude Code · Haiku" });
+      expect(settings.get().jobModels).toEqual({ summaries: "claude:haiku" });
+      await expect(run("settings", { action: "set", key: "askModel", value: "gpt-9" })).rejects.toThrow(
+        /one of: claude:haiku, claude:sonnet/,
+      );
+      await run("settings", { action: "set", key: "jobModels.summaries", value: null });
+      expect(settings.get().jobModels).toEqual({});
+      await run("settings", { action: "set", key: "spellLanguage", value: "en_US" });
+      await run("settings", { action: "set", key: "speechVoice", value: "zoe" });
+      expect(await run("settings", { action: "set", key: "speechRate", value: 1.27 })).toMatch(/Speed \(0\.5 to 2\) is now 1\.25/);
+      await expect(run("settings", { action: "set", key: "speechRate", value: 3 })).rejects.toThrow(/0\.5 to 2/);
+      await run("settings", { action: "set", key: "docStyle", value: "Editorial" });
+      await run("settings", { action: "set", key: "docTheme", value: "dark" });
+      expect(settings.get()).toMatchObject({
+        spellLanguage: "en_US",
+        speechVoice: "zoe",
+        speechRate: 1.25,
+        docStyle: "editorial",
+        docTheme: "dark",
+      });
+      expect(await run("settings", { action: "set", key: "docTheme", value: null })).toMatch(/Documents is now As the app/);
+      expect(settings.get().docTheme).toBeUndefined();
+      await expect(run("settings", { action: "set", key: "docStyle", value: null })).rejects.toThrow(/no default choice/);
+      // Where macOS can't manage the login item, it isn't offered.
+      answers.login_item = () => null;
+      expect(await run("settings")).not.toContain("openAtLogin");
+      await expect(run("settings", { action: "set", key: "openAtLogin", value: true })).rejects.toThrow(/can't be changed for this copy/);
+    });
   });
 
   it("refuses an action it doesn't know", async () => {

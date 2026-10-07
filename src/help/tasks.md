@@ -35,7 +35,7 @@ Click a task to show it in the pane on the right. Click its words to change them
 **Lives in** shows the note, line and heading the task is written in; click it to open the note there. The ⋯ button at the pane's foot has **Open note**, **Cancel task** (**Reopen** on a cancelled one) and **Delete task**, which ⌘Z undoes. **Ask about this** opens [Ask](app:ask) about the task. **Waiting for someone** adds `#waiting-for` to the task, and **No longer waiting** takes it off.
 
 ## Group, filter and save lists
-**Group by** in the top bar (**None**, **Project**, **Context** or **Due**) groups the current list, with a band and count per group. Grouped lists can't be dragged.
+**Group by** in the top bar (**None**, **Project**, **Context** or **Due**) groups the current list, with a band and count per group. Grouped lists can't be dragged. An assistant reading your tasks can use the same grouping and effort filter.
 
 Above the table, **Search tasks** narrows every list to the tasks with all the words you type, in their text, note, heading, project, tags or context; the counts on the left show how many match in each list, and `Esc` clears it. Beside it, context chips (**All**, `@calls`, `@office`…) show only tasks in that context; click the chip again, or **All**, to show all. The effort menu limits the list to tasks of 15 minutes, 30 minutes or an hour or less, by their effort field.
 

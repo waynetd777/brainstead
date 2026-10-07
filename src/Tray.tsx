@@ -11,7 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, IngestRun, DailyCheckStatus, ReviewsStatus, TaskRow } from "./api";
+import { api, CurrentStateRun, DailyCheckStatus, FindState, IngestRun, ReviewsStatus, TaskRow, WeekPrepJob } from "./api";
 import { CaptureBox } from "./Capture";
 import { unclarified } from "./Inbox";
 import { Icon, Mark } from "./icons";
@@ -76,14 +76,26 @@ const when = (iso: string | null) => {
     : `${d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })} at ${time}`;
 };
 
-function runningOf(ingests: IngestRun[], dailyCheck: DailyCheckStatus, reviews: ReviewsStatus, contradictions: boolean): Running[] {
+/** What's going, as run_status lists it (src/mcpActions.ts): each run with its Stop. */
+export interface RunStates {
+  ingests: IngestRun[];
+  dailyCheck: DailyCheckStatus;
+  reviews: ReviewsStatus;
+  contradictions: boolean;
+  weekprep: WeekPrepJob | null;
+  find: FindState | null;
+  currentState: CurrentStateRun | null;
+}
+
+export function runningOf({ ingests, dailyCheck, reviews, contradictions, weekprep, find, currentState }: RunStates): Running[] {
   const out: Running[] = [];
+  // Meeting notes are runs in the ingest queue of their own kind.
   for (const r of ingests.filter((x) => x.status === "running" || x.status === "queued")) {
     const steps = r.steps.length;
     const done = r.steps.filter((s) => s.status === "done" || s.status === "skipped").length;
     out.push({
       key: `ingest:${r.id}`,
-      label: `Ingesting ${pageName(r.source)}`,
+      label: r.kind === "meeting" ? `Writing a meeting note from ${pageName(r.source)}` : `Ingesting ${pageName(r.source)}`,
       doing: r.status === "queued" ? "Waiting its turn" : (r.steps.find((s) => s.status === "running")?.name ?? "Starting"),
       progress: steps ? done / steps : null,
       stop: () => api.ingestStop(r.id),
@@ -113,11 +125,36 @@ function runningOf(ingests: IngestRun[], dailyCheck: DailyCheckStatus, reviews: 
       progress: null,
       stop: () => api.contradictionsStop(),
     });
+  if (weekprep?.running)
+    out.push({
+      key: "weekprep",
+      label: "Preparing the weekly review",
+      doing: `Suggestions for ${weekprep.running}`,
+      progress: null,
+      stop: () => api.weekprepStop(),
+    });
+  const f = find?.run;
+  if (f?.status === "running")
+    out.push({
+      key: "find",
+      label: "Finding tasks and projects",
+      doing: `${f.done} of ${f.batches} batches, ${f.found} found`,
+      progress: f.batches ? f.done / f.batches : null,
+      stop: () => api.findStop(),
+    });
+  if (currentState?.running)
+    out.push({
+      key: "current-state",
+      label: "Writing Current state",
+      doing: `${currentState.done} of ${currentState.total} pages`,
+      progress: currentState.total ? currentState.done / currentState.total : null,
+      stop: () => api.currentStateStop(),
+    });
   return out;
 }
 
 async function load(): Promise<TrayData> {
-  const [tasks, inbox, changes, ingests, dailyCheck, reviews, contra] = await Promise.all([
+  const [tasks, inbox, changes, ingests, dailyCheck, reviews, contra, weekprep, find, currentState] = await Promise.all([
     api.tasksAll().catch(() => null as TaskRow[] | null),
     api.inboxList().catch(() => null),
     api.changesList().catch(() => null),
@@ -125,6 +162,9 @@ async function load(): Promise<TrayData> {
     api.dailyCheckStatus().catch(() => ({ running: false }) as DailyCheckStatus),
     api.reviewsStatus().catch(() => ({ runs: [], next: { daily: null, weekly: null }, running: [] }) as ReviewsStatus),
     api.contradictionsReport().catch(() => null),
+    api.weekprepJob().catch(() => null),
+    api.findStatus().catch(() => null),
+    api.currentStateStatus().catch(() => null),
   ]);
   const today = localToday();
   const t = tasks && todayRows(tasks, today);
@@ -141,7 +181,7 @@ async function load(): Promise<TrayData> {
     waiting: tasks ? (waitingView ? viewRows(tasks, waitingView, today).filter((r) => !deferredPast(r, today)).length : 0) : null,
     inbox: inbox && inbox.filter(unclarified).length,
     held: changes && changes.filter((c) => c.status === "held").length,
-    running: runningOf(ingests, dailyCheck, reviews, !!contra?.last?.running),
+    running: runningOf({ ingests, dailyCheck, reviews, contradictions: !!contra?.last?.running, weekprep, find, currentState }),
     nextReview: next ? `${next[1]} ${when(next[0])}` : null,
   };
 }
@@ -231,6 +271,9 @@ export function TrayWindow() {
       api.onDailyCheckChanged(() => refresh()),
       api.onReviewsChanged(() => refresh()),
       api.onContradictionsChanged(() => refresh()),
+      api.onWeekprepChanged(() => refresh()),
+      api.onFindChanged(() => refresh()),
+      api.onCurrentStateChanged(() => refresh()),
       api.onLoginItemChanged(setLogin),
     ];
     return () => offs.forEach((o) => void o.then((f) => f()));

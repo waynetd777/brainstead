@@ -80,7 +80,7 @@ impl Cli {
 /// The MCP server's name, as each CLI is told it.
 pub const MCP_NAME: &str = "brainstead";
 /// Its tools, for the CLIs that list each one (Copilot).
-pub const MCP_TOOLS: [&str; 69] = [
+pub const MCP_TOOLS: [&str; 70] = [
     "search",
     "read_section",
     "backlinks",
@@ -150,6 +150,7 @@ pub const MCP_TOOLS: [&str; 69] = [
     "create_template",
     "open",
     "app_status",
+    "rebuild_index",
 ];
 
 /// How to start Brainstead's MCP server (stage 7a): the app's own binary with `--mcp …`.
@@ -805,7 +806,7 @@ mod tests {
         let tools = p.iter().find(|x| x.starts_with("--available-tools=")).unwrap();
         assert!(
             tools.starts_with("--available-tools=view,grep,glob,brainstead-search,")
-                && tools.ends_with(",brainstead-open,brainstead-app_status")
+                && tools.ends_with(",brainstead-open,brainstead-app_status,brainstead-rebuild_index")
         );
         // Antigravity doesn't take it: the app doesn't pass one, and the system prompt says so.
         assert!(!Cli::Antigravity.takes_mcp());
