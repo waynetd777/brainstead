@@ -133,32 +133,33 @@ fn toggle(app: &AppHandle, rect: tauri::Rect) {
         return;
     }
     *OPENED_UNDER.lock().unwrap() = Some(icon_place(&rect));
-    // The icon's place is in physical pixels across all screens: find the screen it's on and use
-    // that screen's scale, as the window's own is the screen it was last on.
-    let guess = w.scale_factor().unwrap_or(2.0);
-    let (pos, size) = (rect.position.to_physical::<f64>(guess), rect.size.to_physical::<f64>(guess));
+    // Placed in points: on macOS they're one space across screens, where physical pixels aren't
+    // (each screen's are its points times its own scale, so with a Retina screen beside another,
+    // a position in pixels lands on the wrong screen or in the wrong place). The click gives the
+    // icon in the pixels of the screen it's on; the screen it's on is the one where, in that
+    // screen's points, it falls inside it.
     let monitors = app.available_monitors().unwrap_or_default();
-    let screen = monitors.iter().find(|m| {
-        let (p, s) = (m.position(), m.size());
-        pos.x >= p.x as f64 && pos.x < (p.x + s.width as i32) as f64 && pos.y >= p.y as f64 && pos.y < (p.y + s.height as i32) as f64
-    });
-    let scale = screen.map_or(guess, |m| m.scale_factor());
-    let (pos, size) = if (scale - guess).abs() > f64::EPSILON {
-        (rect.position.to_physical::<f64>(scale), rect.size.to_physical::<f64>(scale))
-    } else {
-        (pos, size)
+    let icon = rect.position.to_physical::<f64>(1.0);
+    let icon_size = rect.size.to_physical::<f64>(1.0);
+    let in_points = |m: &tauri::Monitor| {
+        let k = m.scale_factor();
+        let (p, sz) = (m.position(), m.size());
+        let (left, top) = (p.x as f64 / k, p.y as f64 / k);
+        let (x, y) = (icon.x / k, icon.y / k);
+        let inside = x >= left && x < left + sz.width as f64 / k && y >= top && y < top + sz.height as f64 / k;
+        inside.then_some((k, left, left + sz.width as f64 / k))
     };
-    let width = WIDTH * scale;
-    let mut x = pos.x + size.width / 2.0 - width / 2.0;
-    if let Some(m) = screen {
-        let right = (m.position().x + m.size().width as i32) as f64;
-        x = x.min(right - width - 8.0 * scale).max(m.position().x as f64 + 8.0 * scale);
+    let screen = monitors.iter().find_map(in_points);
+    let k = screen.map_or_else(|| w.scale_factor().unwrap_or(2.0), |s| s.0);
+    let (x, y, iw, ih) = (icon.x / k, icon.y / k, icon_size.width / k, icon_size.height / k);
+    let mut left = x + iw / 2.0 - WIDTH / 2.0;
+    if let Some((_, screen_left, screen_right)) = screen {
+        left = left.min(screen_right - WIDTH - 8.0).max(screen_left + 8.0);
     }
-    let y = pos.y + size.height + 6.0 * scale;
-    let place = tauri::PhysicalPosition::new(x, y);
+    let place = tauri::LogicalPosition::new(left, y + ih + 6.0);
     let _ = w.set_position(place);
     let _ = w.show();
-    // Once on that screen, place it again: macOS converts the first move with the old screen's scale.
+    // Once on that screen, place it again, in case macOS moved it while showing it.
     let _ = w.set_position(place);
     let _ = w.set_focus();
     let _ = w.emit("tray-opened", ());
