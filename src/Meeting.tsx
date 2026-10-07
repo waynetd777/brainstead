@@ -20,7 +20,7 @@ import { toast } from "./Toast";
 import { TopBar } from "./TopBar";
 import { useVaultVersion } from "./state";
 import { place, useViewState } from "./nav";
-import { Seg } from "./ui";
+import { Dialog, Seg } from "./ui";
 import { draftNotes, noteFile, specOf, specOk } from "./meetingFlow";
 
 export { noteFile, specOf, specOk };
@@ -91,11 +91,15 @@ export function MeetingScreen() {
     () => (list ?? []).filter((t) => picked.has(t.path) && !drafting.has(t.path) && !noteExists(t, edits[t.path])),
     [list, picked, drafting, edits],
   );
-  const draft = (items: Transcript[]) => {
-    const pairs: [string, NoteSpec][] = items.map((t) => [t.path, specOf(t, edits[t.path])]);
+  // Draft all asks once for the dates of the ticked transcripts, rather than a Confirm on each.
+  const [dating, setDating] = useState<Record<string, string> | null>(null);
+  const tickAll = (on: boolean) => setPicked(on ? new Set((list ?? []).map((t) => t.path)) : new Set());
+  const ticked = (list ?? []).filter((t) => picked.has(t.path)).length;
+  const draft = (items: Transcript[], ed = edits) => {
+    const pairs: [string, NoteSpec][] = items.map((t) => [t.path, specOf(t, ed[t.path])]);
     const bad = pairs.find(([, s]) => !specOk(s));
     if (bad) return toast(`${pageName(bad[0])} needs a name and a date.`, undefined, "bad");
-    const unchecked = items.find((t) => needsDate(t, edits[t.path]));
+    const unchecked = items.find((t) => needsDate(t, ed[t.path]));
     if (unchecked)
       return toast(
         `${pageName(unchecked.path)} is dated with the day it was captured: confirm or change its date first.`,
@@ -139,7 +143,7 @@ export function MeetingScreen() {
             type="button"
             className="btn"
             title={`Have the AI draft a meeting note from each of the ${batch.length} ticked transcripts`}
-            onClick={() => draft(batch)}
+            onClick={() => setDating(Object.fromEntries(batch.map((t) => [t.path, specOf(t, edits[t.path]).date])))}
           >
             Draft all {batch.length}
           </button>
@@ -153,6 +157,23 @@ export function MeetingScreen() {
             ) : (
               <p className="faint pad">No Teams transcripts in sources/. The Teams extension, or a file you drop there, puts them there.</p>
             ))}
+          {!!list?.length && (
+            <label
+              className="mall faint small"
+              title={ticked === list.length ? "Untick every transcript" : "Tick every transcript in the list"}
+            >
+              <input
+                type="checkbox"
+                aria-label="Tick all"
+                checked={ticked === list.length}
+                ref={(el) => {
+                  if (el) el.indeterminate = ticked > 0 && ticked < list.length;
+                }}
+                onChange={(e) => tickAll(e.target.checked)}
+              />
+              {ticked ? `${ticked} of ${list.length} ticked` : "Tick all"}
+            </label>
+          )}
           {list?.map((t) => (
             <div key={t.path} className={`qrow mrow ${cur?.path === t.path ? "sel" : ""}`}>
               <input
@@ -252,6 +273,51 @@ export function MeetingScreen() {
           <RunsPane />
         </div>
       </div>
+      {dating && (
+        <Dialog onClose={() => setDating(null)} width={520} label="Check the dates">
+          <div className="confirm">
+            <h2 className="h2">Draft {batch.length} notes with these dates?</h2>
+            <p className="muted">Each note is named and dated with the day below. Change any that's wrong.</p>
+            <div className="mdates">
+              {batch.map((t) => (
+                <label key={t.path} className="nnf">
+                  <span className="tt">
+                    {pageName(t.path).replace(/^Teams\. Transcript\. /, "")}
+                    {needsDate(t, edits[t.path]) && <span className="faint small"> · the day it was captured</span>}
+                  </span>
+                  <span className="inp">
+                    <input
+                      value={dating[t.path] ?? ""}
+                      placeholder="YYYY-MM-DD"
+                      onChange={(e) => setDating((d) => d && { ...d, [t.path]: e.target.value })}
+                    />
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="row">
+              <span className="grow" />
+              <button type="button" className="btn lg" title="Go back without drafting" onClick={() => setDating(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn lg pri"
+                title="The dates are right: draft a note from each ticked transcript"
+                onClick={() => {
+                  const ed = { ...edits };
+                  batch.forEach((t) => (ed[t.path] = { ...ed[t.path], date: dating[t.path] ?? "" }));
+                  setEdits(ed);
+                  setDating(null);
+                  draft(batch, ed);
+                }}
+              >
+                Draft all {batch.length}
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
     </main>
   );
 }

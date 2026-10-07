@@ -6915,6 +6915,13 @@ select.sel {
 }
 
 /* Meeting note from a transcript (stage 7b) */
+.mdates {
+  display: grid;
+  gap: 8px;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 4px 0 12px;
+}
 .body.meeting {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr) 360px;
@@ -6933,9 +6940,19 @@ select.sel {
   background: var(--accent-soft);
   box-shadow: inset 3px 0 0 var(--accent);
 }
+.mall {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 6px;
+}
+.mall input,
 .mrow input {
   margin-top: 3px;
   accent-color: var(--accent);
+}
+.mall input {
+  margin-top: 0;
 }
 .mpick {
   display: grid;
