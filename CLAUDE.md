@@ -16,6 +16,8 @@ The build plan (stages 1 to 10) and the agent-changes plan (D-20261005-03) are c
 
 New work:
 
+- In progress: the MCP parity plan in `archive/mcp-parity.md` (local, untracked; D-20261007-04). Read it before MCP work and tick items off there.
+
 - Agree a short plan with the user before building anything bigger than a fix: concrete items and a "Done when" line.
 - If anything is unclear, contradictory or missing a decision, ask the user rather than guessing, and record the answer with `sift decide`, so the next session doesn't have to ask again.
 

@@ -15,7 +15,7 @@ import moment from "moment";
 import { listen } from "@tauri-apps/api/event";
 import {
   api,
-  Bookmark,
+  BookmarkRow,
   ChangeKind,
   ChangeOrigin,
   ChangeOutcome,
@@ -244,22 +244,16 @@ async function listTasks(a: Args): Promise<Listing> {
   if (project) rows = rows.filter((t) => t.project && projectName(t.project).toLowerCase() === project.replace(/^project\. /, ""));
   const context = str(a, "context");
   if (context) rows = rows.filter((t) => (t.contexts ?? []).includes(contextName(context)));
-  const q = str(a, "query")?.toLowerCase();
-  if (q) rows = rows.filter((t) => t.text.toLowerCase().includes(q));
   if (named?.effort) rows = rows.filter((t) => withinEffort(t, named.effort));
-  const limit = Math.min(Number(a.limit) || 50, 300);
+  // A page at a time, query's words all in the task's line, as every listing tool pages.
   const shown = viewName(view);
-  const page = rows.slice(0, limit);
-  const structured = {
-    total: rows.length,
-    matching: rows.length,
-    offset: 0,
-    next_offset: rows.length > limit ? limit : null,
-    items: page.map(taskItem),
-  };
-  if (!rows.length) return { text: `No tasks in ${shown}${project || context || q ? " with those filters" : ""}.`, structured };
-  const head = `${rows.length} task${rows.length === 1 ? "" : "s"} in ${shown}${rows.length > limit ? `, the first ${limit} (narrow with project, context or query, or raise limit)` : ""}:`;
-  return { text: [head, ...page.map((t) => taskLineOut(t, a.detail === true))].join("\n"), structured };
+  return listed(a, rows, {
+    text: (t) => t.text,
+    noun: [`task in ${shown}`, `tasks in ${shown}`],
+    line: (t) => taskLineOut(t, a.detail === true),
+    item: taskItem,
+    empty: `No tasks in ${shown}${project || context ? " with those filters" : ""}.`,
+  });
 }
 
 /** A task as list_tasks' data gives it. */
@@ -268,7 +262,8 @@ const taskItem = (t: TaskRow) => ({
   text: shownText(t.text),
   path: t.path,
   due: t.due,
-  scheduled: t.scheduled,
+  // Deferred until: named as edit_task's argument that sets it.
+  defer: t.scheduled,
   start: t.start,
   done: t.done,
   doneOn: t.doneOn,
@@ -757,34 +752,26 @@ async function changesTool(a: Args): Promise<string | Listing> {
       reason: c.reason,
       created: c.created,
     });
-    // Held ones a page at a time; made ones, the latest 30 (limit and query narrow both).
-    const held = pagedRows(
-      a,
-      rows.filter((c) => c.status === "held"),
-      text,
-      ["change held for the user", "changes held for the user"],
-    );
-    const made = pagedRows(
-      { ...a, offset: 0, limit: a.limit ?? 30 },
-      rows.filter((c) => c.status !== "held"),
-      text,
-      ["change made", "changes made"],
-      30,
-    );
-    const text_ = [
-      rows.some((c) => c.status === "held") ? `${held.head}:` : "Nothing held.",
-      ...byRun(held.shown).flatMap((g) => [`Run “${g.label}” (group ${g.group}):`, ...g.rows.map(line)]),
-      ...(made.shown.length
-        ? [
-            `Made lately, newest first (changes revert undoes one, revert_run a whole run by its group): ${made.head}:`,
-            ...byRun(made.shown).flatMap((g) => [`Run “${g.label}” (group ${g.group}):`, ...g.rows.map(line)]),
-          ]
-        : []),
-    ].join("\n");
-    return {
-      text: text_,
-      structured: { held: { ...held.page, items: held.shown.map(item) }, made: { ...made.page, items: made.shown.map(item) } },
+    // One list, as the screen shows it: the held ones first, then those made, newest first; limit,
+    // offset and query page through it as a whole, so the next page carries on where this one ended.
+    const isHeld = (c: (typeof rows)[number]) => c.status === "held";
+    const heldRows = rows.filter(isHeld);
+    const madeRows = rows.filter((c) => !isHeld(c));
+    const all = pagedRows(a, [...heldRows, ...madeRows], text, ["change", "changes"]);
+    const matching = (rs: typeof rows) => pagedRows({ query: a.query, limit: 1 }, rs, text, ["", ""]).page.matching;
+    const part = (rs: typeof rows) => {
+      const shown = all.shown.filter((c) => rs.includes(c));
+      return { shown, page: { ...all.page, total: rs.length, matching: matching(rs), items: shown.map(item) } };
     };
+    const held = part(heldRows);
+    const made = part(madeRows);
+    const runs = (cs: typeof rows) => byRun(cs).flatMap((g) => [`Run “${g.label}” (group ${g.group}):`, ...g.rows.map(line)]);
+    const text_ = [
+      `${all.head}: ${heldRows.length ? `${held.page.matching} held for the user` : "nothing held"}, then ${made.page.matching} made, newest first.`,
+      ...(held.shown.length ? ["Held for the user:", ...runs(held.shown)] : []),
+      ...(made.shown.length ? ["Made (changes revert undoes one, revert_run a whole run by its group):", ...runs(made.shown)] : []),
+    ].join("\n");
+    return { text: text_, structured: { held: held.page, made: made.page } };
   }
   if (action === "history") {
     const cur = settings.get();
@@ -875,7 +862,7 @@ async function changesTool(a: Args): Promise<string | Listing> {
     if (r.ok) noted("reverted a change");
     return r.ok ? r.message : `${r.message} (The page as it was before is in Changes, for the user to copy from.)`;
   }
-  throw new Error("action is list, show, accept, reject, accept_run, reject_run, revert or history.");
+  throw new Error("action is list, show, accept, reject, accept_run, reject_run, revert, revert_run or history.");
 }
 
 // ---- runs
@@ -915,7 +902,7 @@ async function startRun(a: Args): Promise<string> {
     case "find_tasks":
       await api.findRun();
       noted("started looking for tasks and projects in the notes");
-      return "Reading the user's notes from the last 90 days for tasks and projects; the suggestions show at the top of Tasks and Projects, and nothing changes until the user accepts one. suggestions lists them.";
+      return "Reading the user's notes from the last 90 days for tasks and projects; the suggestions show at the top of Tasks and Projects, and nothing changes until the user accepts one. list_suggestions lists them; run_status shows how it's going.";
     case "weekly_prep":
       await api.weekprepRun();
       noted("started preparing the weekly review");
@@ -972,11 +959,20 @@ async function runStatus(): Promise<string> {
   ]);
   const f = find?.run;
   const c = contra?.last;
-  const active = runs.filter((r) => r.status === "running" || r.status === "queued");
-  const recent = runs.slice(0, 5);
+  // Meeting notes are runs in the ingest queue of their own kind: each listed apart, with its id
+  // for stop_run.
+  const going = (r: (typeof runs)[number]) => r.status === "running" || r.status === "queued";
+  const ingests = runs.filter((r) => r.kind !== "meeting");
+  const meetings = runs.filter((r) => r.kind === "meeting");
+  const active = ingests.filter(going);
+  const writing = meetings.filter(going);
+  const recent = ingests.slice(0, 5);
   return [
-    active.length ? `Ingest running: ${active.map((r) => `${r.source} (${r.status}, run ${r.id})`).join("; ")}` : "No ingest running.",
-    `Recent ingests: ${recent.map((r) => `${r.source} — ${r.status}${r.error ? ` (${r.error})` : ""}, ${r.proposals.length} change${r.proposals.length === 1 ? "" : "s"}`).join("; ") || "none"}`,
+    active.length ? `Ingest running: ${active.map((r) => `${r.source} (${r.status}, id ${r.id})`).join("; ")}` : "No ingest running.",
+    `Recent ingests: ${recent.map((r) => `${r.source} — ${r.status}${r.error ? ` (${r.error})` : ""}, ${r.proposals.length} change${r.proposals.length === 1 ? "" : "s"} (id ${r.id})`).join("; ") || "none"}`,
+    writing.length
+      ? `Meeting notes being written: ${writing.map((r) => `${r.source} (${r.status}, id ${r.id})`).join("; ")}`
+      : "No meeting note being written.",
     `Daily check: ${check.running ? `running (${check.doing}, ${Math.round(check.progress * 100)}%)` : `last ${check.lastRun ?? "never"}, next ${check.next ?? "not scheduled"}`}${check.summary ? ` — ${check.summary}` : ""}`,
     `Daily and weekly summaries: ${reviews.running.length ? `running the ${reviews.running.join(" and ")} summary; ` : ""}next daily ${reviews.next.daily ?? "not scheduled"}, next weekly ${reviews.next.weekly ?? "not scheduled"}`,
     `Weekly review preparation: ${
@@ -1293,12 +1289,14 @@ async function bookmarks(a: Args): Promise<string | Listing> {
     return `Kept the bookmark ${keep}: it won't need triage for two weeks.`;
   }
   if (!page) {
-    const line = (b: Bookmark) => `- ${b.title}${b.path ? ` (${b.path})` : " (missing)"}`;
-    return listed(a, await api.bookmarks(), {
+    // As the sidebar lists them, with Triage's untouched days.
+    const line = (b: BookmarkRow) =>
+      `- ${b.title}${b.path ? ` (${b.path})` : " (missing)"}${!b.missing && b.stale && b.days !== null ? ` · untouched ${b.days} days` : ""}`;
+    return listed(a, await api.bookmarksStatus(), {
       text: line,
       noun: ["bookmark", "bookmarks"],
       line,
-      item: (b) => ({ title: b.title, target: b.target, path: b.path }),
+      item: (b) => ({ title: b.title, target: b.target, path: b.path, days: b.days, stale: b.stale }),
       empty: "No bookmarks.",
     });
   }
@@ -1520,13 +1518,6 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   status: status,
   automated: automated,
   suggestions: suggestions,
-  "triage.list": async (a) => {
-    const rows = await api.bookmarksStatus();
-    const lines = rows.map(
-      (b) => `- ${b.title}${b.missing ? " (missing)" : b.stale ? ` (untouched ${b.days} days)` : ""}  (${b.path ?? b.target})`,
-    );
-    return lines.length ? paged(a, lines, ["bookmark", "bookmarks"]) : "No bookmarks.";
-  },
   "triage.suggest": (a) => api.bookmarksSuggest((Array.isArray(a.items) ? a.items : []) as { target: string; path: string }[]),
   "reply.draft": (a) => api.draftReply(str(a, "thread") ?? null, str(a, "text") ?? null, str(a, "tone") ?? "neutral"),
   "doccheck.register": () => api.canonicalRegister(),
@@ -1851,13 +1842,16 @@ async function taskLists(a: Args): Promise<string> {
   if (action !== "save") throw new Error("action is list, save or remove.");
   const asked = str(a, "view") ?? "next";
   const view = asked === "deferred" ? "scheduled" : asked;
-  if (!VIEWS.some((v) => v.id === view)) throw new Error(`No view “${asked}”. Views: ${VIEWS.map((v) => viewName(v.id)).join(", ")}.`);
+  // Only the Tasks screen's own lists can be saved, as Save this list… does there (today and all aren't among them).
+  if (!VIEWS.some((v) => v.id === view))
+    throw new Error(`No view “${asked}” to save. Views: ${VIEWS.map((v) => viewName(v.id)).join(", ")}.`);
   const effort = a.effort == null ? "" : String(a.effort);
   if (effort && !EFFORT_LIMITS.some(([v]) => v === effort)) throw new Error("effort is 15, 30 or 60 (minutes), or left out.");
   const group = str(a, "group") ?? "none";
   if (!["none", "project", "context", "due"].includes(group)) throw new Error("group is none, project, context or due.");
+  // none is no context: any context, as the list with none chosen.
   const ctx = str(a, "context");
-  const l = { name, view, context: ctx ? contextName(ctx) : "", effort, group };
+  const l = { name, view, context: ctx && ctx.toLowerCase() !== "none" ? contextName(ctx) : "", effort, group };
   settings.update({ taskLists: [...saved.filter((x) => x.name !== name), l] });
   await settings.flush();
   noted(`saved the task list ${name}`);
@@ -1874,7 +1868,7 @@ const SETTINGS: [string, string, string, SettingKind, unknown][] = [
   ["theme", "General", "Appearance (system, light or dark)", "theme", "system"],
   ["menuBar", "General", "Show in the menu bar", "bool", true],
   ["menuBarOnly", "General", "Only in the menu bar when the window is closed", "bool", false],
-  ["captureShortcut", "Capture", "Quick capture shortcut", "text", "Control+Alt+Space"],
+  ["captureShortcut", "General", "Quick capture shortcut", "text", "Control+Alt+Space"],
   ["spellCheck", "Notes", "Check spelling", "bool", true],
   ["grammarCheck", "Notes", "Check grammar", "bool", true],
   ["speechHighlight", "Notes", "Highlight each word (read aloud)", "bool", true],
@@ -1886,9 +1880,9 @@ const SETTINGS: [string, string, string, SettingKind, unknown][] = [
   ["refreshStale", "AI assistants", "Also refresh pages whose sources changed", "bool", false],
   ["reviewsHere", "Jobs & schedule", "Brainstead runs the daily and weekly summaries", "bool", false],
   ["reviewsToQueue", "Jobs & schedule", "Hold the summaries for me", "bool", false],
-  ["reviews.dailyEnabled", "Jobs & schedule", "Daily summary", "bool", true],
+  ["reviews.dailyEnabled", "Jobs & schedule", "Daily summary", "bool", false],
   ["reviews.dailyTime", "Jobs & schedule", "Daily summary time", "time", null],
-  ["reviews.weeklyEnabled", "Jobs & schedule", "Weekly summary", "bool", true],
+  ["reviews.weeklyEnabled", "Jobs & schedule", "Weekly summary", "bool", false],
   ["reviews.weeklyDay", "Jobs & schedule", "Weekly summary day", "day", null],
   ["reviews.weeklyTime", "Jobs & schedule", "Weekly summary time", "time", null],
   ["reviews.weeklyReviewDay", "Jobs & schedule", "Weekly review day", "day", "fri"],
@@ -1896,7 +1890,7 @@ const SETTINGS: [string, string, string, SettingKind, unknown][] = [
   ["weekprepEnabled", "Jobs & schedule", "Prepare the weekly review", "bool", true],
   ["nightlyEnabled", "Jobs & schedule", "Daily check", "bool", false],
   ["nightlyTime", "Jobs & schedule", "Daily check time", "time", "09:00"],
-  ["logDays", "About", "Keep logs for (days: 7, 14, 30 or 90)", "number", 14],
+  ["logDays", "About", "The app's logs › Keep (days: 7, 14, 30 or 90)", "number", 14],
 ];
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 

@@ -302,13 +302,11 @@ pub fn tools() -> Vec<Value> {
             }), &[])),
         // Tasks.
         tool("list_tasks", "List tasks", Read,
-            "Tasks as Brainstead's lists show them (needs the app). Each line gives the task, its dates and chips, and its id (path:line) to act on it with edit_task, move_task or delete_task. Narrow with view, project, context, query or a saved list rather than raising limit.",
+            "Tasks as Brainstead's lists show them (needs the app). Each line gives the task, its dates and chips, and its id (path:line) to act on it with edit_task, move_task or delete_task. Narrow with view, project, context, query (every word in the task's line) or a saved list rather than raising limit; offset gives the next page, as the reply says.",
             schema(json!({
                 "view": {"type": "string", "enum": ["today", "next", "followups", "waiting", "deferred", "someday", "done-this-week", "done-last-week", "all"], "description": "today: overdue, due and deferred until today, leaving out tasks deferred to a later day. next: open tasks that aren't follow-ups, waiting, someday, deferred or still in the Inbox (the default). deferred: the Deferred list, tasks deferred to a later day. all: every open task."},
                 "project": {"type": "string", "description": "Only this project's tasks, by its name."},
                 "context": {"type": "string", "description": "Only tasks with this context: calls, office…"},
-                "query": {"type": "string", "description": "Only tasks whose text has these words."},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 300, "description": "Default 50."},
                 "detail": {"type": "boolean", "description": "Also the heading, effort, created and done dates."},
                 "list": {"type": "string", "description": "A saved list's name (list_task_lists): its view, context and effort, instead of view and context."}
             }), &[])),
@@ -337,7 +335,7 @@ pub fn tools() -> Vec<Value> {
             schema(json!({
                 "text": {"type": "string", "description": "The task, one line, starting with a verb."},
                 "project": {"type": "string", "description": "A project's name (Orbit App launch) or its note."},
-                "context": {"type": "string", "description": "Where or with what: calls, computer, errands, office."},
+                "contexts": {"type": "array", "items": {"type": "string"}, "description": "Where or with what, as edit_task takes them: [\"calls\"], [\"computer\", \"office\"]."},
                 "effort": {"type": "string", "description": "15m, 1h, 1h30m, 2d."},
                 "due": day("the due date."),
                 "reason": reason
@@ -420,7 +418,7 @@ pub fn tools() -> Vec<Value> {
                 "to": {"type": "string", "description": "The vault path to put it back under, instead of where it was."}
             }), &["id"])),
         tool("list_bookmarks", "Bookmarks", Read,
-            "Lists the bookmarks as the sidebar shows them (needs the app): each one's title and the note it points at, or missing when that note is gone. Bookmark or unbookmark with bookmarks; triage_bookmarks says how long since each changed.",
+            "Lists the bookmarks as the sidebar shows them (needs the app): each one's title and the note it points at, or missing when that note is gone; one whose note hasn't changed in two weeks (and wasn't kept) says untouched N days, as Triage flags it. Bookmark, unbookmark or keep one with bookmarks; triage_bookmarks asks the model what to do with the ones given.",
             schema(json!({}), &[])),
         tool("bookmarks", "Bookmark a note", Destroy,
             "With page, bookmarks a note or takes its bookmark off (needs the app), as a note's Bookmark does; with keep, keeps a bookmark as triage's Keep does, so it won't need triage for two weeks. Undoable with ⌘Z in the app. Only as the user asked; list_bookmarks lists them.",
@@ -438,7 +436,7 @@ pub fn tools() -> Vec<Value> {
             }), &["name"])),
         // What agents changed.
         tool("list_changes", "What assistants changed", Read,
-            "What assistants and Brainstead's runs changed, and the changes held for the user, as the Changes screen shows them (needs the app). list gives the held changes a page at a time and the latest made, grouped by run, each with its id and its run's group; show gives one change's diff, quotes and flags; history says how long Changes keeps its history. detail adds each change's kind, who made it and why. Act on them with changes.",
+            "What assistants and Brainstead's runs changed, and the changes held for the user, as the Changes screen shows them (needs the app). list gives them as one list, the held ones first and then those made, newest first, a page at a time (limit, offset and query page through the whole list), grouped by run, each with its id and its run's group; show gives one change's diff, quotes and flags; history says how long Changes keeps its history. detail adds each change's kind, who made it and why. Act on them with changes.",
             schema(json!({
                 "action": {"type": "string", "enum": ["list", "show", "history"], "description": "Default list."},
                 "id": {"type": "string", "description": "For show: the change's id from list."},
@@ -466,7 +464,7 @@ pub fn tools() -> Vec<Value> {
                 "date": {"type": "string", "pattern": DATE, "description": "For meeting_note: the meeting's day, YYYY-MM-DD; needed when list_transcripts says the date is only the capture day (ask the user). For daily_summary: the day to summarise (default yesterday); for weekly_summary: a day in the week to summarise."}
             }), &["run"])),
         tool("run_status", "How runs are going", Read,
-            "How Brainstead's runs are going (needs the app): ingests running and lately done, the daily check, the daily and weekly summaries, the weekly review's preparation, Find tasks and projects, the contradictions check, meeting notes being written and Write Current state. Each says whether it's running, done or failed, with its progress. Use it after start_run, rather than starting a run again; stop_run stops one.",
+            "How Brainstead's runs are going (needs the app): ingests running and lately done, the daily check, the daily and weekly summaries, the weekly review's preparation, Find tasks and projects, the contradictions check, meeting notes being written and Write Current state. Each says whether it's running, done or failed, with its progress; ingests and meeting notes give their ids, for stop_run. Use it after start_run, rather than starting a run again; stop_run stops one.",
             schema(json!({}), &[])),
         tool("stop_run", "Stop a run", Destroy,
             "Stops a run that's going (needs the app), as its Stop button does. What it already changed stays, listed in Changes; the part not yet done is dropped, so start it again with start_run to finish. Stopping a run that isn't going does nothing. Only when the user asks.",
@@ -573,11 +571,11 @@ pub fn tools() -> Vec<Value> {
             }), &["wrong", "right"])),
         // The skill screens.
         tool("triage_bookmarks", "Triage bookmarks", Run,
-            "Without items, lists the bookmarks with how long since each changed (needs the app). With items, asks the model for a keep, update or drop suggestion on each, as the Triage screen does; nothing is changed. Act on a suggestion with bookmarks or edit_page, as the user decides.",
-            schema(json!({"items": {"type": "array", "description": "The bookmarks to ask about, as the list gives them.", "items": schema(json!({
-                "target": {"type": "string", "description": "The bookmark's target, from the list."},
-                "path": {"type": "string", "description": "The note it points at, from the list."}
-            }), &["target", "path"])}}), &[])),
+            "Asks the model for a keep, update or drop suggestion on each bookmark given, as the Triage screen does (needs the app); nothing is changed. list_bookmarks lists them, with how long since each changed. Act on a suggestion with bookmarks or edit_page, as the user decides.",
+            schema(json!({"items": {"type": "array", "minItems": 1, "description": "The bookmarks to ask about, as list_bookmarks gives them.", "items": schema(json!({
+                "target": {"type": "string", "description": "The bookmark's target, from list_bookmarks."},
+                "path": {"type": "string", "description": "The note it points at, from list_bookmarks."}
+            }), &["target", "path"])}}), &["items"])),
         tool("draft_reply", "Draft a reply", Run,
             "Drafts a reply to an email thread in sources/ (thread) or to pasted text, as the Draft reply screen does (needs the app). It says how fully the draft answers the thread. Nothing is sent and nothing in the vault changes: give the draft to the user.",
             schema(json!({
@@ -628,8 +626,8 @@ pub fn tools() -> Vec<Value> {
             schema(json!({
                 "action": {"type": "string", "enum": ["save", "remove"]},
                 "name": {"type": "string", "description": "The list's name."},
-                "view": {"type": "string", "description": "For save: today, next, deferred, waiting, someday… as list_tasks takes it."},
-                "context": {"type": "string", "description": "For save: a context such as @calls, or none."},
+                "view": {"type": "string", "enum": ["next", "followups", "waiting", "deferred", "someday", "done-this-week", "done-last-week"], "description": "For save: one of the Tasks screen's lists, as list_tasks names it (today and all can't be saved). Default next."},
+                "context": {"type": "string", "description": "For save: a context such as @calls; none or left out for any context."},
                 "effort": {"type": "integer", "enum": [15, 30, 60], "description": "For save: only tasks of this many minutes or less; any effort when left out."},
                 "group": {"type": "string", "enum": ["none", "project", "context", "due"], "description": "For save: default none."}
             }), &["action", "name"])),
@@ -687,6 +685,7 @@ const DAY_OR_MONTH: &str = r"^\d{4}-\d{2}(-\d{2})?$";
 
 /// The tools that list something: each gives how many there are and a page of them at a time.
 const PAGED: [&str; 18] = [
+    "list_tasks",
     "backlinks",
     "list_inbox",
     "list_projects",
@@ -698,7 +697,6 @@ const PAGED: [&str; 18] = [
     "list_transcripts",
     "list_contradictions",
     "page_shape",
-    "triage_bookmarks",
     "activity",
     "graph",
     "list_suggestions",
@@ -738,7 +736,7 @@ fn outputs() -> std::collections::HashMap<&'static str, Value> {
         "change": {"type": "object", "description": "show: the change, with its diff and quotes."},
         "history": {"type": "object", "properties": {"days": s("integer"), "mb": s("integer")}}
     }});
-    changes["description"] = json!("list gives held and made; show gives change; history gives history.");
+    changes["description"] = json!("list gives held and made: one page of the list (held first, then made), split in two, each with its own total and matching and the same offset and next_offset; show gives change; history gives history.");
     let mut chats = page_schema(json!({"file": s("string"), "title": s("string"), "updated": s("string"), "saved": s("boolean")}));
     chats["properties"]["chat"] = json!({"type": "object", "description": "read: the chat's title and messages."});
     chats["required"] = json!([]);
@@ -752,7 +750,7 @@ fn outputs() -> std::collections::HashMap<&'static str, Value> {
         (
             "list_tasks",
             page_schema(
-                json!({"id": s("string"), "text": s("string"), "path": s("string"), "due": sn(), "scheduled": sn(), "start": sn(), "done": s("boolean"), "doneOn": sn(), "project": sn(), "contexts": {"type": "array", "items": s("string")}, "effort": sn(), "heading": sn()}),
+                json!({"id": s("string"), "text": s("string"), "path": s("string"), "due": sn(), "defer": {"type": ["string", "null"], "description": "Deferred until, as edit_task's defer sets it."}, "start": sn(), "done": s("boolean"), "doneOn": sn(), "project": sn(), "contexts": {"type": "array", "items": s("string")}, "effort": sn(), "heading": sn()}),
             ),
         ),
         (
@@ -781,7 +779,12 @@ fn outputs() -> std::collections::HashMap<&'static str, Value> {
             ),
         ),
         ("list_chats", chats),
-        ("list_bookmarks", page_schema(json!({"title": s("string"), "target": s("string"), "path": sn()}))),
+        (
+            "list_bookmarks",
+            page_schema(
+                json!({"title": s("string"), "target": s("string"), "path": sn(), "days": {"type": ["integer", "null"], "description": "Days since its note changed."}, "stale": s("boolean")}),
+            ),
+        ),
         (
             "list_transcripts",
             page_schema(json!({"path": s("string"), "type": sn(), "name": sn(), "date": sn(), "dateCheck": s("boolean")})),
@@ -948,7 +951,8 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
             }
             act("bookmarks", obj)
         }
-        "list_saved_searches" => act("saved_searches", without(obj, &["name", "query", "delete", "layers"])),
+        // query is the listing's filter here, not a search to save.
+        "list_saved_searches" => act("saved_searches", without(obj, &["name", "delete", "layers"])),
         "saved_searches" => {
             let deleting = obj.get("delete").and_then(Value::as_bool) == Some(true);
             if !deleting && obj.get("query").and_then(Value::as_str).is_none_or(|q| q.trim().is_empty()) {
@@ -1011,8 +1015,10 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         "write_current_state" => act("health.current_state", obj),
         "fix_name" => act("fix_name", obj),
         "triage_bookmarks" => {
-            let has_items = obj.get("items").and_then(Value::as_array).is_some_and(|a| !a.is_empty());
-            act(if has_items { "triage.suggest" } else { "triage.list" }, obj)
+            if obj.get("items").and_then(Value::as_array).is_none_or(|a| a.is_empty()) {
+                return Err(CallError::Tool("Give items: the bookmarks to ask about, from list_bookmarks.".into()));
+            }
+            act("triage.suggest", obj)
         }
         "draft_reply" => act("reply.draft", obj),
         "doc_check" => {
@@ -1812,7 +1818,9 @@ fn lint_tool(ctx: &Ctx, a: LintArgs) -> Result<String, String> {
         let counted = if lint::ADVISORY.contains(&c.id) { ", not counted: only worth a look" } else { "" };
         out.push_str(&format!("\n{} ({}{counted}; check {}):\n", c.title, items.len(), c.id));
         for i in items.iter().take(40) {
-            out.push_str(&format!("- {}{}\n", i.text, if i.safe { " [safe fix]" } else { "" }));
+            // Page shape's items are reshape_pages', not fix_health's, as the app's report has them.
+            let safe = i.safe && c.id != "page-shape";
+            out.push_str(&format!("- {}{}\n", i.text, if safe { " [safe fix]" } else { "" }));
         }
         if items.len() > 40 {
             out.push_str(&format!("- …and {} more\n", items.len() - 40));
@@ -1967,7 +1975,8 @@ fn extracted(ctx: &Ctx, ix: &Index, rel: &str) -> Option<brainstead_core::extrac
 struct TaskArgs {
     text: String,
     project: Option<String>,
-    context: Option<String>,
+    #[serde(default)]
+    contexts: Vec<String>,
     effort: Option<String>,
     due: Option<String>,
     #[serde(default)]
@@ -1984,8 +1993,9 @@ fn create_task(ctx: &Ctx, a: TaskArgs) -> Result<String, String> {
         return Err("The task has no text.".into());
     }
     let mut line = format!("- [ ] {text}");
-    if let Some(c) = a.context.as_deref().filter(|c| !c.trim().is_empty()) {
-        line = write::with_contexts(&line, &[c.to_string()]).map_err(|e| e.to_string())?;
+    let contexts: Vec<String> = a.contexts.iter().map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect();
+    if !contexts.is_empty() {
+        line = write::with_contexts(&line, &contexts).map_err(|e| e.to_string())?;
     }
     if let Some(e) = a.effort.as_deref().filter(|e| !e.trim().is_empty()) {
         line = write::with_effort(&line, Some(e)).map_err(|e| e.to_string())?;

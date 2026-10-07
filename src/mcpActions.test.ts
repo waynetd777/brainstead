@@ -633,6 +633,97 @@ describe("MCP actions", () => {
       expect(await run("graph", { limit: 1 })).toBe("2 pages; 2 links; 1–1 shown, offset 1 for the next:\n- A → B");
     });
 
+    it("pages tasks like every list, with all of query's words, and names the defer date as edit_task does", async () => {
+      answers.tasks_all = () => [
+        row({ text: "Call Sam about the launch", scheduled: "2026-01-01" }),
+        row({ line: 3, text: "Call Lena about the budget" }),
+        row({ line: 4, text: "Email Sam the launch plan" }),
+      ];
+      answers.inbox_list = () => [];
+      expect(((await run("tasks.list", { view: "all", limit: 1 })) as string).split("\n")[0]).toBe(
+        "3 tasks in all; 1–1 shown, offset 1 for the next:",
+      );
+      const next = await data("tasks.list", { view: "all", limit: 1, offset: 1 });
+      expect([next.offset, next.next_offset, (next.items as { text: string }[])[0].text]).toEqual([1, 2, "Call Lena about the budget"]);
+      // Words, not the phrase: both of them, anywhere in the line.
+      const hit = await data("tasks.list", { view: "all", query: "sam launch" });
+      expect((hit.items as { id: string }[]).map((t) => t.id)).toEqual(["Me. To Do List.md:12", "Me. To Do List.md:5"]);
+      expect(hit.matching).toBe(2);
+      const first = (hit.items as Record<string, unknown>[])[0];
+      expect([first.defer, "scheduled" in first]).toEqual(["2026-01-01", false]);
+    });
+
+    it("pages Changes as one list: held first, then made", async () => {
+      const ch = (id: string, status: string) => ({
+        id,
+        created: "2026-10-05T09:00:00",
+        origin: { kind: "chat", chat: "c1" },
+        model: null,
+        page: `${id}.md`,
+        kind: "edit",
+        title: `Change ${id}`,
+        reason: "",
+        status,
+        decided: null,
+        flags: [],
+        warnings: [],
+        group: "g1",
+        revertable: true,
+      });
+      answers.changes_list = () => [ch("h1", "held"), ch("m1", "applied"), ch("h2", "held"), ch("m2", "applied")];
+      const p1 = (await data("changes", { limit: 3 })) as Record<string, Record<string, unknown>>;
+      const ids = (x: Record<string, unknown>) => (x.items as { id: string }[]).map((c) => c.id);
+      expect([ids(p1.held), ids(p1.made), p1.held.next_offset, p1.made.total]).toEqual([["h1", "h2"], ["m1"], 3, 2]);
+      const p2 = (await data("changes", { limit: 3, offset: 3 })) as Record<string, Record<string, unknown>>;
+      expect([ids(p2.held), ids(p2.made), p2.made.next_offset]).toEqual([[], ["m2"], null]);
+      expect(await run("changes", { limit: 3 })).toMatch(/^4 changes; 1–3 shown, offset 3 for the next: 2 held for the user, then 2 made/);
+    });
+
+    it("saves only the Tasks screen's lists, and none as no context", async () => {
+      answers.settings_write = (a) => a!.settings;
+      await expect(run("task_lists", { action: "save", name: "Now", view: "today" })).rejects.toThrow(/No view “today” to save/);
+      await run("task_lists", { action: "save", name: "Anything", view: "deferred", context: "none" });
+      expect(await run("task_lists")).toBe("1 saved list:\n- Anything: deferred");
+      await run("task_lists", { action: "remove", name: "Anything" });
+    });
+
+    it("lists meeting notes being written apart from ingests, each with its id", async () => {
+      answers.ingest_runs = () => [
+        { id: "r1", kind: "ingest", source: "sources/Plan.pdf", status: "running", proposals: [], error: null },
+        { id: "r2", kind: "meeting", source: "sources/Standup transcript.vtt", status: "running", proposals: [], error: null },
+      ];
+      answers.daily_check_status = () => ({ running: false, progress: 0 });
+      answers.reviews_status = () => ({ running: [], next: {} });
+      answers.weekprep_job = () => ({ running: null, last: null, next: null });
+      const out = (await run("run.status")) as string;
+      expect(out).toContain("Ingest running: sources/Plan.pdf (running, id r1)");
+      expect(out).toContain("Meeting notes being written: sources/Standup transcript.vtt (running, id r2)");
+      expect(out).not.toMatch(/Ingest running:.*Standup/);
+      expect(out).toMatch(/Recent ingests: sources\/Plan\.pdf — running, 0 changes \(id r1\)$/m);
+    });
+
+    it("says where each setting is, as the screen does", async () => {
+      const out = (await run("settings")) as string;
+      expect(out).toContain("captureShortcut · Settings › General › Quick capture shortcut");
+      expect(out).toContain("reviews.dailyEnabled · Settings › Jobs & schedule › Daily summary: false");
+      expect(out).toContain("reviews.weeklyEnabled · Settings › Jobs & schedule › Weekly summary: false");
+      expect(out).toContain("logDays · Settings › About › The app's logs › Keep (days: 7, 14, 30 or 90): 14");
+    });
+
+    it("lists bookmarks with Triage's untouched days, and filters saved searches by query", async () => {
+      answers.bookmarks_status = () => [
+        { target: "a", path: "a.md", title: "Plan", mtime: 1, days: 20, stale: true, missing: false },
+        { target: "b", path: "b.md", title: "Fresh", mtime: 1, days: 2, stale: false, missing: false },
+      ];
+      expect(await run("bookmarks")).toBe("2 bookmarks:\n- Plan (a.md) · untouched 20 days\n- Fresh (b.md)");
+      expect(((await data("bookmarks")).items as Record<string, unknown>[])[0]).toMatchObject({ days: 20, stale: true });
+      answers.smart_lists = () => [
+        { name: "Launch", query: "soft launch +Orbit" },
+        { name: "Budget", query: "budget" },
+      ];
+      expect(await run("saved_searches", { query: "orbit" })).toBe("1 saved search matching “orbit”, of 2:\n- Launch: soft launch +Orbit");
+    });
+
     it("deletes a saved search", async () => {
       expect(await run("saved_searches", { name: "Launch", delete: true })).toBe("Deleted the saved search “Launch”.");
       expect(calls.find(([c]) => c === "smart_list_delete")![1]).toEqual({ name: "Launch" });

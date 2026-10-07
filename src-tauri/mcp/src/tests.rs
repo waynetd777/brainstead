@@ -163,6 +163,9 @@ fn reading_tools() {
     assert!(all.contains("; check missing-pages)"), "{all}");
     assert!(all.lines().any(|l| l.contains("[safe fix]")), "{all}");
     assert!(all.lines().filter(|l| l.contains("check stale-pages")).all(|l| l.contains("not counted")), "{all}");
+    // Page shape's items are reshape_pages', so none is a safe fix, as in the app's report.
+    let shape = all.split("\n\n").find(|s| s.contains("; check page-shape)")).expect("a page shape check in the fixture");
+    assert!(shape.lines().count() > 1 && !shape.contains("[safe fix]"), "{shape}");
 }
 
 #[test]
@@ -317,13 +320,13 @@ fn create_task_sends_a_line() {
     let (t, c) = submitted(
         &f,
         "create_task",
-        json!({"text": "Call Northwind about the pilot", "context": "calls", "effort": "15m", "due": "2026-10-09"}),
+        json!({"text": "Call Northwind about the pilot", "contexts": ["calls", "office"], "effort": "15m", "due": "2026-10-09"}),
     );
     assert!(t.contains("Revert"), "{t}");
     assert_eq!((c["page"].as_str(), c["kind"].as_str()), (Some("Me. To Do List.md"), Some("task")));
     assert_eq!(
         c["instruction"],
-        json!({"op": "add_task", "line": "- [ ] Call Northwind about the pilot #context/calls [effort:: 15m] 📅 2026-10-09"})
+        json!({"op": "add_task", "line": "- [ ] Call Northwind about the pilot #context/calls #context/office [effort:: 15m] 📅 2026-10-09"})
     );
     let (_, c) = submitted(&f, "create_task", json!({"text": "Book the venue", "project": "Orbit App launch"}));
     assert_eq!(c["page"], "Project. Orbit App launch.md");
@@ -663,4 +666,14 @@ fn a_read_tool_never_changes_anything() {
     let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
     ok(&f.ctx, "settings", json!({"key": "theme", "value": "dark"}));
     assert_eq!(app.join().unwrap().args["action"], "set");
+    // list_saved_searches' query is its filter, so it reaches the app; the saving arguments don't.
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
+    ok(&f.ctx, "list_saved_searches", json!({"query": "launch", "name": "x", "delete": true}));
+    let req = app.join().unwrap();
+    assert_eq!((req.args["query"].as_str(), req.args.get("name"), req.args.get("delete")), (Some("launch"), None, None));
+    // triage_bookmarks only asks the model: the list is list_bookmarks'.
+    assert!(refused(&f.ctx, "triage_bookmarks", json!({})).contains("list_bookmarks"));
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
+    ok(&f.ctx, "triage_bookmarks", json!({"items": [{"target": "a", "path": "a.md"}]}));
+    assert_eq!(app.join().unwrap().action, "triage.suggest");
 }
