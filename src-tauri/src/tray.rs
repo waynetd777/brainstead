@@ -94,6 +94,16 @@ static BLURRED_AT: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mut
 /// focus: it closes the menu rather than opening it again.
 const CLICK_AFTER_BLUR: std::time::Duration = std::time::Duration::from_millis(400);
 
+/// Where the icon was that the menu last opened under. With two screens each menu bar has the
+/// icon, and a click on the other screen's takes the focus too: that one opens the menu there.
+static OPENED_UNDER: std::sync::Mutex<Option<(f64, f64)>> = std::sync::Mutex::new(None);
+
+/// The icon's place as the click gives it, to tell one screen's icon from another's.
+fn icon_place(rect: &tauri::Rect) -> (f64, f64) {
+    let p = rect.position.to_physical::<f64>(1.0);
+    (p.x, p.y)
+}
+
 /// The menu window's own handling: it closes when it loses focus.
 pub fn setup_window(app: &AppHandle) {
     if let Some(t) = app.get_webview_window("tray") {
@@ -118,9 +128,11 @@ fn toggle(app: &AppHandle, rect: tauri::Rect) {
     }
     // With the main window closed, clicking the icon takes the focus from the menu first, so it has
     // just hidden itself: this click was meant to close it.
-    if BLURRED_AT.lock().unwrap().take().is_some_and(|t| t.elapsed() < CLICK_AFTER_BLUR) {
+    let same_icon = *OPENED_UNDER.lock().unwrap() == Some(icon_place(&rect));
+    if BLURRED_AT.lock().unwrap().take().is_some_and(|t| t.elapsed() < CLICK_AFTER_BLUR) && same_icon {
         return;
     }
+    *OPENED_UNDER.lock().unwrap() = Some(icon_place(&rect));
     // The icon's place is in physical pixels across all screens: find the screen it's on and use
     // that screen's scale, as the window's own is the screen it was last on.
     let guess = w.scale_factor().unwrap_or(2.0);
