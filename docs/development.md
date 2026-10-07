@@ -50,7 +50,7 @@ These pages are the user guide; the in-app help goes deeper on each screen. Keep
 | The index (SQLite, FTS5) | `index.db` there, rebuilt from the vault when its schema changes |
 | Drafts, undo, extracted PDF and Office text | `drafts/`, `undo.json`, `text/` |
 | Agent changes | `changes/<id>.json`, with the pages' texts before and after compressed in `changes/text/`, kept 90 days or 500 MB (Settings › AI assistants). `proposals-backup/` is the old review queue, moved in once and kept for one release |
-| Runs (ingest, reviews, nightly, contradictions, Write Current state) | `runs/`, `reviews/`, `nightly.json`, `contradictions/`, `current-state.json` |
+| Runs (ingest, the daily and weekly summaries, the daily check, contradictions, Write Current state) | `runs/`, `summaries/`, `daily-check.json`, `contradictions/`, `current-state.json` |
 | Knowledge health's not-duplicates and daily counts | `health.json` |
 | Weekly review in progress | `weekly.json` |
 | The weekly review's prepared suggestions, by week, and its runs | `weekly-prep/` |
@@ -62,7 +62,7 @@ These pages are the user guide; the in-app help goes deeper on each screen. Keep
 | Fix name's remembered corrections | `substitutions.json` |
 | Find tasks and projects' suggestions, what's been accepted or skipped, and its last run | `find/state.json` |
 | When each bookmark was last kept in triage | `bookmarks-kept.json` |
-| Your tools that start Claude Code sessions, kept out of the summaries (Settings › Jobs & schedule) | `reviews/automated.json` |
+| Your tools that start Claude Code sessions, kept out of the summaries (Settings › Jobs & schedule) | `summaries/automated.json` |
 | MCP actions waiting for the app | `bridge/` |
 | The app's own logs | `logs/` |
 

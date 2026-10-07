@@ -8,7 +8,7 @@
 // can be undone while the file is as the run left it.
 
 import { useEffect, useState } from "react";
-import { api, DailyCheckStatus, ReviewRun, ReviewSchedule, ReviewsStatus, Weekday, WeekPrepJob } from "./api";
+import { api, DailyCheckStatus, ReviewRun, ReviewsStatus, SummarySchedule, Weekday, WeeklyReviewTime, WeekPrepJob } from "./api";
 import { Icon } from "./icons";
 import { openReviewRun, selectReviewRun } from "./askState";
 import { nav } from "./nav";
@@ -20,15 +20,15 @@ import { fmtShortDate } from "./md/dates";
 import { DocButton, useIsGone } from "./docButton";
 import { AutomatedTools } from "./AutomatedTools";
 
-export const DEFAULT_SCHEDULE: ReviewSchedule = {
+export const DEFAULT_SCHEDULE: SummarySchedule = {
   dailyEnabled: false,
   dailyTime: "06:30",
   weeklyEnabled: false,
   weeklyDay: "fri",
   weeklyTime: "16:00",
-  weeklyReviewDay: "fri",
-  weeklyReviewTime: "16:00",
 };
+
+export const DEFAULT_WEEKLY_REVIEW: WeeklyReviewTime = { day: "fri", time: "16:00" };
 
 const DAYS: [Weekday, string][] = [
   ["mon", "Monday"],
@@ -73,9 +73,11 @@ function yesterday(): string {
 export function Jobs() {
   const s = useStore(settings);
   const st = useReviews();
-  const sch = { ...DEFAULT_SCHEDULE, ...s.reviews };
-  const here = !!s.reviewsHere;
-  const set = (patch: Partial<ReviewSchedule>) => settings.update({ reviews: { ...sch, ...patch } });
+  const sch = { ...DEFAULT_SCHEDULE, ...s.summaries };
+  const wr = { ...DEFAULT_WEEKLY_REVIEW, ...s.weeklyReview };
+  const here = !!s.summariesHere;
+  const set = (patch: Partial<SummarySchedule>) => settings.update({ summaries: { ...sch, ...patch } });
+  const setReview = (patch: Partial<WeeklyReviewTime>) => settings.update({ weeklyReview: { ...wr, ...patch } });
   const [dailyFor, setDailyFor] = useState("");
   const runNow = (kind: "daily" | "weekly", day?: string) =>
     api
@@ -102,9 +104,9 @@ export function Jobs() {
           <span className="jtime">
             <select
               className="sel"
-              value={sch.weeklyReviewDay}
+              value={wr.day}
               aria-label="Weekly review day"
-              onChange={(e) => set({ weeklyReviewDay: e.target.value as Weekday })}
+              onChange={(e) => setReview({ day: e.target.value as Weekday })}
             >
               {DAYS.map(([d, l]) => (
                 <option key={d} value={d}>
@@ -112,7 +114,7 @@ export function Jobs() {
                 </option>
               ))}
             </select>
-            <TimeField value={sch.weeklyReviewTime} onChange={(t) => set({ weeklyReviewTime: t })} label="Weekly review time" />
+            <TimeField value={wr.time} onChange={(t) => setReview({ time: t })} label="Weekly review time" />
           </span>
         </div>
         <WeekPrep here={here} />
@@ -140,7 +142,7 @@ export function Jobs() {
             label="Brainstead runs the daily and weekly summaries"
             on={here}
             onChange={(v) => {
-              settings.update({ reviewsHere: v });
+              settings.update({ summariesHere: v });
               if (v)
                 toast("If another app also writes the daily and weekly summaries, switch them off there, so only one app writes them.");
             }}
@@ -149,19 +151,19 @@ export function Jobs() {
       </div>
       <div className="card">
         <div className="srow">
-          <Icon name="review" style={{ color: s.reviewsToQueue ? "var(--accent)" : "var(--ink3)" }} />
+          <Icon name="review" style={{ color: s.holdSummaries ? "var(--accent)" : "var(--ink3)" }} />
           <div className="t">
             <div className="pt">Hold the summaries for me</div>
             <div className="faint">
-              {s.reviewsToQueue
+              {s.holdSummaries
                 ? "Each summary is held in Changes until you accept it."
                 : "Off: summaries are written straight away, with Undo in Recent runs below and Revert in Changes."}
             </div>
           </div>
-          <Switch label="Hold the summaries for me" on={!!s.reviewsToQueue} onChange={(v) => settings.update({ reviewsToQueue: v })} />
+          <Switch label="Hold the summaries for me" on={!!s.holdSummaries} onChange={(v) => settings.update({ holdSummaries: v })} />
         </div>
       </div>
-      {here && s.readOnly && !s.reviewsToQueue && (
+      {here && s.readOnly && !s.holdSummaries && (
         <p className="faint">
           Brainstead is read-only: a scheduled summary is held in Changes for you, and Run now needs read-only turned off in Settings ›
           Vault.
@@ -341,7 +343,7 @@ function WeekPrep({ here }: { here: boolean }) {
     load();
     const off = api.onWeekprepChanged(() => load()).catch(() => () => {});
     return () => void off.then((f) => f());
-  }, [s.weekprepEnabled, s.reviewsHere, s.reviews?.weeklyReviewDay, s.reviews?.weeklyReviewTime]);
+  }, [s.weekprepEnabled, s.summariesHere, s.weeklyReview?.day, s.weeklyReview?.time]);
   const on = s.weekprepEnabled !== false;
   const running = !!st?.running;
   const last = st?.last ?? null;
@@ -444,8 +446,8 @@ function DailyCheck() {
       void off.then((f) => f());
       void off2.then((f) => f());
     };
-  }, [s.nightlyEnabled, s.nightlyTime]);
-  const on = !!s.nightlyEnabled;
+  }, [s.dailyCheckEnabled, s.dailyCheckTime]);
+  const on = !!s.dailyCheckEnabled;
   return (
     <>
       <div className="card">
@@ -465,7 +467,11 @@ function DailyCheck() {
           </div>
           <label className="jtime">
             <span className="muted">Every day at</span>
-            <TimeField value={s.nightlyTime ?? "09:00"} onChange={(t) => settings.update({ nightlyTime: t })} label="Daily check time" />
+            <TimeField
+              value={s.dailyCheckTime ?? "09:00"}
+              onChange={(t) => settings.update({ dailyCheckTime: t })}
+              label="Daily check time"
+            />
           </label>
           <button
             type="button"
@@ -479,7 +485,7 @@ function DailyCheck() {
           >
             {st?.running ? "Stop" : "Run now"}
           </button>
-          <Switch label="Daily check" on={on} onChange={(v) => settings.update({ nightlyEnabled: v })} />
+          <Switch label="Daily check" on={on} onChange={(v) => settings.update({ dailyCheckEnabled: v })} />
         </div>
         {st?.running && <DailyCheckProgress doing={st.doing} progress={st.progress} />}
         <p className="faint small pad">

@@ -93,7 +93,7 @@ pub fn progress(doing: &str, contra: &str) -> f32 {
 }
 
 fn path() -> std::path::PathBuf {
-    crate::platform::data_dir().join("nightly.json")
+    crate::platform::data_dir().join("daily-check.json")
 }
 
 fn load() -> State {
@@ -112,9 +112,13 @@ fn now() -> NaiveDateTime {
 
 fn settings(app: &AppHandle) -> (bool, String) {
     let s = app.state::<AppState>().settings.lock().unwrap().clone();
-    let on = s.ui.get("nightlyEnabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    let on = s.ui.get("dailyCheckEnabled").and_then(|v| v.as_bool()).unwrap_or(false);
     let t =
-        s.ui.get("nightlyTime").and_then(|v| v.as_str()).filter(|t| schedule::parse_time(t).is_some()).unwrap_or(DEFAULT_TIME).to_string();
+        s.ui.get("dailyCheckTime")
+            .and_then(|v| v.as_str())
+            .filter(|t| schedule::parse_time(t).is_some())
+            .unwrap_or(DEFAULT_TIME)
+            .to_string();
     (on, t)
 }
 

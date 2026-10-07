@@ -75,7 +75,7 @@ export function ProjectsScreen() {
         <button
           type="button"
           className="btn pri"
-          title="Make a new Project. note with a name, outcome and area"
+          title="Make a new Project. note with a name, what done looks like and an area"
           onClick={() => setCreating(true)}
         >
           <Icon name="plus" size={14} />

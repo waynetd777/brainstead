@@ -30,7 +30,7 @@ export interface Settings {
   meetingIngest?: boolean;
   meetingTrash?: boolean;
   refreshStale?: boolean;
-  /** A model per background job (reviews, ingest, meeting, clarify, contradictions, skills); a
+  /** A model per background job (summaries, weekprep, find, ingest, meeting, clarify, contradictions, skills); a
    *  job not named uses `askModel`. */
   jobModels?: Record<string, string>;
   /** Prompts sent in Ask, oldest first, for ↑ in the message box (the last 200). */
@@ -55,8 +55,8 @@ export interface Settings {
   menuBarOnly?: boolean;
   /** The help's getting-started guides finished, by id (src/help/HelpDrawer.tsx). */
   helpGuides?: Record<string, boolean>;
-  /** The switch-over checklist's items the user ticks by hand (Settings › General). */
-  switchover?: Record<string, boolean>;
+  /** Moving over from another notes app: the checklist's items the user ticks by hand (Settings › General). */
+  movingOver?: Record<string, boolean>;
   /** Each screen's last choices, for a fresh visit to it (useViewState in src/nav.ts). */
   viewMemory?: Record<string, unknown>;
   /** Documents opened lately (src/recent.ts). */
@@ -82,12 +82,15 @@ export interface Settings {
   askTabs?: { id: string; filename: string }[];
   askActive?: string;
   /** The daily and weekly summaries (Settings › Jobs & schedule), and whether Brainstead runs them. */
-  reviews?: ReviewSchedule;
-  reviewsHere?: boolean;
+  summaries?: SummarySchedule;
+  summariesHere?: boolean;
   /** "Hold the summaries for me": the daily and weekly summaries wait in Changes instead of being written. */
-  reviewsToQueue?: boolean;
+  holdSummaries?: boolean;
+  /** When you do the guided weekly review (Today reminds you then); no job runs. Friday 16:00 by default. */
+  weeklyReview?: WeeklyReviewTime;
   /** The daily check (stage 7b) and its local HH:MM. */
-  nightlyEnabled?: boolean;
+  dailyCheckEnabled?: boolean;
+  dailyCheckTime?: string;
   /** The weekly review's preparation runs on schedule (default on). */
   weekprepEnabled?: boolean;
   /** The user's first name as Teams writes it (notes from transcripts). */
@@ -96,21 +99,23 @@ export interface Settings {
   hlColour?: "red" | "orange" | "yellow" | "green" | "teal" | "blue" | "purple" | "grey";
   /** A note's side pane (Linked from) folded away, for the full width. */
   docSideFolded?: boolean;
-  nightlyTime?: string;
 }
 
 export type Weekday = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
-export interface ReviewSchedule {
+export interface SummarySchedule {
   dailyEnabled: boolean;
   /** HH:MM, local. */
   dailyTime: string;
   weeklyEnabled: boolean;
   weeklyDay: Weekday;
   weeklyTime: string;
-  /** When you do the guided weekly review (Today reminds you then); no job runs. Friday 16:00 by default. */
-  weeklyReviewDay: Weekday;
-  weeklyReviewTime: string;
+}
+
+export interface WeeklyReviewTime {
+  day: Weekday;
+  /** HH:MM, local. */
+  time: string;
 }
 
 export interface ReviewRun {
@@ -764,7 +769,7 @@ export interface ChangeOrigin {
   kind: string;
   chat?: string;
   label?: string;
-  /** The run it was part of: an ingest, the daily check (daily-check-…, or nightly-… from before it was renamed), a summary, a chat. */
+  /** The run it was part of: an ingest, the daily check (daily-check-…), a summary (summary-…), a chat. */
   run?: string;
   /** "scheduled" for a scheduled run, or a terminal session that said it's unattended. */
   trigger?: string;

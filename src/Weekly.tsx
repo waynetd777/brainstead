@@ -383,7 +383,7 @@ function StartPage({
   prep: WeekPrepStatus | null;
   onStart: (over: boolean) => void;
 }) {
-  const r = useStore(settings).reviews;
+  const r = useStore(settings).weeklyReview;
   const [job, setJob] = useState<WeekPrepJob | null>(null);
   const [confirmOver, setConfirmOver] = useState(false);
   useEffect(() => {
@@ -451,7 +451,7 @@ function StartPage({
             <dd>{ctx ? `${week.slice(-2)} · ${ctx.range}` : week}</dd>
             <dt>Scheduled</dt>
             <dd>
-              {scheduleLabel(r?.weeklyReviewDay, r?.weeklyReviewTime)}: Today shows it then, and you can start any time.{" "}
+              {scheduleLabel(r?.day, r?.time)}: Today shows it then, and you can start any time.{" "}
               <button
                 type="button"
                 className="tlink"

@@ -59,8 +59,8 @@ pub struct Origin {
     /// The Ask chat it came from, when Brainstead started the CLI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat: Option<String>,
-    /// For the list: "Ghost link"; a review's is its `log.md` detail, `daily-summary 2026-10-02` (or
-    /// `daily-review …` before the rename), which the window shows as "Daily summary 2026-10-02".
+    /// For the list: "Ghost link"; a review's is its `log.md` detail, `daily-summary 2026-10-02`,
+    /// which the window shows as "Daily summary 2026-10-02".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     /// The run it was part of, for Changes' groups: an ingest, the daily check, a summary.

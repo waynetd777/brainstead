@@ -352,7 +352,7 @@ function SummaryCard({ kind }: { kind: "daily" | "weekly" }) {
       .reviewLatest(kind)
       .then((b) => live && setBlock(b))
       .catch(() => live && setFailed(true));
-    if (s.reviewsHere)
+    if (s.summariesHere)
       api
         .reviewsStatus()
         .then((r) => live && setStatus(r))
@@ -360,9 +360,9 @@ function SummaryCard({ kind }: { kind: "daily" | "weekly" }) {
     return () => {
       live = false;
     };
-  }, [kind, s.reviewsHere, v, tries, changed]);
+  }, [kind, s.summariesHere, v, tries, changed]);
   const name = kind === "daily" ? "Daily summary" : "Weekly summary";
-  if (!s.reviewsHere && !block && !failed) return null;
+  if (!s.summariesHere && !block && !failed) return null;
   // This period's run, for whether it failed.
   const target = kind === "daily" ? today : isoWeek(today);
   const run = status?.runs.find((r) => r.kind === kind && r.target === target);
@@ -371,7 +371,7 @@ function SummaryCard({ kind }: { kind: "daily" | "weekly" }) {
     ? "Running…"
     : run?.status === "error"
       ? "Didn't finish"
-      : s.reviewsHere && next
+      : s.summariesHere && next
         ? nextLabel(next)
         : "";
   const when = block ? summaryDate(block.label, today) : "Not written yet";
@@ -485,7 +485,7 @@ function ProcessCard() {
     // Read again as the vault changes: on first run it's still being indexed when Today opens.
   }, [tries, v]);
   const need = decisions(useStore(health)?.report);
-  const reviewDay = isReviewDay(s.reviews?.weeklyReviewDay, s.reviews?.weeklyReviewTime);
+  const reviewDay = isReviewDay(s.weeklyReview?.day, s.weeklyReview?.time);
   return (
     <SideCard title="To process">
       {failed.length > 0 && <LoadFailed compact what={failed.join(" and ")} onRetry={retry} />}

@@ -176,7 +176,7 @@ function CaptureShortcut() {
 }
 
 const JOBS: [string, string, string][] = [
-  ["reviews", "Daily and weekly summaries", "calendar"],
+  ["summaries", "Daily and weekly summaries", "calendar"],
   ["weekprep", "Weekly review preparation", "review"],
   ["find", "Find tasks and projects", "zap"],
   ["ingest", "Ingest", "wiki"],
@@ -193,8 +193,8 @@ function JobModels({ found, fallback }: { found: CliInfo[] | null; fallback: str
   const [at, setAt] = useState<{ job: string; rect: DOMRect } | null>(null);
   const models = s.jobModels ?? {};
   // The weekly review's preparation falls back to the summaries' model (src-tauri/src/weekprep.rs).
-  const fallbackFor = (job: string) => (job === "weekprep" && models.reviews ? models.reviews : fallback);
-  const fallbackName = (job: string) => (job === "weekprep" && models.reviews ? "As the summaries" : "As new chats");
+  const fallbackFor = (job: string) => (job === "weekprep" && models.summaries ? models.summaries : fallback);
+  const fallbackName = (job: string) => (job === "weekprep" && models.summaries ? "As the summaries" : "As new chats");
   return (
     <section className="sgroup">
       <h2 className="h3">Models by job</h2>

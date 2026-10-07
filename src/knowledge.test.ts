@@ -67,14 +67,19 @@ const report: LintReport = {
 describe("changes", () => {
   it("lists the held ones and groups by run", () => {
     const rows = [
-      row({ id: "a", status: "held", group: "nightly-1", origin: { kind: "ingest", label: "Ingest of Steerco", run: "nightly-1" } }),
-      row({ id: "b", group: "nightly-1", origin: { kind: "lint", label: "Wiki catalogue", run: "nightly-1" } }),
+      row({
+        id: "a",
+        status: "held",
+        group: "daily-check-1",
+        origin: { kind: "ingest", label: "Ingest of Steerco", run: "daily-check-1" },
+      }),
+      row({ id: "b", group: "daily-check-1", origin: { kind: "lint", label: "Wiki catalogue", run: "daily-check-1" } }),
       row({ id: "c" }),
     ];
     expect(held(rows).map((r) => r.id)).toEqual(["a"]);
     const g = byRun(rows);
     expect(g.map((x) => [x.group, x.label, x.rows.length])).toEqual([
-      ["nightly-1", "Daily check", 2],
+      ["daily-check-1", "Daily check", 2],
       ["Chat. Launch.md", "Ask", 1],
     ]);
   });
@@ -85,8 +90,6 @@ describe("changes", () => {
     expect(originLabel(row({ origin: { kind: "chat", label: "Terminal session" } }))).toBe("Terminal session");
     expect(originLabel(row({ origin: { kind: "review", label: "daily-summary 2026-10-02" } }))).toBe("Daily summary 2026-10-02");
     expect(originLabel(row({ origin: { kind: "review", label: "weekly-summary 2026-W40" } }))).toBe("Weekly summary 2026-W40");
-    // From before the rename.
-    expect(originLabel(row({ origin: { kind: "review", label: "daily-review 2026-10-02" } }))).toBe("Daily summary 2026-10-02");
     expect(runLabel(row({ origin: { kind: "contradiction", run: "contradictions-1" } }))).toBe("Contradiction check");
     expect(pageName("wiki/entities/Orbit App.md")).toBe("Orbit App");
   });

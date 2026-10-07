@@ -263,3 +263,4 @@
 {"commit": "2b803425", "detail": "D-20261007-04 - MCP parity plan for the screens' remaining actions", "id": "j-20261007-100651-cfca", "kind": "decision-ref", "ts": "2026-10-07T10:06:51Z", "who": "waynetd777@users.noreply.github.com"}
 {"commit": "2b803425", "detail": "D-20261007-05 - Proper names everywhere, no aliases, before public use", "id": "j-20261007-101011-266f", "kind": "decision-ref", "ts": "2026-10-07T10:10:11Z", "who": "waynetd777@users.noreply.github.com"}
 {"commit": "2b803425", "detail": "D-20261007-06 - MCP: Changes pages as one list; bookmark triage's read is list_bookmarks", "id": "j-20261007-101643-db54", "kind": "decision-ref", "ts": "2026-10-07T10:16:43Z", "who": "waynetd777@users.noreply.github.com"}
+{"commit": "d74b3e7f", "detail": "D-20261007-07 - Stored and MCP names follow the screen (2026-10-07 renames)", "id": "j-20261007-104543-6aa8", "kind": "decision-ref", "ts": "2026-10-07T10:45:43Z", "who": "waynetd777@users.noreply.github.com"}

@@ -57,20 +57,29 @@ pub struct ScheduleSettings {
     pub weekly_enabled: bool,
     pub weekly_day: Weekday,
     pub weekly_time: String,
-    /// When you do the guided weekly review (Today reminds you then), not a job: Friday 16:00
-    /// unless set. Settings saved before it existed lack it.
-    #[serde(default = "review_day")]
-    pub weekly_review_day: Weekday,
-    #[serde(default = "review_time")]
-    pub weekly_review_time: String,
 }
 
-fn review_day() -> Weekday {
-    Weekday::Fri
+/// When you do the guided weekly review (Today reminds you then), not a job: Friday 16:00 unless
+/// set (Settings › Jobs & schedule, stored as `weeklyReview`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WeeklyReview {
+    pub day: Weekday,
+    /// `HH:MM`, 24-hour, local.
+    pub time: String,
 }
 
-fn review_time() -> String {
-    "16:00".into()
+impl Default for WeeklyReview {
+    fn default() -> Self {
+        WeeklyReview { day: Weekday::Fri, time: "16:00".into() }
+    }
+}
+
+impl WeeklyReview {
+    /// Why it can't be saved, in words for the user.
+    pub fn validate(&self) -> Result<(), String> {
+        parse_time(&self.time).map(|_| ()).ok_or_else(|| "weeklyReview.time must be HH:MM (24-hour)".to_string())
+    }
 }
 
 impl Default for ScheduleSettings {
@@ -82,8 +91,6 @@ impl Default for ScheduleSettings {
             weekly_enabled: false,
             weekly_day: Weekday::Fri,
             weekly_time: "16:00".into(),
-            weekly_review_day: review_day(),
-            weekly_review_time: review_time(),
         }
     }
 }
@@ -91,9 +98,9 @@ impl Default for ScheduleSettings {
 impl ScheduleSettings {
     /// Why the settings can't be saved, in words for the user.
     pub fn validate(&self) -> Result<(), String> {
-        for (k, v) in [("dailyTime", &self.daily_time), ("weeklyTime", &self.weekly_time), ("weeklyReviewTime", &self.weekly_review_time)] {
+        for (k, v) in [("dailyTime", &self.daily_time), ("weeklyTime", &self.weekly_time)] {
             if parse_time(v).is_none() {
-                return Err(format!("{k} must be HH:MM (24-hour)"));
+                return Err(format!("summaries.{k} must be HH:MM (24-hour)"));
             }
         }
         Ok(())
@@ -342,15 +349,15 @@ mod tests {
             [ReviewKind::Daily]
         );
         assert_eq!(on().changed(&ScheduleSettings { weekly_day: Weekday::Sun, ..on() }), [ReviewKind::Weekly]);
-        // The guided review's day and time are no job's schedule.
-        assert!(on().changed(&ScheduleSettings { weekly_review_day: Weekday::Sat, weekly_review_time: "09:00".into(), ..on() }).is_empty());
-        assert!(ScheduleSettings { weekly_review_time: "9am".into(), ..on() }.validate().is_err());
+        assert!(WeeklyReview { time: "9am".into(), ..Default::default() }.validate().is_err());
+        assert!(WeeklyReview::default().validate().is_ok());
         let json: ScheduleSettings = serde_json::from_str(
             r#"{"dailyEnabled":true,"dailyTime":"07:15","weeklyEnabled":false,"weeklyDay":"sun","weeklyTime":"16:00"}"#,
         )
         .unwrap();
         assert_eq!(json.weekly_day, Weekday::Sun);
-        assert_eq!((json.weekly_review_day, json.weekly_review_time.as_str()), (Weekday::Fri, "16:00"));
+        let review: WeeklyReview = serde_json::from_str(r#"{"time":"09:00"}"#).unwrap();
+        assert_eq!((review.day, review.time.as_str()), (Weekday::Fri, "09:00"));
         assert_eq!(
             next_due(&on(), at(2026, 9, 8, 10, 0)),
             NextDue { daily: Some(at(2026, 9, 9, 6, 30)), weekly: Some(at(2026, 9, 11, 16, 0)) }

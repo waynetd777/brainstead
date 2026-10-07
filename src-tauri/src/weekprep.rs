@@ -144,7 +144,7 @@ impl WeekPrep {
 fn review_schedule(app: &AppHandle) -> (Weekday, String) {
     let st = app.state::<AppState>();
     let s = crate::lock(&st.settings);
-    (s.reviews.weekly_review_day, s.reviews.weekly_review_time.clone())
+    (s.weekly_review.day, s.weekly_review.time.clone())
 }
 
 /// The job runs on schedule (Settings › Jobs & schedule, `weekprepEnabled`, on unless switched off).
@@ -162,7 +162,7 @@ fn model(app: &AppHandle) -> String {
         let s = crate::lock(&st.settings);
         s.ui.get("jobModels").and_then(|m| m.get("weekprep")).and_then(|v| v.as_str()).filter(|v| !v.is_empty()).map(String::from)
     };
-    own.unwrap_or_else(|| ask::job_model(app, "reviews"))
+    own.unwrap_or_else(|| ask::job_model(app, "summaries"))
 }
 
 fn read_prep(week: &str) -> Option<Prep> {
@@ -207,7 +207,7 @@ pub fn weekprep_job(app: AppHandle) -> JobStatus {
     let running = crate::lock(&wp.going).as_ref().map(|(_, w)| w.clone());
     let last = crate::lock(&wp.state).runs.iter().rev().find(|r| r.status != "running").cloned();
     let on = enabled(&app);
-    let here = crate::lock(&app.state::<AppState>().settings).reviews_here;
+    let here = crate::lock(&app.state::<AppState>().settings).summaries_here;
     let (day, time) = review_schedule(&app);
     let next = (on && here).then(|| stamp(prep::next_due(now(), day, &time)));
     JobStatus { running, last, next, enabled: on }
@@ -289,7 +289,7 @@ pub fn start_scheduler(app: &AppHandle) {
 }
 
 fn tick(app: &AppHandle) {
-    let here = crate::lock(&app.state::<AppState>().settings).reviews_here;
+    let here = crate::lock(&app.state::<AppState>().settings).summaries_here;
     if !here || !enabled(app) || app.state::<VaultService>().root().is_none() {
         return;
     }

@@ -92,8 +92,8 @@ fn settings_write(app: AppHandle, st: State<AppState>, settings: Settings) -> Re
     };
     // A changed schedule, or taking the reviews over from the previous app, first fires at the next
     // time rather than catching up at once.
-    let mut stamp = prev.reviews.changed(&next.reviews);
-    if next.reviews_here && !prev.reviews_here {
+    let mut stamp = prev.summaries.changed(&next.summaries);
+    if next.summaries_here && !prev.summaries_here {
         stamp = vec![brainstead_core::reviews::ReviewKind::Daily, brainstead_core::reviews::ReviewKind::Weekly];
     }
     if !stamp.is_empty() {
@@ -102,10 +102,9 @@ fn settings_write(app: AppHandle, st: State<AppState>, settings: Settings) -> Re
     }
     // The weekly review's preparation, likewise, when the review moves, the jobs come here or it's
     // switched back on.
-    let review_moved = (prev.reviews.weekly_review_day, &prev.reviews.weekly_review_time)
-        != (next.reviews.weekly_review_day, &next.reviews.weekly_review_time);
+    let review_moved = prev.weekly_review != next.weekly_review;
     let prep_on = |s: &settings::Settings| s.ui.get("weekprepEnabled").and_then(|v| v.as_bool()).unwrap_or(true);
-    if review_moved || (next.reviews_here && !prev.reviews_here) || (prep_on(&next) && !prep_on(&prev)) {
+    if review_moved || (next.summaries_here && !prev.summaries_here) || (prep_on(&next) && !prep_on(&prev)) {
         app.state::<weekprep::WeekPrep>().stamp_now();
     }
     if prev.theme != next.theme {

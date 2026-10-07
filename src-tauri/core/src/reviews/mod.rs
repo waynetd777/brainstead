@@ -25,7 +25,7 @@ pub mod write;
 
 pub use gather::{gather, render, ReviewInputs};
 pub use latest::{latest, Latest};
-pub use schedule::{ReviewKind, ScheduleSettings, Weekday};
+pub use schedule::{ReviewKind, ScheduleSettings, Weekday, WeeklyReview};
 pub use target::{Target, Window};
 pub use write::{extract_block, log_entry, log_insert, upsert, Upsert};
 

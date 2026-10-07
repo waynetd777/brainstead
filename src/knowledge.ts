@@ -52,7 +52,7 @@ export function originLabel(c: ChangeRow): string {
 
 /** A run's name in Changes: "Daily check", "Ingest of Steerco", "Ask", "Terminal session". */
 export function runLabel(c: ChangeRow): string {
-  if (c.origin.run?.startsWith("daily-check-") || c.origin.run?.startsWith("nightly-")) return "Daily check";
+  if (c.origin.run?.startsWith("daily-check-")) return "Daily check";
   if (c.origin.kind === "contradiction") return "Contradiction check";
   return originLabel(c);
 }
@@ -70,10 +70,9 @@ export function makePage(page: string, content: string, title: string, origin: C
   return api.changeSubmit({ page, kind: "new", title, instruction: { op: "page", content }, origin });
 }
 
-/** `daily-summary 2026-10-02` → `Daily summary 2026-10-02`; `weekly-summary 2026-W40` → `Weekly summary 2026-W40`.
- *  Runs before the rename wrote `daily-review …` and `weekly-review …`, read the same. */
+/** `daily-summary 2026-10-02` → `Daily summary 2026-10-02`; `weekly-summary 2026-W40` → `Weekly summary 2026-W40`. */
 function reviewLabel(detail: string): string {
-  const m = /^(daily|weekly)-(?:summary|review)\s+(.*)$/.exec(detail);
+  const m = /^(daily|weekly)-summary\s+(.*)$/.exec(detail);
   return m ? `${m[1] === "daily" ? "Daily summary" : "Weekly summary"} ${m[2]}` : detail;
 }
 

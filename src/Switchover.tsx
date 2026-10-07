@@ -48,7 +48,7 @@ export function Switchover() {
       .then((c) => setRecent(c.recent))
       .catch(() => {});
   }, []);
-  const ticked = s.switchover ?? {};
+  const ticked = s.movingOver ?? {};
   const retired = !!status && !status.skills && !status.scripts && status.claudeMd;
   const retire = () => {
     setConfirm(false);
@@ -74,10 +74,10 @@ export function Switchover() {
       action: ["Vault", goTo("vault"), "Open Settings › Vault, where read-only is switched"],
     },
     {
-      id: "reviews",
+      id: "summaries",
       label: "Brainstead runs the daily and weekly summaries",
-      detail: s.reviewsHere ? "The daily and weekly summaries are written here." : "Switch this on in Jobs & schedule.",
-      done: !!s.reviewsHere,
+      detail: s.summariesHere ? "The daily and weekly summaries are written here." : "Switch this on in Jobs & schedule.",
+      done: !!s.summariesHere,
       action: ["Jobs & schedule", goTo("jobs"), "Open Settings › Jobs & schedule to run the summaries here"],
     },
     {
@@ -105,7 +105,7 @@ export function Switchover() {
       done: !!teams,
       action: ["Capture extensions", goTo("capture"), "Open Settings › Capture extensions to set up and test the extension"],
     },
-    { id: "otherReviews", label: "The other app's daily and weekly summaries are off", detail: "So only one app writes them." },
+    { id: "otherSummaries", label: "The other app's daily and weekly summaries are off", detail: "So only one app writes them." },
     { id: "otherExtensions", label: "The other app's browser extensions are removed", detail: "So a capture can't land twice." },
     { id: "otherStopped", label: "The other app is stopped", detail: "Brainstead doesn't need it running." },
     {
@@ -151,7 +151,7 @@ export function Switchover() {
                   aria-label={i.label}
                   title={done ? "Ticked by you; click to untick" : "Tick once you have done this"}
                   className={`cb ${done ? "on" : ""}`}
-                  onClick={() => settings.update({ switchover: { ...ticked, [i.id]: !done } })}
+                  onClick={() => settings.update({ movingOver: { ...ticked, [i.id]: !done } })}
                 >
                   {done && <Icon name="check" size={11} />}
                 </button>

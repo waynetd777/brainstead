@@ -175,7 +175,6 @@ impl Window {
     }
 
     /// The `log.md` detail for a run: `daily-summary 2026-09-30`, `weekly-summary 2026-W40`.
-    /// Runs before the rename wrote `daily-review …` and `weekly-review …`.
     pub fn log_detail(&self) -> String {
         format!("{}-summary {}", if self.is_week() { "weekly" } else { "daily" }, self.label())
     }

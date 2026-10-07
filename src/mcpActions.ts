@@ -52,7 +52,7 @@ import { fresh, keepsPaused, reviewBody, reviewWeek, scheduleLabel, STEPS } from
 import { ask, isSaved, keepChat, renameSaved, trashSaved } from "./askState";
 import { applyTheme, settings } from "./store";
 import { nav, Screen, SettingsPane } from "./nav";
-import { DEFAULT_SCHEDULE } from "./Jobs";
+import { DEFAULT_SCHEDULE, DEFAULT_WEEKLY_REVIEW } from "./Jobs";
 import { choice, prepStep, WEEKLY_STATE_CHANGED } from "./weeklyPrep";
 import { draftNotes, followThrough, isTranscriptPath } from "./meetingFlow";
 import { reportMarkdown } from "./Contradictions";
@@ -487,7 +487,7 @@ export async function clarifyChanges(
       return { said: "someday / maybe", changes: settle(taskLine({ ...fields, tag: "someday-maybe" }), proj), after: captureDone };
     case "project": {
       const name = str(a, "project_name") ?? text;
-      const note = await api.changeProjectNote(name, "active", str(a, "area") ?? null, str(a, "outcome") ?? null);
+      const note = await api.changeProjectNote(name, "active", str(a, "area") ?? null, str(a, "done_looks_like") ?? null);
       const made = sub(a, r, note.path, "new", `New project ${projectName(note.path)}`, { op: "page", content: note.content });
       const rest = i.kind === "task" ? [...takeOut(), addTask(note.path, taskLine({ text: i.text.trim() }))] : takeOut();
       return { said: `the project ${projectName(note.path)}`, changes: [made, ...rest], after: captureDone };
@@ -563,7 +563,7 @@ export async function clarifyItem(i: InboxItem, a: Args): Promise<string> {
       break;
     case "project": {
       const name = str(a, "project_name") ?? text;
-      const made = await api.projectCreate(name, "active", str(a, "area") ?? null, str(a, "outcome") ?? null);
+      const made = await api.projectCreate(name, "active", str(a, "area") ?? null, str(a, "done_looks_like") ?? null);
       await settleInboxItem(i, i.kind === "task" ? taskLine({ text: i.text.trim() }) : null, made.path);
       said = `the project ${projectName(made.path)}`;
       break;
@@ -610,26 +610,45 @@ export async function clarifyItem(i: InboxItem, a: Args): Promise<string> {
 
 // ---- projects
 
-/** A project's line: its name, status and next actions; with detail its area, outcome and every count. */
+/** A project's status as the tools name it, the Projects screen's tabs: the vault's `done` is Completed. */
+const statusOut = (s: string) => (s === "done" ? "completed" : s);
+/** A project status the tools take, as the vault writes it (`completed` is `done` there). */
+function statusIn(a: Args): string | undefined {
+  if (!has(a, "status")) return undefined;
+  const v = String(a.status ?? "").trim();
+  if (!["active", "on-hold", "someday", "completed"].includes(v)) throw new Error("status is active, on-hold, someday or completed.");
+  return v === "completed" ? "done" : v;
+}
+
+/** A project's line: its name, status and next actions; with detail its area, what done looks like and every count. */
 const projectOut = (p: ProjectRow, detail = true) =>
   detail
-    ? `- ${p.name} · ${p.status}${p.area ? ` · ${p.area}` : ""} · ${p.next} next, ${p.waiting} waiting, ${p.someday} someday, ${p.done} done${p.outcome ? ` · outcome: ${p.outcome}` : ""}  (${p.path})`
-    : `- ${p.name} · ${p.status} · ${p.next} next  (${p.path})`;
+    ? `- ${p.name} · ${statusOut(p.status)}${p.area ? ` · ${p.area}` : ""} · ${p.next} next, ${p.waiting} waiting, ${p.someday} someday, ${p.done} done${p.outcome ? ` · done looks like: ${p.outcome}` : ""}  (${p.path})`
+    : `- ${p.name} · ${statusOut(p.status)} · ${p.next} next  (${p.path})`;
 
 async function updateProject(a: Args, r: McpRequest): Promise<string> {
   const path = await projectPath(str(a, "project") ?? "");
   const set: [string, string | null][] = [];
   const said: string[] = [];
-  for (const k of ["status", "area", "outcome"] as const) {
+  // The tool's names, the screen's, and the property each writes in the note.
+  const fields = [
+    ["status", "status", "status"],
+    ["area", "area", "area"],
+    ["done_looks_like", "done looks like", "outcome"],
+  ] as const;
+  for (const [k, words, prop] of fields) {
     if (!has(a, k)) continue;
     const v = a[k] ? String(a[k]).trim() : null;
-    if (k === "status" && !["active", "on-hold", "someday", "done"].includes(v ?? ""))
-      throw new Error("status is active, on-hold, someday or done.");
-    if (v?.includes("\n")) throw new Error(`The ${k} is one line.`);
-    set.push([k, v || null]);
-    said.push(v ? `${k} ${v}` : `cleared ${k}`);
+    if (k === "status") {
+      set.push([prop, statusIn({ status: v })!]);
+      said.push(`${words} ${v}`);
+      continue;
+    }
+    if (v?.includes("\n")) throw new Error(`${words[0].toUpperCase()}${words.slice(1)} is one line.`);
+    set.push([prop, v || null]);
+    said.push(v ? `${words} ${v}` : `cleared ${words}`);
   }
-  if (!said.length) throw new Error("Give status (active, on-hold, someday, done), area or outcome.");
+  if (!said.length) throw new Error("Give status (active, on-hold, someday, completed), area or done_looks_like.");
   const name = projectName(path);
   const o = await submitAll([sub(a, r, path, "edit", `Set ${said.join(", ")} for ${name}`, { op: "properties", set })]);
   told(o.applied ? `${said.join(", ")} for ${name}` : `held a change to ${name} for you in Changes`);
@@ -639,7 +658,7 @@ async function updateProject(a: Args, r: McpRequest): Promise<string> {
 async function createProject(a: Args, r: McpRequest): Promise<string> {
   const name = str(a, "name");
   if (!name) throw new Error("Give the project's name.");
-  const note = await api.changeProjectNote(name, str(a, "status") ?? "active", str(a, "area") ?? null, str(a, "outcome") ?? null);
+  const note = await api.changeProjectNote(name, statusIn(a) ?? "active", str(a, "area") ?? null, str(a, "done_looks_like") ?? null);
   const o = await submitAll([sub(a, r, note.path, "new", `New project ${projectName(note.path)}`, { op: "page", content: note.content })]);
   told(o.applied ? `made the project ${name}` : `held the project ${name} for you in Changes`);
   return o.message;
@@ -867,12 +886,10 @@ async function changesTool(a: Args): Promise<string | Listing> {
 
 // ---- runs
 
-/** The summaries' runs, by their names and the names they had before the rename. */
+/** The summaries' runs, by name. */
 const SUMMARY_RUNS: Record<string, "daily" | "weekly"> = {
   daily_summary: "daily",
   weekly_summary: "weekly",
-  daily_review: "daily",
-  weekly_review: "weekly",
 };
 
 async function startRun(a: Args): Promise<string> {
@@ -895,7 +912,6 @@ async function startRun(a: Args): Promise<string> {
       return `Ingesting ${sources.join(", ")} (run ${ids.join(", ")}). Its page changes are made and listed in Changes${unattended ? "; any that fail a check are held for the user" : ""}; run_status shows how it's going.`;
     }
     case "daily_check":
-    case "nightly":
       await api.dailyCheckRunNow(unattended);
       noted("started the daily check");
       return "The daily check has started; run_status shows how it's going.";
@@ -1014,7 +1030,7 @@ async function stopRun(a: Args): Promise<string> {
     const id = str(a, "id") ?? (await api.ingestRuns()).find((r) => r.status === "running" && (r.kind === "meeting") === meeting)?.id;
     if (!id) return meeting ? "No meeting note is being written." : "No ingest is running.";
     await api.ingestStop(id);
-  } else if (run === "daily_check" || run === "nightly") await api.dailyCheckStop();
+  } else if (run === "daily_check") await api.dailyCheckStop();
   else if (run === "weekly_prep") await api.weekprepStop();
   else if (run === "contradictions") await api.contradictionsStop();
   else if (run === "find_tasks") await api.findStop();
@@ -1051,10 +1067,10 @@ async function weeklyStatus(): Promise<string> {
   const { week, st } = await weeklyNow();
   const [prep, projects] = await Promise.all([api.weekprepStatus(week), api.projectsList()]);
   const active = projects.filter((p) => p.status === "active");
-  const r = settings.get().reviews;
+  const r = settings.get().weeklyReview;
   const job = await api.weekprepJob().catch(() => null);
   const out = [
-    `The weekly review for ${week}. It's scheduled for ${scheduleLabel(r?.weeklyReviewDay, r?.weeklyReviewTime)} (Settings › Jobs & schedule); the user can start it any time from its start page.`,
+    `The weekly review for ${week}. It's scheduled for ${scheduleLabel(r?.day, r?.time)} (Settings › Jobs & schedule); the user can start it any time from its start page.`,
   ];
   if (job?.next) out.push(`Its suggestions are next prepared on schedule at ${job.next}.`);
   const note = await api.weeklyReviewNote(week).catch(() => null);
@@ -1232,9 +1248,10 @@ async function writeCurrentState(a: Args): Promise<string> {
 }
 
 async function fixName(a: Args): Promise<string> {
-  const wrong = str(a, "wrong");
-  const right = str(a, "right");
-  if (!wrong || !right) throw new Error("Give wrong (the name as it's misspelt) and right.");
+  // Fix name's fields: Written as and Correct spelling.
+  const wrong = str(a, "written_as");
+  const right = str(a, "correct_spelling");
+  if (!wrong || !right) throw new Error("Give written_as (the name as it's misspelt) and correct_spelling.");
   const req: FixNameRequest = { wrong, right, rightPage: null, guards: [], ambiguous: false, note: "", skipSubstitution: !a.remember };
   const plan = await api.fixnamePlan(req);
   const rows = plan.rows.filter((r) => r.action !== "skip");
@@ -1382,7 +1399,7 @@ async function status(): Promise<string> {
   return [
     `Vault: ${s.vaultPath ?? "none chosen"}${s.readOnly ? " (read-only: Brainstead won't change it until Settings › Vault › Read-only is off)" : ""}`,
     `Index: ${v.state === "ready" ? `${v.stats.files} files, ${v.stats.openTasks} open tasks` : v.state}`,
-    `Brainstead runs the daily and weekly summaries (Settings › Jobs & schedule): ${s.reviewsHere ? "on" : "off"}`,
+    `Brainstead runs the daily and weekly summaries (Settings › Jobs & schedule): ${s.summariesHere ? "on" : "off"}`,
     u ? `⌘Z would undo: ${u.label}` : "Nothing to undo.",
     old
       ? "The previous app's skills or scripts are still in the vault (.claude/skills, scripts/): don't use them; use these tools. The user can retire them in Settings › General › Moving over."
@@ -1437,7 +1454,7 @@ async function suggestions(a: Args): Promise<string> {
     const line = (g: FindSuggestion) =>
       g.kind === "task"
         ? `- task: ${g.text}${g.project ? ` · project ${g.project}` : ""}${g.waiting ? " · waiting for" : ""}${g.due ? ` · due ${g.due}` : ""} · from ${g.sources.map((x) => `${x.path} (“${x.quote}”)`).join(", ")}  (id ${g.id})`
-        : `- project: ${g.text}${g.outcome ? ` · outcome: ${g.outcome}` : ""}${g.tasks.length ? ` · first: ${g.tasks.join("; ")}` : ""} · from ${g.sources.map((x) => x.path).join(", ")}  (id ${g.id})`;
+        : `- project: ${g.text}${g.outcome ? ` · done looks like: ${g.outcome}` : ""}${g.tasks.length ? ` · first: ${g.tasks.join("; ")}` : ""} · from ${g.sources.map((x) => x.path).join(", ")}  (id ${g.id})`;
     return [
       r
         ? `Last look: ${r.status}${r.status === "running" ? ` (${r.done} of ${r.batches} parts)` : ""}, ${r.notes} notes read.`
@@ -1450,7 +1467,7 @@ async function suggestions(a: Args): Promise<string> {
   if (action === "accept") {
     const edit: Record<string, unknown> = {};
     if (str(a, "text")) edit.text = str(a, "text");
-    if (str(a, "outcome")) edit.outcome = str(a, "outcome");
+    if (str(a, "done_looks_like")) edit.outcome = str(a, "done_looks_like");
     const m = await api.findDecide(id, "accept", Object.keys(edit).length ? edit : null);
     noted("accepted a suggested task or project");
     return m ?? "Made it.";
@@ -1478,9 +1495,9 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
       item: (p) => ({
         name: p.name,
         path: p.path,
-        status: p.status,
+        status: statusOut(p.status),
         area: p.area,
-        outcome: p.outcome,
+        done_looks_like: p.outcome,
         next: p.next,
         waiting: p.waiting,
         someday: p.someday,
@@ -1521,7 +1538,8 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   "triage.suggest": (a) => api.bookmarksSuggest((Array.isArray(a.items) ? a.items : []) as { target: string; path: string }[]),
   "reply.draft": (a) => api.draftReply(str(a, "thread") ?? null, str(a, "text") ?? null, str(a, "tone") ?? "neutral"),
   "doccheck.register": () => api.canonicalRegister(),
-  "doccheck.run": (a) => api.docCheck(str(a, "candidate") ?? "", str(a, "doc") ?? "", a.mode === "callouts" ? "callouts" : "standard"),
+  "doccheck.run": (a) =>
+    api.docCheck(str(a, "document") ?? "", str(a, "governing_document") ?? "", a.mode === "earlier_feedback" ? "callouts" : "standard"),
   "weekly.status": weeklyStatus,
   "weekly.suggestion": weeklySuggestion,
   "weekly.start_over": weeklyStartOver,
@@ -1878,27 +1896,32 @@ const SETTINGS: [string, string, string, SettingKind, unknown][] = [
   ["meetingTrash", "AI assistants", "Then move the transcript to the Trash", "bool", true],
   ["ingestOnArrival", "AI assistants", "Ingest new sources as they arrive", "bool", false],
   ["refreshStale", "AI assistants", "Also refresh pages whose sources changed", "bool", false],
-  ["reviewsHere", "Jobs & schedule", "Brainstead runs the daily and weekly summaries", "bool", false],
-  ["reviewsToQueue", "Jobs & schedule", "Hold the summaries for me", "bool", false],
-  ["reviews.dailyEnabled", "Jobs & schedule", "Daily summary", "bool", false],
-  ["reviews.dailyTime", "Jobs & schedule", "Daily summary time", "time", null],
-  ["reviews.weeklyEnabled", "Jobs & schedule", "Weekly summary", "bool", false],
-  ["reviews.weeklyDay", "Jobs & schedule", "Weekly summary day", "day", null],
-  ["reviews.weeklyTime", "Jobs & schedule", "Weekly summary time", "time", null],
-  ["reviews.weeklyReviewDay", "Jobs & schedule", "Weekly review day", "day", "fri"],
-  ["reviews.weeklyReviewTime", "Jobs & schedule", "Weekly review time", "time", "16:00"],
+  ["summariesHere", "Jobs & schedule", "Brainstead runs the daily and weekly summaries", "bool", false],
+  ["holdSummaries", "Jobs & schedule", "Hold the summaries for me", "bool", false],
+  ["summaries.dailyEnabled", "Jobs & schedule", "Daily summary", "bool", false],
+  ["summaries.dailyTime", "Jobs & schedule", "Daily summary time", "time", null],
+  ["summaries.weeklyEnabled", "Jobs & schedule", "Weekly summary", "bool", false],
+  ["summaries.weeklyDay", "Jobs & schedule", "Weekly summary day", "day", null],
+  ["summaries.weeklyTime", "Jobs & schedule", "Weekly summary time", "time", null],
+  ["weeklyReview.day", "Jobs & schedule", "Weekly review day", "day", null],
+  ["weeklyReview.time", "Jobs & schedule", "Weekly review time", "time", null],
   ["weekprepEnabled", "Jobs & schedule", "Prepare the weekly review", "bool", true],
-  ["nightlyEnabled", "Jobs & schedule", "Daily check", "bool", false],
-  ["nightlyTime", "Jobs & schedule", "Daily check time", "time", "09:00"],
+  ["dailyCheckEnabled", "Jobs & schedule", "Daily check", "bool", false],
+  ["dailyCheckTime", "Jobs & schedule", "Daily check time", "time", "09:00"],
   ["logDays", "About", "The app's logs › Keep (days: 7, 14, 30 or 90)", "number", 14],
 ];
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
 async function settingsTool(a: Args): Promise<string> {
   const s = settings.get();
-  const sch = { ...DEFAULT_SCHEDULE, ...s.reviews } as Record<string, unknown>;
+  /** The two settings kept as objects, with their defaults filled in. */
+  const nested: Record<string, Record<string, unknown>> = {
+    summaries: { ...DEFAULT_SCHEDULE, ...s.summaries },
+    weeklyReview: { ...DEFAULT_WEEKLY_REVIEW, ...s.weeklyReview },
+  };
   const valueOf = (key: string, def: unknown) => {
-    const v = key.startsWith("reviews.") ? sch[key.slice(8)] : (s as unknown as Record<string, unknown>)[key];
+    const [head, sub] = key.split(".");
+    const v = sub ? nested[head][sub] : (s as unknown as Record<string, unknown>)[key];
     return v ?? def;
   };
   const action = str(a, "action") ?? "get";
@@ -1934,7 +1957,8 @@ async function settingsTool(a: Args): Promise<string> {
     v = Number(v);
     if (![7, 14, 30, 90].includes(v as number)) throw new Error(`${key} is 7, 14, 30 or 90.`);
   } else v = String(v ?? "").trim() || undefined;
-  if (key!.startsWith("reviews.")) settings.update({ reviews: { ...DEFAULT_SCHEDULE, ...s.reviews, [key!.slice(8)]: v } });
+  const [head, sub] = key!.split(".");
+  if (sub) settings.update({ [head]: { ...nested[head], [sub]: v } } as Partial<Settings>);
   else if (kind === "theme") {
     settings.update({ theme: v as Settings["theme"], docTheme: undefined });
     applyTheme(v as Settings["theme"]);

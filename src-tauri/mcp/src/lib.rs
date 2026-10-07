@@ -359,28 +359,28 @@ pub fn tools() -> Vec<Value> {
                 "due": day("the task's due date."),
                 "project_name": {"type": "string", "description": "For project: the new project's name (the item's text when left out)."},
                 "area": {"type": "string", "description": "For project: the area of responsibility it sits under."},
-                "outcome": {"type": "string", "description": "For project: what done looks like, one sentence."},
+                "done_looks_like": {"type": "string", "description": "For project: what done looks like, one sentence."},
                 "note": {"type": "string", "description": "For reference: the path of the note to add it to as a bullet."},
                 "new_note": {"type": "string", "description": "For reference: a new note's title to hold it."}
             }), &["item", "becomes"])),
         tool("list_projects", "List projects", Read,
-            "Every project, as the Projects screen lists them (needs the app): its name, status and count of next actions, with its note's path. detail adds the area, outcome and the waiting, someday and done counts. Use the name with list_tasks' project, create_task or update_project.",
+            "Every project, as the Projects screen lists them (needs the app): its name, status and count of next actions, with its note's path. detail adds the area, what done looks like and the waiting, someday and done counts. Statuses are the screen's tabs: active, on-hold, someday, completed. Use the name with list_tasks' project, create_task or update_project.",
             schema(json!({"detail": detail}), &[])),
         tool("create_project", "Create a project", Change,
             "Makes a project note, as the Projects screen does (needs the app). It's named and laid out as the vault's other projects are, and recorded in Changes, where the user can revert it. Add its first tasks with create_task and the project's name.",
             schema(json!({
                 "name": {"type": "string", "description": "The project's name, as its note will be titled: Orbit App launch."},
-                "status": {"type": "string", "enum": ["active", "on-hold", "someday", "done"], "description": "Default active."},
+                "status": {"type": "string", "enum": ["active", "on-hold", "someday", "completed"], "description": "Default active."},
                 "area": {"type": "string", "description": "The area of responsibility it sits under."},
-                "outcome": {"type": "string", "description": "What done looks like, one sentence."}
+                "done_looks_like": {"type": "string", "description": "What done looks like, one sentence."}
             }), &["name"])),
         tool("update_project", "Change a project", Change,
-            "Sets a project's status, area or outcome (needs the app), as its page on the Projects screen does. Give only what changes; null clears area or outcome. Recorded in Changes, where the user can revert it.",
+            "Sets a project's status, area or what done looks like (needs the app), as its page on the Projects screen does. Give only what changes; null clears area or done_looks_like. Recorded in Changes, where the user can revert it.",
             schema(json!({
                 "project": {"type": "string", "description": "The project's name."},
-                "status": {"type": "string", "enum": ["active", "on-hold", "someday", "done"]},
+                "status": {"type": "string", "enum": ["active", "on-hold", "someday", "completed"], "description": "The Projects screen's tabs; completed is Mark done."},
                 "area": {"type": ["string", "null"], "description": "The area of responsibility; null clears it."},
-                "outcome": {"type": ["string", "null"], "description": "What done looks like, one sentence; null clears it."}
+                "done_looks_like": {"type": ["string", "null"], "description": "What done looks like, one sentence; null clears it."}
             }), &["project"])),
         // Notes and pages.
         tool("edit_page", "Change a page", Change, EDIT_PAGE, edit_schema),
@@ -564,11 +564,11 @@ pub fn tools() -> Vec<Value> {
         tool("fix_name", "Fix a name everywhere", Change,
             "Corrects a misspelt name across the notes and wiki, as Fix name does (needs the app); sources are left alone. Without apply it only says what would change; with apply true it changes the files (undoable).",
             schema(json!({
-                "wrong": {"type": "string", "description": "The name as it's misspelt: Lenna."},
-                "right": {"type": "string", "description": "The name as it should be: Lena."},
+                "written_as": {"type": "string", "description": "Written as: the name as it's misspelt, Lenna."},
+                "correct_spelling": {"type": "string", "description": "Correct spelling: the name as it should be, Lena."},
                 "apply": {"type": "boolean", "description": "true makes the change; left out, it only says what would change."},
-                "remember": {"type": "boolean", "description": "Also correct it in future captures, transcripts and ingests."}
-            }), &["wrong", "right"])),
+                "remember": {"type": "boolean", "description": "Remember this correction: also correct it in future captures, transcripts and ingests."}
+            }), &["written_as", "correct_spelling"])),
         // The skill screens.
         tool("triage_bookmarks", "Triage bookmarks", Run,
             "Asks the model for a keep, update or drop suggestion on each bookmark given, as the Triage screen does (needs the app); nothing is changed. list_bookmarks lists them, with how long since each changed. Act on a suggestion with bookmarks or edit_page, as the user decides.",
@@ -584,8 +584,8 @@ pub fn tools() -> Vec<Value> {
                 "tone": {"type": "string", "description": "neutral, warm, brief, formal…"}
             }), &[])),
         tool("doc_check", "Check a document", Run,
-            "Checks a document against the version in force in the canonical docs register, as Doc check does (needs the app). Without candidate it gives the register, so you can pick doc from it. Nothing in the vault changes.",
-            schema(json!({"candidate": {"type": "string", "description": "The document to check, by path."}, "doc": {"type": "string", "description": "The register's document name."}, "mode": {"type": "string", "enum": ["standard", "callouts"], "description": "standard lists the differences; callouts marks them in the document's text."}}), &[])),
+            "Checks a document, as Doc check does (needs the app): against the version in force of a governing document in the canonical docs register, or against the feedback the user gave on its last version. Without document it gives the register, so you can pick governing_document from it. Nothing in the vault changes.",
+            schema(json!({"document": {"type": "string", "description": "Document to check, by path."}, "governing_document": {"type": "string", "description": "For version_in_force: the governing document, by its name in the register."}, "mode": {"type": "string", "enum": ["version_in_force", "earlier_feedback"], "description": "The screen's modes: version_in_force (Against the version in force, the default) lists where the document differs from the governing document; earlier_feedback (Against my earlier feedback) checks each point of the user's feedback on the last version against this one."}}), &[])),
         // Around the vault.
         tool("activity", "Recent activity", Read,
             "log.md, newest first: what Brainstead and the assistants changed in the vault (needs the app), a line an entry with its date, action and title. With date, the files changed that day instead. detail adds each entry's time and description.",
@@ -597,12 +597,12 @@ pub fn tools() -> Vec<Value> {
             "Find tasks and projects' suggestions (needs the app): tasks and projects a read of the user's notes from the last 90 days found, each with the note and quote it rests on and its id, and how the last look went. Accept or skip one with suggestions; start_run find_tasks looks again.",
             schema(json!({}), &[])),
         tool("suggestions", "Accept or skip a suggestion", Destroy,
-            "Acts on a Find tasks and projects suggestion (needs the app). accept makes it (a task added to its project's Next actions or the To Do list, a project note with its first next actions) as a change recorded in Changes, where the user can revert it (⌘Z doesn't undo it), with text to reword it (or a project's name) and outcome for a project's; skip leaves it out. Neither comes back. Accept or skip only what the user asked for.",
+            "Acts on a Find tasks and projects suggestion (needs the app). accept makes it (a task added to its project's Next actions or the To Do list, a project note with its first next actions) as a change recorded in Changes, where the user can revert it (⌘Z doesn't undo it), with text to reword it (or a project's name) and done_looks_like for a project's; skip leaves it out. Neither comes back. Accept or skip only what the user asked for.",
             schema(json!({
                 "action": {"type": "string", "enum": ["accept", "skip"]},
                 "id": {"type": "string", "description": "The suggestion's id from list_suggestions."},
                 "text": {"type": "string", "description": "For accept: the task's wording, or the project's name, if it should differ."},
-                "outcome": {"type": "string", "description": "For accept on a project: what done looks like, if it should differ."}
+                "done_looks_like": {"type": "string", "description": "For accept on a project: what done looks like, if it should differ."}
             }), &["action", "id"])),
         tool("moving_over", "Retire the previous app's skills", Destroy,
             "Settings › General › Moving over's Retire them (needs the app): the previous app's skills (.claude/skills/) and scripts (scripts/) go to Brainstead's Trash (restorable from there), the name corrections are kept, and CLAUDE.md tells agents to use these tools. It says what it removed; app_status says whether they're still there. Only when the user asks: refused once any call in the session passed unattended: true.",
@@ -760,7 +760,7 @@ fn outputs() -> std::collections::HashMap<&'static str, Value> {
         (
             "list_projects",
             page_schema(
-                json!({"name": s("string"), "path": s("string"), "status": s("string"), "area": sn(), "outcome": sn(), "next": s("integer"), "waiting": s("integer"), "someday": s("integer"), "done": s("integer")}),
+                json!({"name": s("string"), "path": s("string"), "status": s("string"), "area": sn(), "done_looks_like": sn(), "next": s("integer"), "waiting": s("integer"), "someday": s("integer"), "done": s("integer")}),
             ),
         ),
         ("list_trash", {
@@ -1022,7 +1022,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         }
         "draft_reply" => act("reply.draft", obj),
         "doc_check" => {
-            let run = obj.get("candidate").and_then(Value::as_str).is_some_and(|c| !c.trim().is_empty());
+            let run = obj.get("document").and_then(Value::as_str).is_some_and(|c| !c.trim().is_empty());
             act(if run { "doccheck.run" } else { "doccheck.register" }, obj)
         }
         "activity" => act("activity", obj),
@@ -1031,7 +1031,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         "app_status" => act("status", obj),
         "list_automated_tools" => act("automated", acting(obj, name, &["list"], "list", &["name", "folder", "opening"])?),
         "automated_tools" => act("automated", acting(obj, name, &["add", "remove"], "", &[])?),
-        "list_suggestions" => act("suggestions", acting(obj, name, &["list"], "list", &["id", "text", "outcome"])?),
+        "list_suggestions" => act("suggestions", acting(obj, name, &["list"], "list", &["id", "text", "done_looks_like"])?),
         "suggestions" => act("suggestions", acting(obj, name, &["accept", "skip"], "", &[])?),
         _ => Err(CallError::Unknown(format!("Unknown tool: {name}"))),
     }

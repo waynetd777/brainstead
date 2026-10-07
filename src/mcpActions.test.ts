@@ -20,6 +20,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) })
 
 import type { InboxItem, TaskRow } from "./api";
 import { findTask, Listing, runAction, taskLineOut } from "./mcpActions";
+import { settings } from "./store";
 
 const row = (over: Partial<TaskRow>): TaskRow => ({
   path: "Me. To Do List.md",
@@ -205,16 +206,19 @@ describe("MCP actions", () => {
     await run("project.create", { name: "Orbit App beta" });
     expect(submitted()[0]).toMatchObject({ page: "Project. Orbit App beta.md", kind: "new", instruction: { op: "page" } });
     calls.length = 0;
-    await run("project.update", { project: "Orbit App launch", status: "done", area: null });
+    // The screen's names in, the vault's written: Completed is status done, Done looks like is outcome.
+    await run("project.update", { project: "Orbit App launch", status: "completed", area: null, done_looks_like: "Live for all staff" });
     expect(submitted()[0].instruction).toEqual({
       op: "properties",
       set: [
         ["status", "done"],
         ["area", null],
+        ["outcome", "Live for all staff"],
       ],
     });
     expect(calls.some(([c]) => c === "project_set" || c === "project_create")).toBe(false);
     await expect(run("project.update", { project: "Orbit App launch", status: "blocked" })).rejects.toThrow(/status is/);
+    await expect(run("project.update", { project: "Orbit App launch", status: "done" })).rejects.toThrow(/completed/);
   });
 
   it("makes an assistant's change, and accepts, rejects and reverts held ones", async () => {
@@ -241,8 +245,8 @@ describe("MCP actions", () => {
     answers.change_revert = () => ({ ok: false, message: "Its lines have been edited since.", before: "old" });
     expect(await run("changes", { action: "revert", id: "c1" })).toMatch(/edited since/);
     answers.changes_accept_all = () => ({ done: 2, failed: [] });
-    expect(await run("changes", { action: "accept_run", group: "nightly-1" })).toBe("Accepted 2.");
-    expect(calls.find(([c]) => c === "changes_accept_all")![1]).toEqual({ group: "nightly-1", assistant: true });
+    expect(await run("changes", { action: "accept_run", group: "daily-check-1" })).toBe("Accepted 2.");
+    expect(calls.find(([c]) => c === "changes_accept_all")![1]).toEqual({ group: "daily-check-1", assistant: true });
     await expect(run("changes", { action: "accept" })).rejects.toThrow(/Which change/);
     // Nobody watching: nothing is accepted.
     calls.length = 0;
@@ -279,10 +283,10 @@ describe("MCP actions", () => {
     expect(await run("tasks.list", { view: "scheduled" })).toBe(out);
   });
 
-  it("starts and stops the summaries by their names, and by the old ones", async () => {
+  it("starts and stops the summaries by their names", async () => {
     answers.review_run_now = () => "run-1";
     await run("run.start", { run: "daily_summary", date: "2026-10-03" });
-    await run("run.start", { run: "weekly_review", unattended: true });
+    await run("run.start", { run: "weekly_summary", unattended: true });
     expect(calls.filter(([c]) => c === "review_run_now").map(([, a]) => a)).toEqual([
       { kind: "daily", day: "2026-10-03", unattended: false },
       { kind: "weekly", day: null, unattended: true },
@@ -296,7 +300,7 @@ describe("MCP actions", () => {
       { unattended: true },
     ]);
     await run("run.stop", { run: "weekly_summary" });
-    await run("run.stop", { run: "daily_review" });
+    await run("run.stop", { run: "daily_summary" });
     expect(calls.filter(([c]) => c === "reviews_stop").map(([, a]) => a)).toEqual([{ kind: "weekly" }, { kind: "daily" }]);
     await expect(run("run.start", { run: "monthly" })).rejects.toThrow(/daily_summary, weekly_summary/);
   });
@@ -586,12 +590,16 @@ describe("MCP actions", () => {
 
     it("reads and changes the settings it's allowed, never Read-only", async () => {
       answers.settings_write = (a) => a!.settings;
-      expect(await run("settings")).toMatch(/nightlyTime · Settings › Jobs & schedule › Daily check time: "09:00"/);
-      expect(await run("settings", { action: "set", key: "nightlyTime", value: "03:30" })).toMatch(/is now "03:30"/);
-      await run("settings", { action: "set", key: "reviews.weeklyReviewDay", value: "Thursday" });
+      expect(await run("settings")).toMatch(/dailyCheckTime · Settings › Jobs & schedule › Daily check time: "09:00"/);
+      expect(await run("settings", { action: "set", key: "dailyCheckTime", value: "03:30" })).toMatch(/is now "03:30"/);
+      expect(await run("settings")).toMatch(/weeklyReview.day · Settings › Jobs & schedule › Weekly review day: "fri"/);
+      await run("settings", { action: "set", key: "weeklyReview.day", value: "Thursday" });
       expect(await run("settings")).toMatch(/Weekly review day: "thu"/);
+      await run("settings", { action: "set", key: "summaries.dailyTime", value: "07:00" });
+      expect(settings.get().summaries?.dailyTime).toBe("07:00");
+      expect(settings.get().weeklyReview).toEqual({ day: "thu", time: "16:00" });
       await expect(run("settings", { action: "set", key: "readOnly", value: false })).rejects.toThrow(/the user's/);
-      await expect(run("settings", { action: "set", key: "nightlyTime", value: "25:00" })).rejects.toThrow(/HH:MM/);
+      await expect(run("settings", { action: "set", key: "dailyCheckTime", value: "25:00" })).rejects.toThrow(/HH:MM/);
       await expect(run("settings", { action: "set", key: "spellCheck", value: "maybe" })).rejects.toThrow(/true or false/);
     });
 
@@ -705,8 +713,8 @@ describe("MCP actions", () => {
     it("says where each setting is, as the screen does", async () => {
       const out = (await run("settings")) as string;
       expect(out).toContain("captureShortcut · Settings › General › Quick capture shortcut");
-      expect(out).toContain("reviews.dailyEnabled · Settings › Jobs & schedule › Daily summary: false");
-      expect(out).toContain("reviews.weeklyEnabled · Settings › Jobs & schedule › Weekly summary: false");
+      expect(out).toContain("summaries.dailyEnabled · Settings › Jobs & schedule › Daily summary: false");
+      expect(out).toContain("summaries.weeklyEnabled · Settings › Jobs & schedule › Weekly summary: false");
       expect(out).toContain("logDays · Settings › About › The app's logs › Keep (days: 7, 14, 30 or 90): 14");
     });
 
@@ -794,7 +802,7 @@ describe("MCP actions", () => {
         {
           path: "Project. Orbit.md",
           name: "Orbit",
-          status: "active",
+          status: "done",
           area: "Work",
           outcome: "Live",
           next: 2,
@@ -803,8 +811,12 @@ describe("MCP actions", () => {
           done: 4,
         },
       ];
-      expect(await run("projects.list")).toBe("1 project:\n- Orbit · active · 2 next  (Project. Orbit.md)");
-      expect(await run("projects.list", { detail: true })).toMatch(/Work · 2 next, 1 waiting, 0 someday, 4 done · outcome: Live/);
+      expect(await run("projects.list")).toBe("1 project:\n- Orbit · completed · 2 next  (Project. Orbit.md)");
+      expect(await run("projects.list", { detail: true })).toMatch(/Work · 2 next, 1 waiting, 0 someday, 4 done · done looks like: Live/);
+      expect(((await data("projects.list")).items as Record<string, unknown>[])[0]).toMatchObject({
+        status: "completed",
+        done_looks_like: "Live",
+      });
       answers.activity = () => ({
         log: [{ date: "2026-10-01", time: "09:30", action: "ingest", title: "Orbit", description: "two pages" }],
       });

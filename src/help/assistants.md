@@ -35,7 +35,7 @@ These are made at once too, and each is listed in [Changes](app:review), where y
 
 - Tasks: tick or untick (a recurring task gets its next one), due, defer, start and created dates, priority, contexts, effort, project, waiting for, cancel, reopen, in progress, moving one in a list's order, adding and deleting one. Several edits to one task at once are one change.
 - The Inbox: clarify an item as a next action, waiting for, someday, a new project, done, reference, an ingest, or delete it. When clarifying changes two notes (a task out of the To Do list and into a project), both are made, or both held, together.
-- Projects: create one, set its status, area or outcome.
+- Projects: create one, set its status (Active, On hold, Someday or Completed), area or **Done looks like**.
 - A change to any page, a new note, a new wiki page, a rename and a move to the Trash.
 - Knowledge health's **Reshape pages**: each page is one change, in one run you can revert alone or all together. **Link to…** on a missing page: each page it relinks is a change.
 - A new template (always held for you), and a saved Contradictions report.

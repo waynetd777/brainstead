@@ -264,13 +264,18 @@ function FoundProject({ g }: { g: FindSuggestion }) {
         type="button"
         className="btn sm pri"
         disabled={busy}
-        title="Make the project note with its outcome and first next actions; revertable in Changes"
+        title="Make the project note with what done looks like and its first next actions; revertable in Changes"
         onClick={() => void decide("accept", editing ? { text: name, outcome } : undefined)}
       >
         Accept
       </button>
       {!editing && (
-        <button type="button" className="btn sm" title="Change the name or outcome before making it" onClick={() => setEditing(true)}>
+        <button
+          type="button"
+          className="btn sm"
+          title="Change the name or what done looks like before making it"
+          onClick={() => setEditing(true)}
+        >
           Edit
         </button>
       )}

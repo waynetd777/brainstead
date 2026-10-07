@@ -24,10 +24,12 @@ pub struct Settings {
     pub skipped_full_disk_access: bool,
     /// The global quick-capture shortcut, as "Control+Alt+Space".
     pub capture_shortcut: String,
-    /// The scheduled reviews' times (Settings › Jobs & schedule).
-    pub reviews: brainstead_core::reviews::ScheduleSettings,
-    /// Brainstead runs the scheduled reviews (only one app should: the previous app runs them otherwise).
-    pub reviews_here: bool,
+    /// The daily and weekly summaries' schedule (Settings › Jobs & schedule).
+    pub summaries: brainstead_core::reviews::ScheduleSettings,
+    /// Brainstead runs the daily and weekly summaries (only one app should: the previous app runs them otherwise).
+    pub summaries_here: bool,
+    /// When the user does the guided weekly review (Settings › Jobs & schedule).
+    pub weekly_review: brainstead_core::reviews::WeeklyReview,
     /// Anything the window keeps that this side doesn't need to know about (sidebar state and the like).
     #[serde(flatten)]
     pub ui: serde_json::Map<String, serde_json::Value>,
@@ -42,8 +44,9 @@ impl Default for Settings {
             theme: "system".into(),
             skipped_full_disk_access: false,
             capture_shortcut: crate::capture::DEFAULT_SHORTCUT.into(),
-            reviews: Default::default(),
-            reviews_here: false,
+            summaries: Default::default(),
+            summaries_here: false,
+            weekly_review: Default::default(),
             ui: Default::default(),
         }
     }
@@ -77,16 +80,20 @@ impl Settings {
             self.theme = "system".into();
         }
         self.vault_path = self.vault_path.map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
-        self.reviews.validate()?;
+        self.summaries.validate()?;
+        self.weekly_review.validate()?;
         Ok(self)
     }
 
     /// As `normalised`, but what it would refuse is dropped (an excluded name) or put back to its
-    /// default (a review time), so the rest survive a bad value.
+    /// default (a summary or weekly review time), so the rest survive a bad value.
     pub fn lenient(mut self) -> Settings {
         self.excluded.retain(|n| Settings { excluded: vec![n.clone()], ..Default::default() }.normalised().is_ok());
-        if self.reviews.validate().is_err() {
-            self.reviews = Default::default();
+        if self.summaries.validate().is_err() {
+            self.summaries = Default::default();
+        }
+        if self.weekly_review.validate().is_err() {
+            self.weekly_review = Default::default();
         }
         self.normalised().unwrap_or_default()
     }
@@ -167,13 +174,13 @@ mod tests {
         let p = t.path().join("settings.json");
         let mut s =
             Settings { vault_path: Some("/v".into()), read_only: false, excluded: vec!["old".into(), "a/b".into()], ..Default::default() };
-        s.reviews.daily_time = "25:99".into();
+        s.summaries.daily_time = "25:99".into();
         std::fs::write(&p, serde_json::to_vec(&s).unwrap()).unwrap();
         let (got, warning) = load_checked(&p);
         assert!(warning.is_some());
         assert_eq!((got.vault_path.as_deref(), got.read_only), (Some("/v"), false));
         assert_eq!(got.excluded, ["old"]);
-        assert_eq!(got.reviews.daily_time, "06:30");
+        assert_eq!(got.summaries.daily_time, "06:30");
         assert!(t.path().join("settings.json.bad").exists());
         assert_eq!(load_checked(&t.path().join("none.json")).1, None);
     }

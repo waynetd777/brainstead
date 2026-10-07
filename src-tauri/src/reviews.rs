@@ -94,7 +94,7 @@ pub struct Reviews {
 }
 
 fn dir() -> PathBuf {
-    platform::data_dir().join("reviews")
+    platform::data_dir().join("summaries")
 }
 
 /// `automated.json`: the user's own app-generated session signatures (stage 6 notes).
@@ -219,7 +219,7 @@ pub fn reviews_status(st: State<AppState>, rv: State<Reviews>, vs: State<VaultSe
             r.file = r.file.take().map(|f| current_file(&f, |p| root.join(p).exists()));
         }
     }
-    let next = if s.reviews_here { schedule::next_due(&s.reviews, now()) } else { schedule::next_due(&Default::default(), now()) };
+    let next = if s.summaries_here { schedule::next_due(&s.summaries, now()) } else { schedule::next_due(&Default::default(), now()) };
     Status { runs, next, running: rv.running.lock().unwrap().clone() }
 }
 
@@ -271,12 +271,12 @@ pub fn start_scheduler(app: &AppHandle) {
 
 fn tick(app: &AppHandle) {
     let s = app.state::<AppState>().settings.lock().unwrap().clone();
-    if !s.reviews_here || app.state::<VaultService>().root().is_none() {
+    if !s.summaries_here || app.state::<VaultService>().root().is_none() {
         return;
     }
     let rv = app.state::<Reviews>();
     let last = rv.state.lock().unwrap().last();
-    let due = schedule::compute_due(&s.reviews, &last, now());
+    let due = schedule::compute_due(&s.summaries, &last, now());
     let running = rv.running.lock().unwrap().clone();
     for d in schedule::to_start(&due, &running) {
         start(app, d.kind, d.due_at, "schedule");
@@ -335,9 +335,9 @@ fn start(app: &AppHandle, kind: ReviewKind, due: NaiveDateTime, trigger: &str) -
 fn start_for(app: &AppHandle, kind: ReviewKind, target: Target, trigger: &str) -> String {
     let rv = app.state::<Reviews>();
     let t = now();
-    let id = format!("review-{}-{}", t.format("%Y%m%d%H%M%S"), kind_name(kind).to_lowercase());
+    let id = format!("summary-{}-{}", t.format("%Y%m%d%H%M%S"), kind_name(kind).to_lowercase());
     let window = reviews::target::window(target);
-    let model = crate::ask::job_model(app, "reviews");
+    let model = crate::ask::job_model(app, "summaries");
     rv.running.lock().unwrap().push(kind);
     {
         let mut s = rv.state.lock().unwrap();
@@ -374,7 +374,7 @@ fn start_for(app: &AppHandle, kind: ReviewKind, target: Target, trigger: &str) -
             std::thread::sleep(std::time::Duration::from_secs(RETRY_AFTER_SECS));
             // Not when one is going already (Run now, or the next scheduled one).
             let busy = app2.state::<Reviews>().running.lock().unwrap().contains(&kind);
-            if !busy && app2.state::<AppState>().settings.lock().unwrap().reviews_here {
+            if !busy && app2.state::<AppState>().settings.lock().unwrap().summaries_here {
                 start_for(&app2, kind, target, "retry");
             }
         }
@@ -393,7 +393,7 @@ fn run(app: &AppHandle, id: &str, kind: ReviewKind, w: Window, model: &str, retr
     let _ = app.emit("review-started", Started { chat_id: id.into(), title: title.clone(), model: model.into(), prompt: ask_line.clone() });
 
     let mut looked: Vec<String> = Vec::new();
-    let queued = app.state::<AppState>().settings.lock().unwrap().ui.get("reviewsToQueue").and_then(|v| v.as_bool()).unwrap_or(false);
+    let queued = app.state::<AppState>().settings.lock().unwrap().ui.get("holdSummaries").and_then(|v| v.as_bool()).unwrap_or(false);
     let result = compose(app, id, kind, &w, model, &mut looked).and_then(|block| {
         let origin = Origin {
             kind: "review".into(),
