@@ -22,7 +22,7 @@ Click **Graph** in an open note's top bar to see the graph around it. Or type in
 A large neighbourhood is cut to the nearest 400 pages; the line under the graph says so.
 
 ## Read the colours
-Concepts, entities and other wiki pages, sources and summaries, and notes each have their own colour, the same as on the Wiki pages by type pie on Knowledge health and Activity: entities blue, sources and summaries orange, concepts green, other wiki pages amber, and notes purple; the chips at the top left name them. A grey ring is a page that's linked to but not written yet; it's labelled too. A bubble's size is how many links it has across the vault.
+Concepts, entities and other wiki pages, sources and summaries, and notes each have their own colour, the same as on the Wiki pages by type pie on Knowledge health: entities blue, sources and summaries orange, concepts green, other wiki pages amber, and notes purple; the chips at the top left name them. A grey ring is a page that's linked to but not written yet; it's labelled too. A bubble's size is how many links it has across the vault.
 
 Click a chip to hide or show that kind; the centre page always stays.
 
