@@ -62,3 +62,5 @@ If the tasks can't be read, the list says **Couldn't load the tasks.** with **Re
 A recurring task carries a rule such as `🔁 every week`. When you tick it, the next one is added above it with its dates moved on.
 
 Tasks inside quotes and callouts (`> - [ ] Call Maya`) are listed and edited like any other.
+
+An assistant can change a task's words as clicking them does, its dates and tags kept, and make it a follow-up or not; a task it adds in Follow-ups, Waiting for or Someday / maybe gets that list's tag, as **New task** there does. Each change is listed in [Changes](app:review), with Revert.

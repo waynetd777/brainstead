@@ -22,7 +22,7 @@ Clicking a `#tag` in a note searches for it here.
 ## Narrow and order the results
 The **Note**, **Wiki** and **Source** chips choose which layers are searched; at least one stays on. The date menu, **Any time** unless you change it, limits results to the **Past week**, **Past month**, **Past 3 months** or **Past year**, unless your search has its own `since:`.
 
-**Best match** shows the strongest results first; **Latest** and **Oldest** order by the file's date. The line above the results gives the number of files and how long the search took; only the best 200 are shown. Snippets show plain text, without markdown, links' brackets or code. If the search fails, the error shows with **Retry**.
+**Best match** shows the strongest results first; **Latest** and **Oldest** order by the file's date. An assistant's search takes the same three. The line above the results gives the number of files and how long the search took; only the best 200 are shown. Snippets show plain text, without markdown, links' brackets or code. If the search fails, the error shows with **Retry**.
 
 `↑` and `↓` move through the results and `↩` opens one; a click works too. `Esc` clears the box. A note opened from a search scrolls to the first match, with every match marked. Right-click a result for the same menu as on [Notes](app:notes).
 

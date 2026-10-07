@@ -21,8 +21,9 @@ import { ASSISTANT_FRONTMATTER } from "../md/scripts";
 
 type Mode = "standard" | "callouts";
 
-const REGISTER = "Me. Canonical Docs.md";
-const REGISTER_STUB = `# Canonical docs
+/** The canonical docs register, and what Start the register makes it with (doc_check too). */
+export const REGISTER = "Me. Canonical Docs.md";
+export const REGISTER_STUB = `# Canonical docs
 
 Which version of each governing document is in force. Doc check reads this table: one row per version; status is canonical (in force), draft or superseded; path is in the vault, \`~/…\` or a full path.
 
@@ -43,6 +44,12 @@ const STATUS: Record<string, [string, string]> = {
   draft: ["Draft", "amber"],
   superseded: ["Superseded", ""],
 };
+
+/** Where Save as note puts a check of the document `name` (its file name), dated today. */
+export function findingsNote(name: string, d = new Date()): string {
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `Doc check. ${name.replace(/\.[^.]+$/, "").replace(/[\\/:*?"<>|#^[\]]/g, " ")} - ${date}.md`;
+}
 
 /** The findings as markdown, for Copy findings and Save as note. */
 export function findingsMarkdown(name: string, r: CheckResult): string {
@@ -130,9 +137,7 @@ export function DocCheckScreen() {
   const count = (k: string) => r?.findings.filter((f) => f.kind === k).length ?? 0;
   const save = async () => {
     if (!r) return;
-    const d = new Date();
-    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const path = `Doc check. ${name.replace(/\.[^.]+$/, "").replace(/[\\/:*?"<>|#^[\]]/g, " ")} - ${date}.md`;
+    const path = findingsNote(name);
     try {
       await api.docCreate(path, ASSISTANT_FRONTMATTER + findingsMarkdown(name, r));
       toast("Saved as a note", { label: "Open", run: () => openDoc(path) }, "ok");

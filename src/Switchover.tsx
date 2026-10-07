@@ -8,7 +8,7 @@
 // It shows only when the previous app's own files are in the vault (`switchover_status`).
 
 import { useEffect, useState } from "react";
-import { api, Captured } from "./api";
+import { api, Captured, Settings } from "./api";
 import { Icon } from "./icons";
 import { nav, SettingsPane } from "./nav";
 import { settings, useStore } from "./store";
@@ -16,24 +16,86 @@ import { toast } from "./Toast";
 import { reportEditError } from "./taskModel";
 import { Dialog } from "./ui";
 
-interface Item {
+/** One line of the checklist. */
+export interface Item {
   id: string;
   label: string;
   detail: string;
   /** Checked by Brainstead (true/false), or ticked by hand (undefined). */
   done?: boolean;
   optional?: boolean;
-  /** The button: its label, what it does, and the tooltip. */
-  action?: [string, () => void, string];
 }
+
+/** A line with its button: its label, what it does, and the tooltip. */
+type Row = Item & { action?: [string, () => void, string] };
 
 const goTo = (pane: SettingsPane) => () => nav.go({ screen: "settings", pane });
 
 const lastOk = (recent: Captured[], ext: "outlook" | "teams") => recent.find((c) => c.extension === ext && c.path && !c.error);
 
+type Status = Awaited<ReturnType<typeof api.switchoverStatus>>;
+
+/** Whether the previous app's skills and scripts are retired, CLAUDE.md told. */
+export const isRetired = (status: Status | null) => !!status && !status.skills && !status.scripts && status.claudeMd;
+
+/** The checklist as the screen shows it, and as moving_over lists it (src/mcpActions.ts): what
+ *  Brainstead checks itself, and what the user ticks (kept in settings.movingOver). */
+export function checklist(s: Settings, status: Status | null, recent: Captured[]): Item[] {
+  const outlook = lastOk(recent, "outlook");
+  const teams = lastOk(recent, "teams");
+  const when = (c?: Captured) =>
+    c ? `Last capture ${new Date(c.at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}.` : "No capture yet.";
+  const retired = isRetired(status);
+  return [
+    {
+      id: "writes",
+      label: "Brainstead can write to the vault",
+      detail: s.readOnly
+        ? "Read-only is on, so captures and ticks are refused, and scheduled summaries are held for you."
+        : "Read-only is off.",
+      done: !s.readOnly,
+    },
+    {
+      id: "summaries",
+      label: "Brainstead runs the daily and weekly summaries",
+      detail: s.summariesHere ? "The daily and weekly summaries are written here." : "Switch this on in Jobs & schedule.",
+      done: !!s.summariesHere,
+    },
+    {
+      id: "automated",
+      label: "Your tools that start sessions are listed",
+      detail:
+        status?.automated == null
+          ? "List your tools that start Claude Code sessions, so the daily summary doesn't count them as your work."
+          : `${status.automated} listed.`,
+      done: (status?.automated ?? 0) > 0,
+      optional: true,
+    },
+    { id: "outlook", label: "The Outlook extension captures here", detail: when(outlook), done: !!outlook },
+    { id: "teams", label: "The Teams extension captures here", detail: when(teams), done: !!teams },
+    { id: "otherSummaries", label: "The other app's daily and weekly summaries are off", detail: "So only one app writes them." },
+    { id: "otherExtensions", label: "The other app's browser extensions are removed", detail: "So a capture can't land twice." },
+    { id: "otherStopped", label: "The other app is stopped", detail: "Brainstead doesn't need it running." },
+    {
+      id: "retire",
+      label: "The other app's skills and scripts are retired",
+      detail: retired
+        ? "Agents working in the vault are told in CLAUDE.md to use Brainstead's tools, so every change shows in Changes."
+        : "Its skills (.claude/skills) and scripts (scripts/) have agents write files directly, past Changes. Retiring them moves both to the Trash and tells agents in CLAUDE.md to use Brainstead's tools.",
+      done: retired,
+    },
+  ];
+}
+
+/** Whether a line is done: checked by Brainstead, or ticked by the user. */
+export const isDone = (i: Item, ticked: Record<string, boolean>) => i.done ?? !!ticked[i.id];
+
+/** Retire them waits for "The other app is stopped" to be ticked. */
+export const STOP_FIRST = "Stop the other app first, and tick it above.";
+
 export function Switchover() {
   const s = useStore(settings);
-  const [status, setStatus] = useState<Awaited<ReturnType<typeof api.switchoverStatus>> | null>(null);
+  const [status, setStatus] = useState<Status | null>(null);
   const [recent, setRecent] = useState<Captured[]>([]);
   const [confirm, setConfirm] = useState(false);
   const load = () =>
@@ -49,7 +111,7 @@ export function Switchover() {
       .catch(() => {});
   }, []);
   const ticked = s.movingOver ?? {};
-  const retired = !!status && !status.skills && !status.scripts && status.claudeMd;
+  const retired = isRetired(status);
   const retire = () => {
     setConfirm(false);
     api
@@ -58,75 +120,28 @@ export function Switchover() {
       .then(load)
       .catch(reportEditError);
   };
-  const outlook = lastOk(recent, "outlook");
-  const teams = lastOk(recent, "teams");
-  const when = (c?: Captured) =>
-    c ? `Last capture ${new Date(c.at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}.` : "No capture yet.";
-
-  const items: Item[] = [
-    {
-      id: "writes",
-      label: "Brainstead can write to the vault",
-      detail: s.readOnly
-        ? "Read-only is on, so captures and ticks are refused, and scheduled summaries are held for you."
-        : "Read-only is off.",
-      done: !s.readOnly,
-      action: ["Vault", goTo("vault"), "Open Settings › Vault, where read-only is switched"],
-    },
-    {
-      id: "summaries",
-      label: "Brainstead runs the daily and weekly summaries",
-      detail: s.summariesHere ? "The daily and weekly summaries are written here." : "Switch this on in Jobs & schedule.",
-      done: !!s.summariesHere,
-      action: ["Jobs & schedule", goTo("jobs"), "Open Settings › Jobs & schedule to run the summaries here"],
-    },
-    {
-      id: "automated",
-      label: "Your tools that start sessions are listed",
-      detail:
-        status?.automated == null
-          ? "List your tools that start Claude Code sessions, so the daily summary doesn't count them as your work."
-          : `${status.automated} listed.`,
-      done: (status?.automated ?? 0) > 0,
-      optional: true,
-      action: ["Jobs & schedule", goTo("jobs"), "Open Settings › Jobs & schedule, where you list your tools"],
-    },
-    {
-      id: "outlook",
-      label: "The Outlook extension captures here",
-      detail: when(outlook),
-      done: !!outlook,
-      action: ["Capture extensions", goTo("capture"), "Open Settings › Capture extensions to set up and test the extension"],
-    },
-    {
-      id: "teams",
-      label: "The Teams extension captures here",
-      detail: when(teams),
-      done: !!teams,
-      action: ["Capture extensions", goTo("capture"), "Open Settings › Capture extensions to set up and test the extension"],
-    },
-    { id: "otherSummaries", label: "The other app's daily and weekly summaries are off", detail: "So only one app writes them." },
-    { id: "otherExtensions", label: "The other app's browser extensions are removed", detail: "So a capture can't land twice." },
-    { id: "otherStopped", label: "The other app is stopped", detail: "Brainstead doesn't need it running." },
-    {
-      id: "retire",
-      label: "The other app's skills and scripts are retired",
-      detail: retired
-        ? "Agents working in the vault are told in CLAUDE.md to use Brainstead's tools, so every change shows in Changes."
-        : "Its skills (.claude/skills) and scripts (scripts/) have agents write files directly, past Changes. Retiring them moves both to the Trash and tells agents in CLAUDE.md to use Brainstead's tools.",
-      done: retired,
-      action: retired
-        ? undefined
-        : [
-            "Retire them",
-            () => (ticked.otherStopped ? setConfirm(true) : toast("Stop the other app first, and tick it above.")),
-            "Move the skills and scripts to the Trash and point agents at Brainstead's tools",
-          ],
-    },
+  const capture: Row["action"] = [
+    "Capture extensions",
+    goTo("capture"),
+    "Open Settings › Capture extensions to set up and test the extension",
   ];
-  const isDone = (i: Item) => i.done ?? !!ticked[i.id];
+  const actions: Record<string, Row["action"]> = {
+    writes: ["Vault", goTo("vault"), "Open Settings › Vault, where read-only is switched"],
+    summaries: ["Jobs & schedule", goTo("jobs"), "Open Settings › Jobs & schedule to run the summaries here"],
+    automated: ["Jobs & schedule", goTo("jobs"), "Open Settings › Jobs & schedule, where you list your tools"],
+    outlook: capture,
+    teams: capture,
+    retire: retired
+      ? undefined
+      : [
+          "Retire them",
+          () => (ticked.otherStopped ? setConfirm(true) : toast(STOP_FIRST)),
+          "Move the skills and scripts to the Trash and point agents at Brainstead's tools",
+        ],
+  };
+  const items: Row[] = checklist(s, status, recent).map((i) => ({ ...i, action: actions[i.id] }));
   const needed = items.filter((i) => !i.optional);
-  const n = needed.filter(isDone).length;
+  const n = needed.filter((i) => isDone(i, ticked)).length;
 
   if (!status?.previous) return null;
   return (
@@ -139,7 +154,7 @@ export function Switchover() {
       </div>
       <div className="card switchover">
         {items.map((i) => {
-          const done = isDone(i);
+          const done = isDone(i, ticked);
           const manual = i.done === undefined;
           return (
             <div key={i.id} className="srow">

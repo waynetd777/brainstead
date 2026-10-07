@@ -24,3 +24,5 @@ Click **Check**. When it can't run yet, the reason shows beside it.
 The verdict comes first, with a summary, the counts and which version was used (and which were left out). Each finding is a **Conflict** (both texts quoted), **Not covered**, **Superseded term**, **Beyond scope** or **Agrees**; important ones are marked **Material**. Points that agree are folded away: **Show** lists them.
 
 **Copy findings** copies them as markdown. **Save as note** saves them as `Doc check. <name> - <date>.md`.
+
+An assistant can check a document the same way, save its findings as a note and start the register, when you ask. The note and the register are listed in [Changes](app:review), with Revert.

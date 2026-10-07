@@ -19,9 +19,10 @@ import { reportEditError, undoAction } from "../taskModel";
 import { toast } from "../Toast";
 import { TopBar } from "../TopBar";
 
-type Decision = "keep" | "promote" | "task" | "archive" | "remove";
+export type Decision = "keep" | "promote" | "task" | "archive" | "remove";
 
-const LABEL: Record<Decision, [string, string, string]> = {
+/** Each choice: its button's label (triage_bookmarks names them so too), icon and colour. */
+export const LABEL: Record<Decision, [string, string, string]> = {
   keep: ["Keep", "pin", ""],
   promote: ["Ingest into the wiki", "wiki", "acc"],
   task: ["Make a task", "tasks", ""],

@@ -10,7 +10,7 @@ A project is a note named `Project. <name>.md`. Its properties hold its status, 
 ## Find a project
 **Active**, **On hold**, **Someday** and **Completed** in the top bar switch between projects by status, each with its count, even 0. The table groups projects by area (projects with no area last) and shows for each: **Next** (open next actions), **Waiting**, and **Last change** (when its note or any of its tasks last changed). With no active projects, the tab says a project is a note named “Project. …”.
 
-An active project is flagged **Stuck** (red) when it has no next action, and **Quiet** (amber) when nothing has changed for two weeks. The sidebar shows how many projects are active, and shows the count in a blue badge when any has no next action.
+An active project is flagged **Stuck** (red) when it has no next action, and **Quiet** (amber) when nothing has changed for two weeks; an assistant listing your projects sees the same flags. The sidebar shows how many projects are active, and shows the count in a blue badge when any has no next action.
 
 ## Work on a project
 Click a project to open it on the right. **Done looks like** (the outcome) and **Area** are edited in place: click, type and press `↩`.

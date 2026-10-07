@@ -45,6 +45,9 @@ pub enum Instruction {
     Page { content: String },
     /// A task line, at the end of a project's Next actions or the top of the To Do list's Other.
     AddTask { line: String },
+    /// A thought at the top of the Scratchpad, under a `## stamp` heading, as Quick capture adds it
+    /// (the Scratchpad is started when it isn't there).
+    AddThought { text: String, stamp: String },
     /// A line taken out: a task deleted. `at` is where it was (from 0); it's taken out there when
     /// it still reads the same, else only where it's the one line that does.
     DeleteLine {
@@ -89,6 +92,12 @@ impl Instruction {
                     crate::write::append_under(&mut lines, crate::projects::NEXT_ACTIONS, line);
                 }
                 Ok(join_lines(&lines, &eol, trailing || text.is_empty()))
+            }
+            Instruction::AddThought { text, stamp } => {
+                if text.trim().is_empty() {
+                    return Err("There's nothing to add.".into());
+                }
+                Ok(crate::write::with_thought(current.unwrap_or(crate::write::NEW_SCRATCHPAD), text, stamp).0)
             }
             Instruction::DeleteLine { line, at } => {
                 let text = have()?;
@@ -896,6 +905,21 @@ mod tests {
         let d = Instruction::DeleteLine { line: "- [ ] Email Maya".into(), at: None };
         assert_eq!(d.text(page, Some(&two)).unwrap(), one);
         assert!(d.text(page, Some(&one)).unwrap_err().contains("isn't in"));
+    }
+
+    #[test]
+    fn a_captured_thought_goes_below_the_scratchpads_header() {
+        let page = "Me. Scratchpad.md";
+        let i = Instruction::AddThought { text: "Ask Lena about\nthe venue".into(), stamp: "2026-10-07 09:30".into() };
+        let before = "# Me. Scratchpad\n\n## 2026-10-06 18:00\n\nOlder.\n";
+        assert_eq!(
+            i.text(page, Some(before)).unwrap(),
+            "# Me. Scratchpad\n\n## 2026-10-07 09:30\n\nAsk Lena about\nthe venue\n\n## 2026-10-06 18:00\n\nOlder.\n"
+        );
+        // Not there yet: started, as Quick capture starts it.
+        assert!(i.text(page, None).unwrap().starts_with("# Me. Scratchpad\n\n## 2026-10-07 09:30\n\n"));
+        let empty = Instruction::AddThought { text: " ".into(), stamp: "2026-10-07 09:30".into() };
+        assert!(empty.text(page, Some(before)).is_err());
     }
 
     #[test]

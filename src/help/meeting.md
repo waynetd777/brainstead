@@ -22,3 +22,5 @@ Click **Draft the note**. The AI fills in the note from `Templates/<Type>.md`, w
 
 ## After the note
 The note is made in the vault, listed in [Changes](app:review) with Revert. Then Brainstead ingests it into the wiki and, once that's done, moves the transcript to the Trash; with several, each goes through in turn and one message says how they went. A transcript whose note or ingest failed stays where it is. Turn either step off in [Settings › AI assistants](app:settings/assistants), under Meeting notes; with both off, Brainstead asks after each note: tick what you want and click **Go**, or **Neither**. A note held in Changes (from a scheduled run whose note failed a check, or a note that adds code that runs, such as a `dataviewjs` block, whoever started it) isn't in the vault yet, so the offer comes when you accept it there.
+
+An assistant can list the transcripts, still to do or all of them as **Show** does, and draft a note of any of the four types (Meeting, 1-1, Workshop or Interview) when you ask.

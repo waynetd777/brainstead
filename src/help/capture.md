@@ -29,6 +29,8 @@ In a task, a few words turn into the task format when you save:
 
 `[[` suggests notes to link and `#` suggests tags from the vault; `↑` and `↓` choose and `↩` or Tab inserts. While the task box is empty, a hint lists these.
 
+An assistant can capture for you too, when you ask: a task to the Inbox or a thought to the Scratchpad, with the same shorthand. Its capture is listed in [Changes](app:review), with Revert.
+
 ## If a capture is refused
 While **Read-only** is on in [Settings › Vault](app:settings/vault), captures are refused with a message and a button to that setting.
 

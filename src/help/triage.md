@@ -24,3 +24,5 @@ Press a key, or click the choice:
 - `↩` **Accept suggestion**: do what was suggested; the hint at the foot reads "↩ accept the suggestion". On a bookmark whose note is missing, `↩` removes it.
 
 Every choice but Keep takes the line out of `Me. Bookmarks.md`. Press `⌘Z` to undo. **Open** opens the note.
+
+An assistant can ask for suggestions too, named as the choices here are; it changes nothing until you decide.

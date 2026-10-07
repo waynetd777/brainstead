@@ -264,11 +264,24 @@ describe("MCP actions", () => {
   });
 
   it("retires the previous app's files, and starts the weekly review over", async () => {
-    answers.switchover_status = () => ({ automated: null, skills: true, scripts: false, claudeMd: false });
+    answers.switchover_status = () => ({ automated: null, skills: true, previous: true, scripts: false, claudeMd: false });
+    answers.capture_status = () => ({ recent: [] });
     answers.switchover_retire = () => "Retired: .claude/skills/, CLAUDE.md updated. The folders are in the Trash.";
-    expect(await run("moving_over", { action: "status" })).toMatch(/\.claude\/skills\/ is still in the vault/);
+    settings.update({ movingOver: {}, readOnly: false });
+    // The checklist as the screen lists it: what Brainstead checks, and what the user ticks.
+    const list = (await run("moving_over", { action: "list" })) as string;
+    expect(list).toMatch(/^Moving over from another notes app \(Settings › General\): \d+ of 8 done\./);
+    expect(list).toContain("- [ ] The other app is stopped · ticked by the user: Brainstead doesn't need it running.  (otherStopped)");
+    expect(list).toContain("- [x] Brainstead can write to the vault · Brainstead checks this: Read-only is off.  (writes)");
+    // Retire them waits for The other app is stopped, as the screen's button does.
+    await expect(run("moving_over", { action: "retire" })).rejects.toThrow(/Stop the other app first/);
+    expect(calls.some(([c]) => c === "switchover_retire")).toBe(false);
+    await expect(run("moving_over", { action: "tick", item: "writes" })).rejects.toThrow(/checks this itself/);
+    expect(await run("moving_over", { action: "tick", item: "otherStopped" })).toBe("Ticked “The other app is stopped”.");
+    expect(settings.get().movingOver).toEqual({ otherStopped: true });
     expect(await run("moving_over", { action: "retire" })).toMatch(/^Retired: \.claude\/skills\//);
     expect(calls.some(([c]) => c === "switchover_retire")).toBe(true);
+    expect(await run("moving_over", { action: "untick", item: "otherStopped" })).toBe("Unticked “The other app is stopped”.");
     answers.weekly_state_read = () => ({ week: "2026-W39", step: 3, done: [0, 1, 2], log: [], notes: "x", startedAt: 1 });
     const out = (await run("weekly.start_over")) as string;
     const st = calls.find(([c]) => c === "weekly_state_write")![1]!.state as { step: number; done: number[]; notes: string };
@@ -994,6 +1007,14 @@ describe("MCP actions", () => {
       await expect(run("fix_name", { ...args, files: ["Idea. C.md"] })).rejects.toThrow(
         /Not among the files.*They are: Idea\. A\.md, Idea\. B\.md/,
       );
+      // Remember is on unless false, with Where it's from; Files to leave alone go to the plan.
+      const req = () => calls.filter(([c]) => c === "fixname_apply").at(-1)![1]!.req as Record<string, unknown>;
+      expect(req()).toMatchObject({ skipSubstitution: false, guards: [], note: "" });
+      await run("fix_name", { ...args, files_to_leave_alone: ["Lenna Park", " "], where_its_from: "confirmed in a 1-1" });
+      expect(calls.filter(([c]) => c === "fixname_plan").at(-1)![1]!.req).toMatchObject({ guards: ["Lenna Park"] });
+      expect(req()).toMatchObject({ skipSubstitution: false, guards: ["Lenna Park"], note: "confirmed in a 1-1" });
+      await run("fix_name", { ...args, remember: false, where_its_from: "x" });
+      expect(req()).toMatchObject({ skipSubstitution: true, note: "" });
     });
 
     it("opens Meeting notes, Draft a reply and Doc check on their file", async () => {
@@ -1024,9 +1045,20 @@ describe("MCP actions", () => {
         "2 entries in log.md, newest first:\n- 2026-10-01 ingest Orbit\n- 2026-09-30 ingest Hub Platform",
       );
       expect(await run("activity", { action: "ingest", query: "two pages" })).toMatch(
-        /^1 entry in log\.md, newest first matching “two pages”, of 2:\n- 2026-10-01 ingest Orbit$/,
+        /^1 entry in log\.md, best match first matching “two pages”, of 2:\n- 2026-10-01 ingest Orbit$/,
       );
-      await expect(run("activity", { action: "rename" })).rejects.toThrow(/Its actions: ingest, trash/);
+      // While searching, Best match (the screen's default) puts every word in the title first; Latest keeps the log's order.
+      expect(await run("activity", { query: "hub" })).toMatch(/best match first matching “hub”, of 3:\n- 2026-09-30 ingest Hub Platform$/);
+      answers.activity = () => ({
+        log: [
+          { date: "2026-10-02", time: "10:00", action: "ingest", title: "Orbit", description: "about the hub" },
+          { date: "2026-10-01", time: "09:30", action: "ingest", title: "Hub Platform", description: "" },
+        ],
+      });
+      expect(await run("activity", { query: "hub" })).toMatch(/:\n- 2026-10-01 ingest Hub Platform\n- 2026-10-02 ingest Orbit$/);
+      expect(await run("activity", { query: "hub", order: "latest" })).toMatch(/newest first.*:\n- 2026-10-02 ingest Orbit\n- 2026-10-01/);
+      await expect(run("activity", { query: "hub", order: "oldest" })).rejects.toThrow(/order is best_match or latest/);
+      await expect(run("activity", { action: "rename" })).rejects.toThrow(/Its actions: ingest\./);
     });
 
     it("reads and changes the newer settings: login, models, spelling, read aloud and the document look", async () => {
@@ -1088,6 +1120,238 @@ describe("MCP actions", () => {
       answers.login_item = () => null;
       expect(await run("settings")).not.toContain("openAtLogin");
       await expect(run("settings", { action: "set", key: "openAtLogin", value: true })).rejects.toThrow(/can't be changed for this copy/);
+    });
+  });
+
+  describe("the 2026-10-07 re-audit's screen actions", () => {
+    it("rewords a task as the Tasks screen's rename does, and makes it a follow-up", async () => {
+      answers.tasks_all = () => [row({ lineText: "- [ ] Call Sam about the launch 📅 2026-10-09 #work", tags: ["#work"] })];
+      answers.changes_submit_many = outcomes(true);
+      const out = (await run("task.edit", {
+        task: "Me. To Do List.md:12",
+        text: "Call Sam",
+        words: "Call Lena about the launch",
+        followup: true,
+      })) as string;
+      expect(submitted()[0].instruction).toMatchObject({ new: ["- [ ] Call Lena about the launch #followup 📅 2026-10-09 #work"] });
+      expect(out).toMatch(/^Done \(reworded to “Call Lena about the launch”, follow-up\)/);
+      // Taking it off again.
+      calls.length = 0;
+      answers.tasks_all = () => [row({ lineText: "- [ ] Call Sam about the launch #followup", tags: ["#followup"] })];
+      await run("task.edit", { task: "Me. To Do List.md:12", text: "Call Sam", followup: false });
+      expect(submitted()[0].instruction).toMatchObject({ new: ["- [ ] Call Sam about the launch"] });
+      // Words that can't be found on the line once can't be changed simply.
+      answers.tasks_all = () => [row({ lineText: "- [ ] go go", text: "go" })];
+      await expect(run("task.edit", { task: "Me. To Do List.md:12", text: "go", words: "x" })).rejects.toThrow(/isn't on its line once/);
+    });
+
+    it("captures a task to the Inbox and a thought to the Scratchpad, through Changes", async () => {
+      answers.changes_submit_many = outcomes(true);
+      const out = (await run("inbox.capture", { kind: "task", text: "Ask  Maya about the venue @calls" })) as string;
+      expect(out).toMatch(/^Added to the Inbox \(the To Do list's Other\): Ask Maya about the venue #context\/calls;/);
+      await run("inbox.capture", { kind: "thought", text: "The venue\nneeds a ramp" });
+      const [task, thought] = submitted();
+      expect(task).toMatchObject({ page: "Me. To Do List.md", kind: "task", instruction: { op: "add_task" } });
+      expect(thought).toMatchObject({ page: "Me. Scratchpad.md", instruction: { op: "add_thought", text: "The venue\nneeds a ramp" } });
+      expect((thought.instruction as { stamp: string }).stamp).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+      expect(calls.some(([c]) => c === "capture")).toBe(false);
+      await expect(run("inbox.capture", { kind: "note", text: "x" })).rejects.toThrow(/kind is task/);
+      await expect(run("inbox.capture", { kind: "task", text: " " })).rejects.toThrow(/Give text/);
+    });
+
+    it("saves a closed chat as History's Save does, by its file or title", async () => {
+      const c = { filename: "local:abc.json", id: "abc", title: "Venue options", updatedAt: "2026-10-05T09:00:00", state: "archived" };
+      answers.chats_list = () => [c];
+      answers.chat_read = () => ({ ...c, transcript: [{ role: "user", text: "Which venue?" }] });
+      answers.chat_save = () => ({ ...c, filename: "Chat. Venue options.md" });
+      expect(await run("chat.save", { chat: "venue options" })).toBe("Saved “Venue options” to the vault as Chat. Venue options.md.");
+      expect(calls.find(([x]) => x === "chat_save")![1]).toMatchObject({ keep: true, chat: { id: "abc" } });
+      answers.chats_list = () => [{ ...c, filename: "Chat. Venue options.md" }];
+      expect(await run("chat.save", { chat: "Chat. Venue options.md" })).toMatch(/saved already/);
+      await expect(run("chat.save", { chat: "Nope" })).rejects.toThrow(/No chat “Nope”/);
+    });
+
+    it("saves a doc check as a note and starts the register, through Changes", async () => {
+      answers.changes_submit_many = outcomes(true);
+      const result = { verdict: "Mostly aligned", summary: "Two gaps.", findings: [], against: null, excluded: [] };
+      answers.doc_check = () => result;
+      const out = (await raw("doccheck.run", { document: "sources/Orbit plan.pdf", save: true })) as { saved: { path: string } };
+      expect(out.saved.path).toMatch(/^Doc check\. Orbit plan - \d{4}-\d{2}-\d{2}\.md$/);
+      expect(submitted()[0]).toMatchObject({ kind: "new", page: out.saved.path, instruction: { op: "page" } });
+      expect((submitted()[0].instruction as { content: string }).content).toMatch(/^# Doc check: Orbit plan\.pdf/);
+      // Without save, nothing is written.
+      calls.length = 0;
+      await raw("doccheck.run", { document: "sources/Orbit plan.pdf" });
+      expect(submitted()).toEqual([]);
+      answers.files_list = () => [];
+      expect(await run("doccheck.register", { start_register: true })).toMatch(/Add a row for each version/);
+      expect(submitted()[0]).toMatchObject({ page: "Me. Canonical Docs.md", kind: "new" });
+      answers.files_list = () => [{ path: "Me. Canonical Docs.md" }];
+      await expect(run("doccheck.register", { start_register: true })).rejects.toThrow(/there already/);
+    });
+  });
+
+  describe("the 2026-10-07 re-audit's names and reads", () => {
+    it("drafts a reply in the screen's tones, and a meeting note of the screen's types", async () => {
+      answers.draft_reply = (a) => ({ draft: `in ${a!.tone}` });
+      expect(await raw("reply.draft", { text: "Can we meet?" })).toEqual({ draft: "in brief" });
+      expect(await raw("reply.draft", { text: "Can we meet?", tone: "formal" })).toEqual({ draft: "in formal" });
+      await expect(raw("reply.draft", { text: "x", tone: "neutral" })).rejects.toThrow(/tone is brief, warm or formal/);
+      answers.meeting_transcripts = () => [
+        { path: "sources/Teams. Transcript. Offsite.vtt", done: null, inferred: { type: "Meeting", name: "Offsite", date: "2026-10-06" } },
+      ];
+      await expect(
+        run("run.start", { run: "meeting_note", transcript: "sources/Teams. Transcript. Offsite.vtt", type: "Retro" }),
+      ).rejects.toThrow(/type is Meeting, 1-1, Workshop, Interview/);
+    });
+
+    it("gives triage's suggestions in the screen's choices, Remove for a missing note", async () => {
+      answers.bookmarks_status = () => [
+        { target: "Idea. Gone", path: null, title: "Gone", mtime: null, days: null, stale: false, missing: true },
+        { target: "Idea. Venue", path: "Idea. Venue.md", title: "Venue", mtime: 1, days: 20, stale: true, missing: false },
+      ];
+      answers.bookmarks_suggest = () => [
+        {
+          target: "Idea. Venue",
+          decision: "promote",
+          why: "It's about a place.",
+          summary: "",
+          page: "Northwind Hall",
+          kind: "entity",
+          task: null,
+        },
+      ];
+      const out = (await run("triage.suggest", {
+        items: [
+          { target: "Idea. Gone", path: "Idea. Gone.md" },
+          { target: "Idea. Venue", path: "Idea. Venue.md" },
+        ],
+      })) as string;
+      expect(out).toContain("- Idea. Gone: Remove — its note is gone.");
+      expect(out).toContain("- Idea. Venue: Ingest into the wiki (the entity page Northwind Hall) — It's about a place.");
+      // The model is asked only about the ones whose note is there.
+      expect(calls.find(([c]) => c === "bookmarks_suggest")![1]!.items).toEqual([{ target: "Idea. Venue", path: "Idea. Venue.md" }]);
+    });
+
+    it("lists tools that start sessions in the screen's words, and needs something to match on", async () => {
+      answers.automated_list = () => [];
+      answers.automated_save = () => undefined;
+      await run("automated", { action: "add", name: "Digest", first_message_starts_with: "Summarise the inbox" });
+      expect(calls.find(([c]) => c === "automated_save")![1]!.list).toEqual([
+        { label: "Digest", cwd_contains: "", opening: "Summarise the inbox" },
+      ]);
+      await expect(run("automated", { action: "add", name: "Digest" })).rejects.toThrow(/folder_contains or first_message_starts_with/);
+    });
+
+    it("flags projects as the Projects screen does: Stuck and Quiet", async () => {
+      const p = (over: Record<string, unknown>) => ({
+        name: "Orbit",
+        path: "Project. Orbit.md",
+        status: "active",
+        area: null,
+        outcome: null,
+        next: 2,
+        waiting: 0,
+        someday: 0,
+        done: 0,
+        lastTouched: Date.now(),
+        ...over,
+      });
+      answers.projects_list = () => [
+        p({ next: 0 }),
+        p({ name: "Hub", path: "Project. Hub.md", lastTouched: 0 }),
+        p({ name: "Ok", path: "Project. Ok.md" }),
+      ];
+      const out = (await run("projects.list")) as string;
+      expect(out).toContain("- Orbit · active · 0 next · Stuck: it has no next action  (Project. Orbit.md)");
+      expect(out).toContain("- Hub · active · 2 next · Quiet: nothing has happened for two weeks  (Project. Hub.md)");
+      expect(((await data("projects.list")).items as { flag: string | null }[]).map((x) => x.flag)).toEqual(["stuck", "quiet", null]);
+    });
+
+    it("gives the judge's fix and whether it's waiting in Changes", async () => {
+      const verdict = {
+        id: "c1",
+        verdict: "contradiction",
+        severity: "high",
+        summary: "Two dates.",
+        correct: "wiki/entities/Orbit App.md",
+        judged: "",
+      };
+      answers.contradictions_report = () => ({
+        last: { started: "x", finished: "2026-10-05T10:05", running: false, doing: "", pages: 1, claims: 2, clashes: 1, contradictions: 1 },
+        items: [
+          {
+            id: "c1",
+            subject: "Orbit App",
+            attribute: "launch date",
+            claims: [],
+            verdict: {
+              ...verdict,
+              fix: "Use 28 November.",
+              patch: { page: "wiki/concepts/Launch.md", find: "March", replace: "28 November" },
+            },
+          },
+        ],
+      });
+      answers.changes_list = () => [{ id: "k1", origin: { kind: "contradiction", chat: "c1" }, status: "held", group: "g" }];
+      expect(await run("contradictions")).toContain(
+        "  - The judge's fix: Use 28 November. (right: Orbit App) · waiting in Changes for the user (change k1)",
+      );
+      answers.changes_list = () => [{ id: "k1", origin: { kind: "contradiction", chat: "c1" }, status: "applied", group: "g" }];
+      expect(await run("contradictions")).toContain("· made, in Changes (change k1; changes revert undoes it)");
+    });
+
+    it("lists transcripts as the screen's Show does: To do, or All with why each is done", async () => {
+      answers.meeting_transcripts = () => [
+        { path: "sources/Teams. Transcript. A.vtt", done: null, inferred: { type: "Meeting", name: "A", date: "2026-10-06" } },
+        { path: "sources/Teams. Transcript. B.vtt", done: "linked", inferred: {} },
+      ];
+      expect(await run("meeting.transcripts")).toMatch(
+        /^1 transcript to write up:\n- sources\/Teams\. Transcript\. A\.vtt · looks like Meeting A/,
+      );
+      expect(await run("meeting.transcripts", { show: "all" })).toContain("- sources/Teams. Transcript. B.vtt · done: linked from a note");
+      expect(((await data("meeting.transcripts", { show: "all" })).items as { done: string | null }[]).map((x) => x.done)).toEqual([
+        null,
+        "linked",
+      ]);
+      await expect(run("meeting.transcripts", { show: "done" })).rejects.toThrow(/show is to_do or all/);
+    });
+
+    it("names the read-aloud highlight as Settings does", async () => {
+      answers.settings_write = (a) => a!.settings;
+      answers.login_item = () => null;
+      expect(await run("settings")).toContain("speechHighlight · Settings › Notes › Read aloud › Highlight each word: ");
+    });
+
+    it("test-runs a template, writing nothing; reads Capture extensions and Glance", async () => {
+      answers.files_list = () => [{ path: "Templates/Idea.md" }];
+      answers.doc_read = () => ({ content: "## Why\n\nIt matters.\n" });
+      answers.user_scripts = () => [];
+      answers.changes_submit_many = outcomes(true);
+      const out = (await run("note.from_template", { template: "Idea", type: "Idea", title: "Venue", test_run: true })) as string;
+      expect(out).toMatch(/^Test run of Templates\/Idea\.md, nothing written: it would make Idea\. Venue\.md\./);
+      expect(out).toContain("## Why");
+      expect(calls.some(([c]) => c === "change_submit" || c === "changes_submit_many" || c === "doc_create")).toBe(false);
+      answers.capture_status = () => ({
+        folder: "/Applications/Brainstead.app/Contents/Resources/extensions",
+        browsers: [{ name: "Chrome", registered: true, current: true }],
+        recent: [
+          { extension: "teams", what: "Chat with Lena", path: "sources/Teams. Chat. Lena.md", error: null, at: "2026-10-06T09:15:00" },
+        ],
+      });
+      const cap = (await run("capture.status")) as string;
+      expect(cap).toContain("Browsers: Chrome (knows the capture host, the one in use).");
+      expect(cap).toContain("- 2026-10-06 09:15 · Teams · Chat with Lena → sources/Teams. Chat. Lena.md");
+      answers.glance = () => ({
+        noteTypes: [{ name: "Meeting", n: 12 }],
+        noteTags: [],
+        wikiTypes: [{ name: "entity", n: 3 }],
+        wikiTags: [],
+        mostLinked: [{ path: "wiki/entities/Orbit App.md", title: "Orbit App", layer: "wiki", links: 9 }],
+      });
+      const g = (await run("glance")) as string;
+      expect(g).toContain("Notes by type: Meeting 12");
+      expect(g).toContain("Most linked: Orbit App (wiki/entities/Orbit App.md, 9 links)");
     });
   });
 

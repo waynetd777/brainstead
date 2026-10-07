@@ -19,3 +19,5 @@ Under the thread, a verdict says whether the thread answered the question, partl
 Edit the draft in place. **To fill in** lists the gaps the reply leaves for you, and a line names the vault pages it drew on.
 
 **Copy reply** copies plain text; **Copy as rich text** keeps the paragraphs for an email. When the reply commits you to something, **Add task** captures that follow-up as a task, linked to the captured thread.
+
+An assistant can draft a reply for you in the same tones, **Brief** unless you ask for another. Nothing is sent.

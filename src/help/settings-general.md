@@ -18,9 +18,9 @@ General holds the settings that affect the whole app. Open Settings with `⌘,`.
   - moves both folders to the [Trash](app:trash), where you can restore them;
   - adds a section to the vault's `CLAUDE.md` telling agents to change the vault only through Brainstead's tools.
 
-  `⌘Z` undoes the `CLAUDE.md` section; restore the folders from the Trash. An assistant can retire them too, when you ask. The checklist stays once this is done.
+  `⌘Z` undoes the `CLAUDE.md` section; restore the folders from the Trash. An assistant can retire them too, when you ask, and only once **The other app is stopped** is ticked, as here. The checklist stays once this is done.
 
-The rest you tick yourself: the other app's summaries switched off, its browser extensions removed, and the app stopped.
+The rest you tick yourself: the other app's summaries switched off, its browser extensions removed, and the app stopped. An assistant can read the checklist, and tick or untick these three when you tell it they're done.
 
 ## Start at login, and the menu bar
 - **Show in the menu bar** (on by default) puts Brainstead's icon and its small window in the menu bar.

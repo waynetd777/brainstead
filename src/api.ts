@@ -781,6 +781,8 @@ export type Instruction =
   | { op: "replace"; edits: { find: string; replace: string }[] }
   | { op: "page"; content: string }
   | { op: "add_task"; line: string }
+  /** A thought at the top of the Scratchpad under a `## YYYY-MM-DD HH:MM` heading, as Quick capture adds it. */
+  | { op: "add_thought"; text: string; stamp: string }
   | { op: "delete_line"; line: string; at?: number }
   /** Lines from `at` (0-based) rewritten: a task changed, a thought taken out. */
   | { op: "lines"; at: number; old: string[]; new: string[] }

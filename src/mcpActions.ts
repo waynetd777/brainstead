@@ -19,6 +19,7 @@ import {
   ChangeKind,
   ClarifySuggestion,
   ChangeOrigin,
+  Count,
   ChangeOutcome,
   ChangeRow,
   ChangeSubmit,
@@ -39,7 +40,8 @@ import {
   WeekPrepSuggestion,
 } from "./api";
 import { chosenRows } from "./FixName";
-import { contextName, projectName } from "./gtd";
+import { contextName, projectFlag, projectName } from "./gtd";
+import { captureStamp, prepareCapture } from "./Capture";
 import { taskLine, unclarified } from "./Inbox";
 import { appendAsReference, newReferenceNote, settleInboxItem } from "./inboxActions";
 import { ADVISORY, byRun, fixOf, makePage, originLabel, OWN_ACTIONS, pageName, safeFixes } from "./knowledge";
@@ -47,11 +49,12 @@ import { localToday } from "./md/taskQuery";
 import { composeFilename } from "./notes/filename";
 import { Ask, Env, freeName, runTemplate, StopRun } from "./notes/templater";
 import { vaultEnv } from "./notes/TemplateRun";
-import { todayRows, toggleTaskEdit, undoAction, viewRows, VIEWS } from "./taskModel";
-import { cancelled, completion, inQuote, LineChange, reopened, started, waitingToggled, withPriority } from "./tasksq/edits";
+import { retitled, todayRows, toggleTaskEdit, undoAction, viewRows, VIEWS } from "./taskModel";
+import { taskLabel } from "./md/TaskBlock";
+import { cancelled, completion, inQuote, LineChange, reopened, started, tagToggled, waitingToggled, withPriority } from "./tasksq/edits";
 import type { PriorityName } from "./tasksq/fields";
 import { toast } from "./Toast";
-import { fmtBytes } from "./ui";
+import { fmtBytes, fmtCount } from "./ui";
 import { fresh, keepsPaused, reviewBody, reviewWeek, scheduleLabel, STEPS } from "./Weekly";
 import {
   ask,
@@ -73,12 +76,17 @@ import { nav, Screen, SettingsPane } from "./nav";
 import { DEFAULT_SCHEDULE, DEFAULT_WEEKLY_REVIEW } from "./Jobs";
 import { choice, prepStep, WEEKLY_STATE_CHANGED } from "./weeklyPrep";
 import { draftNotes, followThrough, isTranscriptPath } from "./meetingFlow";
+import { DONE as MEETING_DONE, TYPES as MEETING_TYPES } from "./Meeting";
 import { reportMarkdown } from "./Contradictions";
+import { checklist, isDone, isRetired, STOP_FIRST } from "./Switchover";
 import { ingestable } from "./Lists";
-import { actionLabel, actionsIn, filterLog } from "./activityModel";
+import { findingsMarkdown, findingsNote, REGISTER, REGISTER_STUB } from "./skills/DocCheck";
+import { LABEL as TRIAGE } from "./skills/Triage";
+import { actionLabel, actionsIn, filterLog, rankLog } from "./activityModel";
 import { EFFORT_LIMITS, GroupBy, groupTasks, withinEffort } from "./taskGroups";
 
 const TODO_LIST = "Me. To Do List.md";
+const SCRATCHPAD = "Me. Scratchpad.md";
 
 /** A request as Rust hands it on (core/src/bridge.rs). */
 export interface McpRequest {
@@ -352,6 +360,18 @@ async function editTask(a: Args, r: McpRequest): Promise<string> {
   const put = (next: string[]) => (lines = [...lines.slice(0, -1), ...next]);
   const rust = async (edit: TaskLineEdit) => put([await api.changeTaskLine(last(), edit)]);
   const ts = (f: (l: string) => LineChange) => put(inQuote(last(), f).lines);
+  // The words first, as the Tasks screen's rename changes them: its dates, fields and tags kept.
+  const words = str(a, "words");
+  if (words !== undefined) {
+    const label = taskLabel(t.text);
+    const line = retitled(last(), label, words);
+    if (!line)
+      throw new Error(`The task's words can't be changed here: “${label}” isn't on its line once. Change the line with edit_page instead.`);
+    if (words !== label) {
+      put([line]);
+      done.push(`reworded to “${words}”`);
+    }
+  }
   if (has(a, "done")) {
     const c = a.done ? inQuote(last(), (l) => completion(l, day)) : null;
     if (c) put(c.lines);
@@ -389,6 +409,13 @@ async function editTask(a: Args, r: McpRequest): Promise<string> {
       done.push(a.waiting ? "waiting for" : "no longer waiting");
     }
   }
+  if (has(a, "followup")) {
+    const now = t.tags.some((g) => g === "followup" || g === "#followup");
+    if (!!a.followup !== now) {
+      ts((l) => tagToggled(l, "followup", "Follow-up", "No longer a follow-up"));
+      done.push(a.followup ? "follow-up" : "no longer a follow-up");
+    }
+  }
   const status = str(a, "status");
   if (status) {
     const how = ({ cancelled: (l: string) => cancelled(l, day), open: reopened, in_progress: started } as const)[
@@ -399,12 +426,14 @@ async function editTask(a: Args, r: McpRequest): Promise<string> {
     done.push(status.replace("_", " "));
   }
   if (!done.length)
-    throw new Error("Nothing to change: give done, due, defer, start, created, priority, contexts, effort, project, waiting or status.");
-  const words = taskWords(t.text);
+    throw new Error(
+      "Nothing to change: give words, done, due, defer, start, created, priority, contexts, effort, project, waiting, followup or status.",
+    );
+  const was = taskWords(t.text);
   const o = await submitAll([
-    sub(a, r, t.path, "task", `Edit “${words}”: ${done.join(", ")}`, { op: "lines", at: t.line, old: [t.lineText], new: lines }),
+    sub(a, r, t.path, "task", `Edit “${was}”: ${done.join(", ")}`, { op: "lines", at: t.line, old: [t.lineText], new: lines }),
   ]);
-  told(o.applied ? `${done.join(", ")}: “${words}”` : `held a change to “${words}” for you in Changes`);
+  told(o.applied ? `${done.join(", ")}: “${was}”` : `held a change to “${was}” for you in Changes`);
   if (!o.applied) return o.message;
   const now = (await api.tasksAll()).find((x) => x.path === t.path && x.lineText === last()) ?? t;
   return `Done (${done.join(", ")}). The task is now:\n${taskLineOut(now)}\n${o.message}`;
@@ -698,6 +727,30 @@ export async function clarifyItem(i: InboxItem, a: Args): Promise<string> {
   return said;
 }
 
+/** Quick capture: a task to the To Do list's Inbox (the top of its Other section) or a thought to
+ *  the Scratchpad, written as the capture box writes them (its shorthand for dates, contexts and
+ *  effort turned into their formats), as a change in Changes. */
+async function captureTool(a: Args, r: McpRequest): Promise<string> {
+  const kind = str(a, "kind");
+  if (kind !== "task" && kind !== "thought") throw new Error("kind is task (to the Inbox) or thought (to the Scratchpad).");
+  const text = prepareCapture(kind, typeof a.text === "string" ? a.text : "");
+  if (!text) throw new Error("Give text: what to capture.");
+  const c =
+    kind === "task"
+      ? sub(a, r, TODO_LIST, "task", `Capture “${taskWords(text)}”`, { op: "add_task", line: `- [ ] ${text}` })
+      : sub(a, r, SCRATCHPAD, "edit", `Capture a thought: “${text.replace(/\s+/g, " ").slice(0, 60)}”`, {
+          op: "add_thought",
+          text,
+          stamp: captureStamp(),
+        });
+  const o = await submitAll([c]);
+  told(
+    o.applied ? `captured ${kind === "task" ? "a task to the Inbox" : "a thought to the Scratchpad"}` : "held a capture for you in Changes",
+  );
+  if (!o.applied) return o.message;
+  return `${kind === "task" ? `Added to the Inbox (the To Do list's Other): ${text}` : "Added to the Scratchpad"}; it waits in the Inbox to clarify (list_inbox). ${o.message}`;
+}
+
 // ---- projects
 
 /** A project's status as the tools name it, the Projects screen's tabs: the vault's `done` is Completed. */
@@ -710,11 +763,21 @@ function statusIn(a: Args): string | undefined {
   return v === "completed" ? "done" : v;
 }
 
-/** A project's line: its name, status and next actions; with detail its area, what done looks like and every count. */
+/** The Projects screen's flag on an active project: Stuck (no next action) or Quiet (nothing for two weeks). */
+const flagOut = (p: ProjectRow): "stuck" | "quiet" | null => {
+  const f = projectFlag(p);
+  return f === "none" ? "stuck" : f;
+};
+const flagLine = (p: ProjectRow) => {
+  const f = flagOut(p);
+  return f === "stuck" ? " · Stuck: it has no next action" : f === "quiet" ? " · Quiet: nothing has happened for two weeks" : "";
+};
+
+/** A project's line: its name, status, next actions and flag; with detail its area, what done looks like and every count. */
 const projectOut = (p: ProjectRow, detail = true) =>
   detail
-    ? `- ${p.name} · ${statusOut(p.status)}${p.area ? ` · ${p.area}` : ""} · ${p.next} next, ${p.waiting} waiting, ${p.someday} someday, ${p.done} done${p.outcome ? ` · done looks like: ${p.outcome}` : ""}  (${p.path})`
-    : `- ${p.name} · ${statusOut(p.status)} · ${p.next} next  (${p.path})`;
+    ? `- ${p.name} · ${statusOut(p.status)}${p.area ? ` · ${p.area}` : ""} · ${p.next} next, ${p.waiting} waiting, ${p.someday} someday, ${p.done} done${flagLine(p)}${p.outcome ? ` · done looks like: ${p.outcome}` : ""}  (${p.path})`
+    : `- ${p.name} · ${statusOut(p.status)} · ${p.next} next${flagLine(p)}  (${p.path})`;
 
 async function updateProject(a: Args, r: McpRequest): Promise<string> {
   const path = await projectPath(str(a, "project") ?? "");
@@ -800,7 +863,12 @@ async function noteFromTemplate(a: Args, chat: string | null): Promise<string> {
     const at = q.labels.findIndex((l) => l.toLowerCase() === ans.toLowerCase());
     return [at >= 0 ? at : Number(ans)];
   };
-  const env = await vaultEnv(tpath, ask as Env["ask"], async () => {
+  // Test run, as the template editor's: the note it would make, written nowhere; the other notes
+  // it would make (tp.file.create_new) only listed.
+  const testRun = a.test_run === true;
+  const others: string[] = [];
+  const env = await vaultEnv(tpath, ask as Env["ask"], async (p) => {
+    if (testRun) return void others.push(p);
     throw new Error("This template makes other notes too; run it from New note in the app.");
   });
   let r;
@@ -814,6 +882,11 @@ async function noteFromTemplate(a: Args, chat: string | null): Promise<string> {
   const named = composeFilename({ type: str(a, "type") ?? null, title: str(a, "title") ?? "", date: str(a, "date") ?? null });
   const taken = new Set(files.map((p) => p.toLowerCase()));
   const path = r.named ? r.path : named ? (folder ? `${folder}/${named}` : named) : freeName(r.path, (p) => taken.has(p.toLowerCase()));
+  if (testRun) {
+    const also = others.length ? `\nIt would also make: ${others.join(", ")}.` : "";
+    const qa = asked.length ? `\nThe template asked: ${asked.join("; ")}.` : "";
+    return `Test run of ${tpath}, nothing written: it would make ${path}${taken.has(path.toLowerCase()) ? " (which exists already)" : ""}.${qa}${also}\n\n${r.content}`;
+  }
   if (taken.has(path.toLowerCase())) throw new Error(`${path} exists already. To change it, use edit_page.`);
   const o = await makePage(path, r.content, `New note ${path.replace(/\.md$/, "")}`, origin);
   told(o.applied ? `made the note ${path.replace(/\.md$/, "")}` : `held the note ${path.replace(/\.md$/, "")} for you in Changes`);
@@ -1034,8 +1107,10 @@ async function startRun(a: Args): Promise<string> {
         throw new Error(
           `The date in ${t.path}'s name (${t.inferred.date}) is the day it was captured, which may not be the meeting's: ask the user for the meeting date and give it as date.`,
         );
+      const type = str(a, "type");
+      if (type && !MEETING_TYPES.includes(type)) throw new Error(`type is ${MEETING_TYPES.join(", ")}, as the screen offers them.`);
       const spec = {
-        type: str(a, "type") ?? t.inferred.type ?? "Meeting",
+        type: type ?? t.inferred.type ?? "Meeting",
         name: str(a, "name") ?? t.inferred.name ?? t.inferred.topic ?? "",
         date: str(a, "date") ?? t.inferred.date ?? localToday(),
       };
@@ -1281,18 +1356,44 @@ async function weeklyStartOver(): Promise<string> {
   return `Started the weekly review over for ${week}: it's at step 1 of ${STEPS.length}${saved ? `; the review of ${saved.week} that was paused on step ${saved.step + 1} is dropped` : ""}. What it changed in the vault stays.`;
 }
 
-/** Settings › General › Moving over: whether the previous app's skills and scripts are still in the
- *  vault, and its Retire them (D-20261005-12). */
+/** Settings › General › Moving over: its checklist as the screen shows it, a tick on the lines the
+ *  user ticks, and its Retire them, which waits for "The other app is stopped" as the screen's does
+ *  (D-20261005-12). */
 async function movingOver(a: Args): Promise<string> {
-  const action = str(a, "action") ?? "status";
-  const st = await api.switchoverStatus();
-  const left = [st.skills && ".claude/skills/", st.scripts && "scripts/"].filter(Boolean);
-  if (action === "status")
-    return left.length
-      ? `The previous app's ${left.join(" and ")} ${left.length === 1 ? "is" : "are"} still in the vault. Retire them (Settings › General › Moving over) moves them to Brainstead's Trash and tells agents in CLAUDE.md to use these tools.`
-      : `The previous app's skills and scripts are retired${st.claudeMd ? ", and CLAUDE.md tells agents to use these tools" : ""}.`;
-  if (action !== "retire") throw new Error("action is status or retire.");
-  if (!left.length && st.claudeMd) return "Nothing to retire: the previous app's skills and scripts are gone already.";
+  const action = str(a, "action") ?? "list";
+  const [st, cap] = await Promise.all([api.switchoverStatus(), api.captureStatus().catch(() => null)]);
+  const s = settings.get();
+  const ticked = s.movingOver ?? {};
+  const items = checklist(s, st, cap?.recent ?? []);
+  if (action === "list") {
+    if (!st.previous) return "Moving over isn't shown: the previous app's own files aren't in the vault.";
+    const needed = items.filter((i) => !i.optional);
+    return [
+      `Moving over from another notes app (Settings › General): ${needed.filter((i) => isDone(i, ticked)).length} of ${needed.length} done.`,
+      ...items.map(
+        (i) =>
+          `- [${isDone(i, ticked) ? "x" : " "}] ${i.label}${i.optional ? " · optional" : ""} · ${i.done === undefined ? "ticked by the user" : "Brainstead checks this"}: ${i.detail}  (${i.id})`,
+      ),
+    ].join("\n");
+  }
+  if (action === "tick" || action === "untick") {
+    const id = str(a, "item");
+    const i = items.find((x) => x.id === id);
+    const manual = items.filter((x) => x.done === undefined);
+    if (!i || i.done !== undefined)
+      throw new Error(
+        `${i ? `${i.label}: Brainstead checks this itself.` : `No item ${id ?? "(none given)"}.`} The items ticked by hand: ${manual.map((x) => x.id).join(", ")}.`,
+      );
+    const on = action === "tick";
+    if (!!ticked[i.id] === on) return `“${i.label}” is ${on ? "ticked" : "not ticked"} already.`;
+    settings.update({ movingOver: { ...ticked, [i.id]: on } });
+    await settings.flush();
+    noted(`${on ? "ticked" : "unticked"} “${i.label}” in Moving over`);
+    return `${on ? "Ticked" : "Unticked"} “${i.label}”.`;
+  }
+  if (action !== "retire") throw new Error("action is list, tick, untick or retire.");
+  if (isRetired(st)) return "Nothing to retire: the previous app's skills and scripts are gone already.";
+  if (!ticked.otherStopped) throw new Error(`${STOP_FIRST} (moving_over tick otherStopped, once the user has stopped it.)`);
   const said = await api.switchoverRetire();
   noted(`retired the previous app's skills and scripts`);
   return `${said} They can be restored from there.`;
@@ -1382,7 +1483,19 @@ async function fixName(a: Args): Promise<string> {
   const wrong = str(a, "written_as");
   const right = str(a, "correct_spelling");
   if (!wrong || !right) throw new Error("Give written_as (the name as it's misspelt) and correct_spelling.");
-  const req: FixNameRequest = { wrong, right, rightPage: null, guards: [], ambiguous: false, note: "", skipSubstitution: !a.remember };
+  // Files to leave alone (part of the name each), Where it's from, and Remember this correction, on
+  // unless false, as on the screen.
+  const guards = (Array.isArray(a.files_to_leave_alone) ? a.files_to_leave_alone : []).map((g) => String(g).trim()).filter(Boolean);
+  const remember = a.remember !== false;
+  const req: FixNameRequest = {
+    wrong,
+    right,
+    rightPage: null,
+    guards,
+    ambiguous: false,
+    note: remember ? (str(a, "where_its_from") ?? "") : "",
+    skipSubstitution: !remember,
+  };
   const plan = await api.fixnamePlan(req);
   const rows = plan.rows.filter((r) => r.action !== "skip");
   if (!a.apply) {
@@ -1511,11 +1624,19 @@ async function activity(a: Args): Promise<Listing> {
   const want = str(a, "action")?.toLowerCase();
   const action = want ? actions.find((x) => x.toLowerCase() === want || actionLabel(x).toLowerCase() === want) : undefined;
   if (want && !action) throw new Error(`No “${want}” entries in log.md. Its actions: ${actions.join(", ") || "none"}.`);
-  const log = action ? filterLog(all, { action, day: null, q: "" }) : all;
+  const filtered = action ? filterLog(all, { action, day: null, q: "" }) : all;
+  // The screen's order while searching: Best match (its default) or Latest; newest first otherwise.
+  const order = str(a, "order") ?? "best_match";
+  if (order !== "best_match" && order !== "latest") throw new Error("order is best_match or latest, as the Activity screen's are.");
+  const query = str(a, "query");
+  const log = query && order === "best_match" ? rankLog(filtered, query) : filtered;
   return listed(a, log, {
     // query's words in the entry's title, description or action, as the screen's search looks, or its date.
     text: (e) => `${e.date}\n${e.title}\n${e.description}\n${e.action}\n${actionLabel(e.action)}`,
-    noun: ["entry in log.md, newest first", "entries in log.md, newest first"],
+    noun:
+      query && order === "best_match"
+        ? ["entry in log.md, best match first", "entries in log.md, best match first"]
+        : ["entry in log.md, newest first", "entries in log.md, newest first"],
     def: 30,
     // Short: the day, what and which; detail adds the time and the description.
     line: (e) => (a.detail === true ? full(e) : `- ${e.date} ${e.action} ${e.title}`),
@@ -1558,6 +1679,36 @@ async function status(): Promise<string> {
     .join("\n");
 }
 
+/** Settings › Capture extensions, as the pane shows it: the folder the extensions load from, the
+ *  browsers that know Brainstead's capture host, and the last captures. */
+async function captureExtensions(): Promise<string> {
+  const c = await api.captureStatus();
+  const name = { outlook: "Outlook", teams: "Teams", other: "Other" } as const;
+  return [
+    `The extensions' folder: ${c.folder ?? "not set up yet"}.`,
+    c.browsers.length
+      ? `Browsers: ${c.browsers.map((b) => `${b.name} (${b.registered ? "knows the capture host" : "doesn't know the capture host yet"}${b.current ? ", the one in use" : ""})`).join("; ")}.`
+      : "No browser found that takes the extensions.",
+    c.recent.length
+      ? `Last captures, newest first:\n${c.recent.map((x) => `- ${x.at.slice(0, 16).replace("T", " ")} · ${name[x.extension] ?? x.extension} · ${x.what}${x.path ? ` → ${x.path}` : ""}${x.error ? ` · refused: ${x.error}` : ""}`).join("\n")}`
+      : "No captures yet.",
+  ].join("\n");
+}
+
+/** Glance's counts, as Activity and Knowledge health show them: notes and wiki pages by type and
+ *  by tag, most first, and the files the most others link to. */
+async function glanceTool(): Promise<string> {
+  const g = await api.glance();
+  const counts = (cs: Count[]) => cs.map((c) => `${c.name || "(none)"} ${fmtCount(c.n)}`).join(", ") || "none";
+  return [
+    `Notes by type: ${counts(g.noteTypes)}`,
+    `Notes by tag: ${counts(g.noteTags)}`,
+    `Wiki pages by type: ${counts(g.wikiTypes)}`,
+    `Wiki pages by tag: ${counts(g.wikiTags)}`,
+    `Most linked: ${g.mostLinked.map((m) => `${m.title} (${m.path}, ${fmtCount(m.links)} links)`).join("; ") || "none"}`,
+  ].join("\n");
+}
+
 /** Settings › Vault's Rebuild index: every file read again; the files aren't changed. */
 async function rebuildIndex(): Promise<string> {
   const v = await api.vaultStatus();
@@ -1574,7 +1725,7 @@ async function automated(a: Args): Promise<string> {
   if (action === "list") {
     const sugg = await api.automatedSuggest();
     const line = (t: (typeof list)[number]) =>
-      `- ${t.label}${t.cwd_contains ? ` · folder contains ${t.cwd_contains}` : ""}${t.opening ? ` · opens with “${t.opening}”` : ""}`;
+      `- ${t.label}${t.cwd_contains ? ` · folder contains ${t.cwd_contains}` : ""}${t.opening ? ` · first message starts with “${t.opening}”` : ""}`;
     return [
       list.length ? paged(a, list.map(line), ["tool listed", "tools listed"]) : "No tools listed.",
       ...(sugg.length
@@ -1588,7 +1739,9 @@ async function automated(a: Args): Promise<string> {
   const name = str(a, "name");
   if (!name) throw new Error("Give the tool's name.");
   if (action === "add") {
-    const t = { label: name, cwd_contains: str(a, "folder") ?? "", opening: str(a, "opening") ?? "" };
+    const t = { label: name, cwd_contains: str(a, "folder_contains") ?? "", opening: str(a, "first_message_starts_with") ?? "" };
+    if (!t.cwd_contains && !t.opening)
+      throw new Error("Give folder_contains or first_message_starts_with: what its sessions have in common.");
     await api.automatedSave([...list.filter((x) => x.label !== name), t]);
     told(`listed ${name} as a tool that starts sessions`);
     return `Listed ${name}: its sessions count as automated in the daily summary.`;
@@ -1638,6 +1791,76 @@ async function suggestions(a: Args): Promise<string> {
   throw new Error("action is list, accept or skip.");
 }
 
+/** Doc check's register; with start_register, its Start the register, a new note through Changes. */
+async function docCheckRegister(a: Args, r: McpRequest): Promise<unknown> {
+  if (a.start_register !== true) return api.canonicalRegister();
+  const there = (await api.filesList(null)).some((f) => f.path === REGISTER);
+  if (there) throw new Error(`${REGISTER} is there already: doc_check without document reads it, and edit_page adds its rows.`);
+  const o = await submitAll([sub(a, r, REGISTER, "new", "Start the canonical docs register", { op: "page", content: REGISTER_STUB })]);
+  told(o.applied ? "started the canonical docs register" : "held the canonical docs register for you in Changes");
+  return `${o.message} Add a row for each version of a governing document (edit_page, on ${REGISTER}).`;
+}
+
+/** Doc check's Check; with save, its Save as note: the findings as a new note, through Changes. */
+async function docCheck(a: Args, r: McpRequest): Promise<unknown> {
+  const document = str(a, "document") ?? "";
+  const result = await api.docCheck(document, str(a, "governing_document") ?? "", a.mode === "earlier_feedback" ? "callouts" : "standard");
+  if (a.save !== true) return result;
+  const name = document.split("/").pop() ?? document;
+  const path = findingsNote(name);
+  const o = await submitAll([sub(a, r, path, "new", `Doc check of ${name}`, { op: "page", content: findingsMarkdown(name, result) })]);
+  told(o.applied ? `saved the doc check of ${name} as a note` : `held the doc check of ${name} for you in Changes`);
+  return { ...result, saved: { path, message: o.message } };
+}
+
+/** save_chat: Ask's Save for an open chat, or History's Save for a closed one; the open one in Ask
+ *  when no chat is named. */
+async function saveChat(a: Args): Promise<string> {
+  const want = str(a, "chat");
+  const s = ask.get();
+  const named = (c: { filename: string; title: string }) => c.filename === want || c.title.toLowerCase() === want!.toLowerCase();
+  const open = want ? s.chats.find(named) : s.chats.find((x) => x.id === s.active);
+  if (open) {
+    if (isSaved(open)) return `“${open.title}” is saved already, as ${open.filename}; it keeps up to date there.`;
+    const f = await keepChat(open.id);
+    told(`saved the chat “${open.title}”`);
+    return `Saved “${open.title}” to the vault as ${f}; it keeps up to date there as the chat goes on.`;
+  }
+  if (!want) throw new Error("No chat is open in Ask: give chat, its file or title from list_chats.");
+  const all = await api.chatsList();
+  const c = all.find((x) => x.filename === want) ?? all.find(named);
+  if (!c) throw new Error(`No chat “${want}”: list_chats gives them.`);
+  if (isSaved(c)) return `“${c.title}” is saved already, as ${c.filename}.`;
+  const saved = await api.chatSave(await api.chatRead(c.filename), true);
+  told(`saved the chat “${c.title}”`);
+  return `Saved “${c.title}” to the vault as ${saved.filename}.`;
+}
+
+/** Triage's suggestions, in its choices' names: Keep, Ingest into the wiki, Make a task or Archive
+ *  from the model, and Remove for a bookmark whose note is gone, as the screen offers only that. */
+async function triageSuggest(a: Args): Promise<string> {
+  const items = (Array.isArray(a.items) ? a.items : []) as { target: string; path: string }[];
+  const missing = new Set((await api.bookmarksStatus()).filter((b) => b.missing).map((b) => b.target));
+  const asked = items.filter((i) => !missing.has(i.target));
+  const got = asked.length ? await api.bookmarksSuggest(asked) : [];
+  const lines = items.map((i) => {
+    if (missing.has(i.target)) return `- ${i.target}: ${TRIAGE.remove[0]} — its note is gone.`;
+    const g = got.find((x) => x.target === i.target);
+    if (!g) return `- ${i.target}: no suggestion.`;
+    const what =
+      g.decision === "promote" && g.page
+        ? ` (the ${g.kind ?? "concept"} page ${g.page})`
+        : g.decision === "task" && g.task
+          ? ` (“${g.task}”)`
+          : "";
+    return `- ${i.target}: ${TRIAGE[g.decision][0]}${what} — ${g.why}${g.summary ? ` ${g.summary}` : ""}`;
+  });
+  return [
+    "Suggestions only, nothing changed. Keep is bookmarks keep; Archive and Remove take the bookmark off (bookmarks with page); Ingest into the wiki is edit_page making the page; Make a task is create_task.",
+    ...lines,
+  ].join("\n");
+}
+
 /** Each action by name. */
 const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   "tasks.list": listTasks,
@@ -1645,6 +1868,7 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   "task.move": moveTask,
   "inbox.list": (a) => listInbox(a),
   "inbox.clarify": clarify,
+  "inbox.capture": captureTool,
   "projects.list": async (a) =>
     listed(a, await api.projectsList(), {
       text: (p) => projectOut(p),
@@ -1656,6 +1880,7 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
         status: statusOut(p.status),
         area: p.area,
         done_looks_like: p.outcome,
+        flag: flagOut(p),
         next: p.next,
         waiting: p.waiting,
         someday: p.someday,
@@ -1692,37 +1917,35 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   graph: graph,
   status: status,
   "index.rebuild": rebuildIndex,
+  "capture.status": captureExtensions,
+  glance: glanceTool,
   automated: automated,
   suggestions: suggestions,
-  "triage.suggest": (a) => api.bookmarksSuggest((Array.isArray(a.items) ? a.items : []) as { target: string; path: string }[]),
-  "reply.draft": (a) => api.draftReply(str(a, "thread") ?? null, str(a, "text") ?? null, str(a, "tone") ?? "neutral"),
-  "doccheck.register": () => api.canonicalRegister(),
-  "doccheck.run": (a) =>
-    api.docCheck(str(a, "document") ?? "", str(a, "governing_document") ?? "", a.mode === "earlier_feedback" ? "callouts" : "standard"),
+  "triage.suggest": triageSuggest,
+  "reply.draft": (a) => {
+    // The screen's Tone: Brief (the default), Warm or Formal.
+    const tone = str(a, "tone") ?? "brief";
+    if (!["brief", "warm", "formal"].includes(tone)) throw new Error("tone is brief, warm or formal (brief when left out).");
+    return api.draftReply(str(a, "thread") ?? null, str(a, "text") ?? null, tone);
+  },
+  "doccheck.register": docCheckRegister,
+  "doccheck.run": docCheck,
   "weekly.status": weeklyStatus,
   "weekly.suggestion": weeklySuggestion,
   "weekly.start_over": weeklyStartOver,
   moving_over: movingOver,
-  "chat.save": async (a) => {
-    const title = str(a, "title");
-    const s = ask.get();
-    const c = title ? s.chats.find((x) => x.title.toLowerCase() === title.toLowerCase()) : s.chats.find((x) => x.id === s.active);
-    if (!c)
-      throw new Error(
-        `No open chat${title ? ` called “${title}”` : ""}. The open chats: ${s.chats.map((x) => `“${x.title}”`).join(", ") || "none"}.`,
-      );
-    if (isSaved(c)) return `“${c.title}” is saved already, as ${c.filename}; it keeps up to date there.`;
-    const f = await keepChat(c.id);
-    told(`saved the chat “${c.title}”`);
-    return `Saved “${c.title}” to the vault as ${f}; it keeps up to date there as the chat goes on.`;
-  },
+  "chat.save": saveChat,
   "meeting.transcripts": async (a) => {
-    const rows = (await api.meetingTranscripts()).filter((t) => !t.done);
+    // The screen's Show: To do (not yet ingested or linked from a note), or All.
+    const show = str(a, "show") ?? "to_do";
+    if (show !== "to_do" && show !== "all") throw new Error("show is to_do or all, as the screen's Show is (to_do when left out).");
+    const all = await api.meetingTranscripts();
+    const rows = show === "all" ? all : all.filter((t) => !t.done);
     const line = (t: (typeof rows)[number]) =>
-      `- ${t.path} · looks like ${t.inferred.type ?? "a meeting"} ${t.inferred.name ?? t.inferred.topic ?? ""} ${t.inferred.date ?? ""}${t.inferred.dateCheck ? " (the capture day: check the meeting date)" : ""}`;
+      `- ${t.path} · ${t.done ? `done: ${MEETING_DONE[t.done]}` : `looks like ${t.inferred.type ?? "a meeting"} ${t.inferred.name ?? t.inferred.topic ?? ""} ${t.inferred.date ?? ""}${t.inferred.dateCheck ? " (the capture day: check the meeting date)" : ""}`}`;
     return listed(a, rows, {
       text: line,
-      noun: ["transcript to write up", "transcripts to write up"],
+      noun: show === "all" ? ["transcript", "transcripts"] : ["transcript to write up", "transcripts to write up"],
       line,
       item: (t) => ({
         path: t.path,
@@ -1730,8 +1953,9 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
         name: t.inferred.name ?? t.inferred.topic ?? null,
         date: t.inferred.date ?? null,
         dateCheck: !!t.inferred.dateCheck,
+        done: t.done ?? null,
       }),
-      empty: "No transcripts still to write up.",
+      empty: show === "all" ? "No transcripts in Sources." : "No transcripts still to write up.",
     });
   },
 };
@@ -1883,11 +2107,27 @@ async function contradictionsTool(a: Args, r: McpRequest): Promise<string> {
     );
     if (shown.length) head.push(` ${page.head}.`);
   }
+  // The judge's fix, and its change in Changes (the check makes or holds it, as the screen's The fix
+  // is in Changes says): found by the finding's id, which the change's origin carries.
+  const changes = page.shown.some((i) => i.verdict?.patch) ? await api.changesList().catch(() => [] as ChangeRow[]) : [];
+  const fixOut = (i: (typeof rep.items)[number]) => {
+    if (!i.verdict?.fix) return [];
+    const c = changes.find((x) => x.origin.kind === "contradiction" && x.origin.chat === i.id);
+    const where = !c
+      ? ""
+      : c.status === "held"
+        ? ` · waiting in Changes for the user (change ${c.id})`
+        : c.status === "applied"
+          ? ` · made, in Changes (change ${c.id}; changes revert undoes it)`
+          : ` · its change ${c.id} was ${c.status}`;
+    return [`  - The judge's fix: ${i.verdict.fix}${i.verdict.correct ? ` (right: ${pageName(i.verdict.correct)})` : ""}${where}`];
+  };
   // Each finding's first ten claims; its page in Brainstead has them all.
   const CLAIMS = 10;
   const rows = page.shown.map((i) =>
     [
       `- ${i.subject} · ${i.attribute} (id ${i.id}): ${i.verdict ? `${i.verdict.verdict}${i.verdict.severity ? `, ${i.verdict.severity}` : ""}. ${i.verdict.summary}` : "not judged yet"}`,
+      ...fixOut(i),
       ...i.claims
         .slice(0, CLAIMS)
         .map((c) => `  - [[${pageName(c.page)}]]${c.asOf ? ` (as of ${c.asOf})` : ""}: ${c.value}${c.quote ? ` · “${c.quote}”` : ""}`),
@@ -2094,7 +2334,7 @@ const SETTINGS: SettingRow[] = [
     "System voice",
   ],
   ["speechRate", "Notes", "Read aloud › Speed (0.5 to 2)", "speed", 1],
-  ["speechHighlight", "Notes", "Highlight each word (read aloud)", "bool", true],
+  ["speechHighlight", "Notes", "Read aloud › Highlight each word", "bool", true],
   ["docStyle", "Notes", "Document look › Theme", "choice", "brainstead", () => DOC_STYLES.map(([id, name]) => [id, name])],
   ["docAccent", "Notes", "Document look › Colour", "choice", "brainstead", () => DOC_ACCENTS.map(([id, name]) => [id, name])],
   [

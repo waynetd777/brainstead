@@ -21,7 +21,7 @@ Even with read-only off, Brainstead only saves a file if it hasn't changed since
 Under **Excluded folders**, type a folder name and press `↩` or click **Add**. Any folder with that name, at any depth, is skipped. Use a name, not a path. Click the cross on a name to stop excluding it; its files are indexed again. System folders can't be excluded.
 
 ## Add the example notes
-**Add the example notes** adds the notes a new vault is made with, such as **Start here**, a project, a meeting note, two wiki pages and the example templates, each saying it's an example you can delete. Only the ones that aren't in the vault are added; nothing already there is changed. Read-only has to be off.
+**Add the example notes** adds the notes a new vault is made with, such as **Start here**, a project, a meeting note, two wiki pages and the example templates, each saying it's an example you can delete. Only the ones that aren't in the vault are added; nothing already there is changed. Read-only has to be off. An assistant can add them when you ask: each note is listed in [Changes](app:review) with Revert, and the example templates wait there for you to accept, as every change to a template does.
 
 ## Know the system folders
 Brainstead treats these folders specially:

@@ -46,4 +46,6 @@ The daily summary writes up your Claude Code sessions as your work. A tool of yo
 
 Each tool has a **Name** and what its sessions have in common. **Folder contains** matches a session whose working folder's path contains it. **First message starts with** matches a session whose first message opens with those words, ignoring case. Give one or both: with both, a session must match both. A row is saved once it has a name and one of the two; the **×** takes a tool off. If your saved tools couldn't be loaded, it says so with **Retry**, and nothing can be changed until they load, so the saved list isn't overwritten.
 
+An assistant can list, add or remove a tool when you ask, with the same **Folder contains** and **First message starts with**.
+
 **Folders that look like a tool's** lists folders where, in the last two weeks, at least three sessions ran and nearly all of them were one prompt and done, as a tool runs Claude Code; a folder you work in yourself, with conversations, isn't listed, and nor are your vault (where Ask's chats run) or temporary folders. **It's a tool** adds a folder as a tool, named after it; rename it if you like. Brainstead's own jobs are recognised without being listed.

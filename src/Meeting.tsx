@@ -25,7 +25,8 @@ import { draftNotes, noteFile, specOf, specOk } from "./meetingFlow";
 
 export { noteFile, specOf, specOk };
 
-const TYPES = ["Meeting", "1-1", "Workshop", "Interview"];
+/** The note types the screen offers (start_run meeting_note takes the same). */
+export const TYPES = ["Meeting", "1-1", "Workshop", "Interview"];
 
 /** The date is only the day the transcript was captured, and the user hasn't confirmed or changed
  *  it yet: the note waits until they do. */
@@ -36,7 +37,8 @@ export const needsDate = (t: Transcript, edits: Partial<NoteSpec> = {}) => t.inf
 export const noteExists = (t: Transcript, edits: Partial<NoteSpec> = {}) =>
   t.inferred.exists && noteFile(specOf(t, edits)) === noteFile(specOf(t));
 
-const DONE: Record<NonNullable<Transcript["done"]>, string> = { ingested: "ingested", linked: "linked from a note" };
+/** Why a transcript is done, as the list says it (list_transcripts too). */
+export const DONE: Record<NonNullable<Transcript["done"]>, string> = { ingested: "ingested", linked: "linked from a note" };
 
 export function MeetingScreen() {
   const [all, setList] = useState<Transcript[] | null>(null);

@@ -153,7 +153,14 @@ fn reading_tools() {
     assert!(ok(&f.ctx, "resolve_entity", json!({"name": "Orbit Ap"})).contains("wiki/entities/Orbit App.md"));
 
     let pending = ok(&f.ctx, "pending_sources", json!({}));
-    assert!(pending.contains("sources/Programme Update Steerco 2026-09-28.pdf"));
+    assert!(pending.contains("- sources/Programme Update Steerco 2026-09-28.pdf · New"), "{pending}");
+    assert!(pending.contains("still to ingest (New or Changed)"), "{pending}");
+    // The Sources screen's Status: an ingested one only with all or ingested.
+    let all = ok(&f.ctx, "pending_sources", json!({"status": "all"}));
+    let ingested = ok(&f.ctx, "pending_sources", json!({"status": "ingested"}));
+    assert!(all.lines().count() > pending.lines().count(), "{all}");
+    assert!(ingested.lines().skip(1).all(|l| l.ends_with("· Ingested")) && ingested.lines().count() > 1, "{ingested}");
+    assert!(refused(&f.ctx, "pending_sources", json!({"status": "pending"})).contains("status is all"));
     // Images are ingested too (their text read from the picture), so they're listed.
     assert!(pending.contains("sources/Whiteboard photo.png"), "{pending}");
     let lint = ok(&f.ctx, "lint", json!({"page": "Hub Platform"}));
@@ -185,6 +192,26 @@ fn create_template_is_a_new_file_in_templates() {
     assert!(refused(&f.ctx, "create_template", json!({"name": "Meeting", "content": "x"})).contains("exists already"));
     assert!(refused(&f.ctx, "create_template", json!({"name": "a/b", "content": "x"})).contains("without a folder"));
     assert!(refused(&f.ctx, "create_template", json!({"name": "x", "content": " "})).contains("content"));
+}
+
+#[test]
+fn example_notes_are_added_as_new_notes_only_where_missing() {
+    let f = fixture();
+    let now = f.ctx.today.and_time(chrono::Local::now().time());
+    let all = brainstead_core::starter::files(now);
+    // Every example note there but Start here: only that one is sent, as a new note.
+    for (rel, text) in &all {
+        let abs = f.ctx.vault.join(rel);
+        if rel != "Start here.md" && !abs.exists() {
+            std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+            std::fs::write(abs, text).unwrap();
+        }
+    }
+    let (t, c) = submitted(&f, "add_example_notes", json!({}));
+    assert!(t.starts_with("1 example note:\n- Start here.md: Changed it."), "{t}");
+    assert_eq!((c["kind"].as_str(), c["page"].as_str()), (Some("new"), Some("Start here.md")));
+    std::fs::write(f.ctx.vault.join("Start here.md"), "# Start here\n").unwrap();
+    assert!(refused(&f.ctx, "add_example_notes", json!({})).contains("all there already"));
 }
 
 /// Runs a change tool against a stand-in app; its reply, and the change the app was sent.
@@ -331,6 +358,10 @@ fn create_task_sends_a_line() {
     let (_, c) = submitted(&f, "create_task", json!({"text": "Book the venue", "project": "Orbit App launch"}));
     assert_eq!(c["page"], "Project. Orbit App launch.md");
     assert!(made(&f, &c).contains("- [ ] Book the venue"));
+    // In Follow-ups, as New task there does: with its tag, before the fields.
+    let (_, c) = submitted(&f, "create_task", json!({"text": "Ask Lena about the venue", "view": "followups", "due": "2026-10-09"}));
+    assert_eq!(c["instruction"]["line"], "- [ ] Ask Lena about the venue #followup 📅 2026-10-09");
+    assert!(refused(&f.ctx, "create_task", json!({"text": "x", "view": "today"})).contains("view is followups"));
     assert!(refused(&f.ctx, "create_task", json!({"text": "x", "project": "Nowhere"})).contains("no project"));
     assert!(refused(&f.ctx, "create_task", json!({"text": "x", "effort": "lots"})).contains("Not an effort"));
 }
@@ -449,6 +480,15 @@ fn renames_trash_and_deletes_are_sent() {
     assert!(
         refused(&f.ctx, "rename_note", json!({"page": "Idea. Accents", "type": "Project", "title": "Garden"})).contains("exists already")
     );
+    // A source keeps its own extension, as the file menu's Rename does, given with it or not.
+    for title in ["Steerco pack", "Steerco pack.pdf", "Steerco pack.PDF"] {
+        let (_, c) = submitted(
+            &f,
+            "rename_note",
+            json!({"page": "sources/Programme Update Steerco 2026-09-28.pdf", "title": title, "date": "2026-09-28"}),
+        );
+        assert_eq!(c["instruction"]["to"].as_str(), Some("sources/Steerco pack - 2026-09-28.pdf"), "{title}");
+    }
     let (_, c) = submitted(&f, "trash_note", json!({"page": "Idea. Accents", "reason": "Old"}));
     assert_eq!((c["kind"].as_str(), c["instruction"]["op"].as_str()), (Some("trash"), Some("trash")));
     // A task's line taken out, found by its text even when the line number is off.
@@ -491,10 +531,10 @@ fn saving_a_chat_goes_to_the_app() {
     let f = fixture();
     let app = fake_app(f.ctx.data.clone(), |r| bridge::Reply {
         ok: true,
-        result: json!(format!("{} {}", r.action, r.args["title"])),
+        result: json!(format!("{} {}", r.action, r.args["chat"])),
         error: None,
     });
-    assert_eq!(ok(&f.ctx, "save_chat", json!({"title": "Orbit App launch"})), "chat.save \"Orbit App launch\"");
+    assert_eq!(ok(&f.ctx, "save_chat", json!({"chat": "Orbit App launch"})), "chat.save \"Orbit App launch\"");
     app.join().unwrap();
 }
 
@@ -572,6 +612,16 @@ fn moving_over_and_starting_the_review_over_go_to_the_app() {
         ok(&f.ctx, tool_name, args);
         assert_eq!(app.join().unwrap().action, action);
     }
+    // The checklist is a read of its own; ticking is moving_over's.
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Moving over…"), error: None });
+    ok(&f.ctx, "list_moving_over", json!({"item": "otherStopped"}));
+    let req = app.join().unwrap();
+    assert_eq!((req.action.as_str(), req.args["action"].as_str(), req.args.get("item")), ("moving_over", Some("list"), None));
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Ticked."), error: None });
+    ok(&f.ctx, "moving_over", json!({"action": "tick", "item": "otherStopped"}));
+    assert_eq!(app.join().unwrap().args["item"], "otherStopped");
+    assert!(refused(&f.ctx, "list_moving_over", json!({"action": "retire"})).contains("which tool does that"));
+    assert!(refused(&f.ctx, "moving_over", json!({})).contains("Give action"));
 }
 
 #[test]
@@ -708,4 +758,71 @@ fn rebuilding_the_index_and_pinning_a_chat_go_to_the_app() {
     for s in ["meeting", "reply", "doc_check"] {
         assert!(screens.as_array().unwrap().iter().any(|x| x == s), "open on {s}");
     }
+}
+
+#[test]
+fn search_takes_the_screens_order() {
+    let f = fixture();
+    // Each hit's day, from detail's `(layer, day)`.
+    let days = |order: &str| -> Vec<String> {
+        let out = ok(&f.ctx, "search", json!({"query": "Orbit", "order": order, "detail": true, "limit": 30}));
+        out.lines()
+            .filter(|l| l.ends_with(')') && l.contains(". "))
+            .filter_map(|l| l.rsplit(", ").next().map(|d| d.trim_end_matches(')').to_string()))
+            .collect()
+    };
+    let latest = days("latest");
+    assert!(latest.len() > 2, "{latest:?}");
+    assert!(latest.windows(2).all(|w| w[0] >= w[1]), "{latest:?}");
+    let oldest = days("oldest");
+    assert!(oldest.windows(2).all(|w| w[0] <= w[1]), "{oldest:?}");
+    assert!(refused(&f.ctx, "search", json!({"query": "Orbit", "order": "newest"})).contains("order is best_match"));
+}
+
+#[test]
+fn the_re_audits_tools_and_arguments_go_to_the_app() {
+    let f = fixture();
+    for (tool_name, args, action) in [
+        ("capture", json!({"kind": "thought", "text": "Ask Lena about the venue"}), "inbox.capture"),
+        ("capture_extensions", json!({}), "capture.status"),
+        ("glance", json!({}), "glance"),
+        ("doc_check", json!({"start_register": true}), "doccheck.register"),
+        ("doc_check", json!({"document": "sources/Roadmap Update 2026-09-18.md", "save": true}), "doccheck.run"),
+    ] {
+        let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
+        ok(&f.ctx, tool_name, args);
+        let req = app.join().unwrap();
+        assert_eq!(req.action, action, "{tool_name}");
+        // A capture and a doc check's note are this session's changes in Changes.
+        if tool_name == "capture" || tool_name == "doc_check" {
+            assert_eq!(req.args["origin"]["kind"], "chat", "{tool_name}");
+        }
+    }
+    assert!(refused(&f.ctx, "create_note", json!({"title": "Venue", "content": "x", "test_run": true})).contains("give template"));
+    let list = tools();
+    let props = |n: &str| list.iter().find(|t| t["name"] == n).unwrap()["inputSchema"]["properties"].clone();
+    for (tool_name, arg) in [
+        ("edit_task", "words"),
+        ("edit_task", "followup"),
+        ("create_task", "view"),
+        ("save_chat", "chat"),
+        ("fix_name", "files_to_leave_alone"),
+        ("fix_name", "where_its_from"),
+        ("automated_tools", "folder_contains"),
+        ("automated_tools", "first_message_starts_with"),
+        ("list_transcripts", "show"),
+        ("pending_sources", "status"),
+        ("search", "order"),
+        ("activity", "order"),
+        ("create_note", "test_run"),
+        ("moving_over", "item"),
+    ] {
+        assert!(props(tool_name).get(arg).is_some(), "{tool_name} takes {arg}");
+    }
+    // No old names left beside the screen's.
+    for (tool_name, arg) in [("save_chat", "title"), ("automated_tools", "folder"), ("automated_tools", "opening")] {
+        assert!(props(tool_name).get(arg).is_none(), "{tool_name} has no {arg}");
+    }
+    assert_eq!(props("draft_reply")["tone"]["enum"], json!(["brief", "warm", "formal"]));
+    assert_eq!(props("start_run")["type"]["enum"], json!(["Meeting", "1-1", "Workshop", "Interview"]));
 }

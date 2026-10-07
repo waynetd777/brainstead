@@ -26,3 +26,5 @@ If the wrong spelling is also someone else's real name, type part of the file na
 
 ## Apply it
 Leave **Remember this correction** on to add it to Brainstead's list of name corrections (kept in its app data folder, not the vault), so future captures, transcripts and ingests spell it right. The **Where it's from** box records where you learnt it. Click **Apply**. The notes, the alias and the remembered correction are one change: `⌘Z` undoes it all.
+
+An assistant fixing a name takes the same choices: the files to leave alone, Remember this correction (on unless you say otherwise) and where it's from.

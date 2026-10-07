@@ -80,7 +80,7 @@ impl Cli {
 /// The MCP server's name, as each CLI is told it.
 pub const MCP_NAME: &str = "brainstead";
 /// Its tools, for the CLIs that list each one (Copilot).
-pub const MCP_TOOLS: [&str; 70] = [
+pub const MCP_TOOLS: [&str; 75] = [
     "search",
     "read_section",
     "backlinks",
@@ -96,6 +96,7 @@ pub const MCP_TOOLS: [&str; 70] = [
     "delete_task",
     "list_inbox",
     "clarify_inbox",
+    "capture",
     "list_projects",
     "create_project",
     "update_project",
@@ -139,6 +140,7 @@ pub const MCP_TOOLS: [&str; 70] = [
     "graph",
     "list_suggestions",
     "suggestions",
+    "list_moving_over",
     "moving_over",
     "list_automated_tools",
     "automated_tools",
@@ -149,6 +151,9 @@ pub const MCP_TOOLS: [&str; 70] = [
     "import_sources",
     "create_template",
     "open",
+    "add_example_notes",
+    "capture_extensions",
+    "glance",
     "app_status",
     "rebuild_index",
 ];
@@ -806,7 +811,7 @@ mod tests {
         let tools = p.iter().find(|x| x.starts_with("--available-tools=")).unwrap();
         assert!(
             tools.starts_with("--available-tools=view,grep,glob,brainstead-search,")
-                && tools.ends_with(",brainstead-open,brainstead-app_status,brainstead-rebuild_index")
+                && tools.ends_with(",brainstead-glance,brainstead-app_status,brainstead-rebuild_index")
         );
         // Antigravity doesn't take it: the app doesn't pass one, and the system prompt says so.
         assert!(!Cli::Antigravity.takes_mcp());

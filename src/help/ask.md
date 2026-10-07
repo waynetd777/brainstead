@@ -17,6 +17,8 @@ A chat stays in Brainstead's app data folder, out of the vault, until you click 
 
 The chats of background runs (the daily and weekly summaries, the weekly review's preparation) stay out of the vault the same way until you save one.
 
+An assistant can save a chat for you when you ask, an open one as **Save** does or a closed one as History's **Save** does.
+
 Save needs the vault to be writable. While it's read-only, a saved chat's new turns are kept in the app data folder and the note is left as it was. The next turn after read-only is off brings the note up to date.
 
 ## Choose the assistant and model

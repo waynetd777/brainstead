@@ -22,7 +22,7 @@ Captures are refused while the vault is read-only; turn that off in [Settings �
 After Brainstead is updated, open this page (it refreshes the extensions' folder) and click the reload button on the extension's card in `chrome://extensions`. There's nothing to copy or paste. The line under the steps lists the browsers that can reach Brainstead; if none is listed, install one of them and open this page again.
 
 ## Check recent captures
-**Recent captures** lists what arrived, or what was refused and why. **Open** opens a captured source. To ingest each one as it arrives, switch on **Ingest new sources as they arrive** in [Settings › AI assistants](app:settings/assistants).
+**Recent captures** lists what arrived, or what was refused and why. An assistant can read this pane too: the folder, the browsers and the recent captures. **Open** opens a captured source. To ingest each one as it arrives, switch on **Ingest new sources as they arrive** in [Settings › AI assistants](app:settings/assistants).
 
 ## Quick capture lives elsewhere
 The `⌃⌥Space` capture box doesn't need the browser; see [Quick capture](help:capture).

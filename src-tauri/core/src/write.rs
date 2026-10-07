@@ -556,16 +556,26 @@ pub fn capture_thought(path: &Path, text: &str, stamp: &str) -> Result<String> {
     check_conflict_copies(path)?;
     let src = match fs::read_to_string(path) {
         Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => "# Me. Scratchpad\n\n".to_string(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => NEW_SCRATCHPAD.to_string(),
         Err(e) => return Err(io(e)),
     };
-    let eol = split_lines(&src).1.new_line();
-    let at = pinned_header_len(&src);
-    let block = format!("## {stamp}{eol}{eol}{}{eol}{eol}", t.replace("\r\n", "\n").replace('\n', eol));
-    let out = format!("{}{block}{}", &src[..at], &src[at..]);
+    let (out, block) = with_thought(&src, t, stamp);
     write_atomic(path, out.as_bytes(), false)?;
     Ok(block)
 }
+
+/// The Scratchpad with a thought added as Quick capture adds it: a `## stamp` block below its
+/// pinned header, newest first; and the block. An assistant's capture is a change in Changes
+/// (changes::Instruction::AddThought) made the same way.
+pub fn with_thought(src: &str, text: &str, stamp: &str) -> (String, String) {
+    let eol = split_lines(src).1.new_line();
+    let at = pinned_header_len(src);
+    let block = format!("## {stamp}{eol}{eol}{}{eol}{eol}", text.trim().replace("\r\n", "\n").replace('\n', eol));
+    (format!("{}{block}{}", &src[..at], &src[at..]), block)
+}
+
+/// What a Scratchpad that isn't there yet starts as.
+pub const NEW_SCRATCHPAD: &str = "# Me. Scratchpad\n\n";
 
 static TASK_HEAD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(?:[-*+]|\d+[.)])\s+\[[^\]]\]\s+").unwrap());
 /// The Tasks plugin's signifiers: dates, recurrence, priorities, ids. Its fields are read from the
