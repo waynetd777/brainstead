@@ -30,7 +30,7 @@ import { settings, useStore } from "./store";
 import { useVaultVersion } from "./state";
 import { makeMeetingNotes } from "./meetingFlow";
 import { TaskText } from "./TaskList";
-import { appendAsReference, newReferenceNote, settleInboxItem } from "./inboxActions";
+import { appendAsReference, doneNow, newReferenceNote, settleInboxItem } from "./inboxActions";
 
 export { unclarified } from "./gtd";
 
@@ -173,15 +173,7 @@ export function InboxScreen() {
         ingest([i.path]);
         return act(() => api.inboxCaptureDone(i.path), "Ingesting: its changes are listed in Changes");
       case "done":
-        return act(
-          () =>
-            i.kind === "task"
-              ? api.taskToggle({ path: i.path, line: i.line, lineText: i.lineText } as never, true, localToday())
-              : i.kind === "capture"
-                ? api.inboxCaptureDone(i.path)
-                : api.inboxRemoveThought(i.line, i.block ?? i.lineText),
-          "Done, and out of the Inbox",
-        );
+        return act(() => doneNow(i), "Done, and out of the Inbox");
       case "someday":
         return act(() => settle(i, taskLine({ ...full, tag: "someday-maybe" }), proj, "Next actions"), "Moved to Someday / maybe");
       case "reference":

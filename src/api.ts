@@ -793,7 +793,9 @@ export type Instruction =
   /** Properties set, or taken out with null. */
   | { op: "properties"; set: [string, string | null][] }
   | { op: "rename"; to: string }
-  | { op: "trash" };
+  | { op: "trash" }
+  /** A Trash entry put back, at the change's page. */
+  | { op: "restore"; id: string };
 
 /** One edit to a task's line (src-tauri/src/changes.rs's LineEdit). */
 export type TaskLineEdit =
@@ -804,7 +806,7 @@ export type TaskLineEdit =
   | { op: "project"; project: string | null }
   | { op: "rank"; prev: number | null; next: number | null };
 
-export type ChangeKind = "edit" | "new" | "task" | "rename" | "trash";
+export type ChangeKind = "edit" | "new" | "task" | "rename" | "trash" | "restore";
 
 /** A change in Changes: what an assistant or a run did, or a change held for you. */
 /** Write Current state's run, going or last. */
@@ -1055,8 +1057,9 @@ export const api = {
   findStatus: () => invoke<FindState>("find_status"),
   findRun: () => invoke<string>("find_run"),
   findStop: () => invoke<void>("find_stop"),
-  findDecide: (id: string, action: "accept" | "skip", edit: Record<string, unknown> | null) =>
-    invoke<string | null>("find_decide", { id, action, edit }),
+  /** `unattended` (an assistant nobody is watching): an accepted suggestion is held when a check fails. */
+  findDecide: (id: string, action: "accept" | "skip", edit: Record<string, unknown> | null, unattended = false) =>
+    invoke<string | null>("find_decide", { id, action, edit, unattended }),
   onFindChanged: (f: () => void): Promise<UnlistenFn> => listen("find-changed", () => f()),
   automatedSave: (list: Automation[]) => invoke<void>("automated_save", { list }),
   /** Folders whose recent sessions look like a tool's, as tools to list. */
@@ -1204,9 +1207,10 @@ export const api = {
   weekprepRun: (week?: string) => invoke<string>("weekprep_run", { week: week ?? null }),
   /** Prepares the week if it has no preparation or the vault has changed since; true when a run started. */
   weekprepEnsure: (week: string) => invoke<boolean>("weekprep_ensure", { week }),
-  /** An accepted link suggestion, made as an agent change (revertable in Changes); returns its id. */
-  weekprepLink: (week: string, path: string, phrase: string, target: string) =>
-    invoke<string>("weekprep_link", { week, path, phrase, target }),
+  /** An accepted link suggestion, made as an agent change (revertable in Changes), or held there.
+   *  `unattended` (an assistant nobody is watching): held when a check fails. */
+  weekprepLink: (week: string, path: string, phrase: string, target: string, unattended = false) =>
+    invoke<ChangeOutcome>("weekprep_link", { week, path, phrase, target, unattended }),
   /** The job's last run and next scheduled time (Settings › Jobs & schedule). */
   weekprepJob: () => invoke<WeekPrepJob>("weekprep_job"),
   /** Stops the preparation running now. */

@@ -252,6 +252,10 @@ pub fn review_run_now(app: AppHandle, kind: ReviewKind, day: Option<String>, una
             }
             match kind {
                 ReviewKind::Daily => Target::Day(d),
+                // As Run now, which only does the week just ended: not this week, though its day has.
+                ReviewKind::Weekly if !Target::week_of(d).ended(now().date()) => {
+                    return Err("A weekly summary can only cover a week that has ended, and this week runs to Sunday.".into())
+                }
                 ReviewKind::Weekly => Target::week_of(d),
             }
         }

@@ -6,6 +6,15 @@
 // here so the MCP bridge (src/mcpActions.ts) makes the same ones.
 
 import { api, InboxItem } from "./api";
+import { toggleTaskEdit } from "./taskModel";
+
+/** Done now: a task ticked as everywhere else (a recurring one gets its next occurrence:
+ *  toggleTaskEdit), a capture marked done, a thought taken out. */
+export function doneNow(i: InboxItem): Promise<unknown> {
+  if (i.kind === "task") return toggleTaskEdit({ path: i.path, line: i.line, lineText: i.lineText }, true);
+  if (i.kind === "capture") return api.inboxCaptureDone(i.path);
+  return api.inboxRemoveThought(i.line, i.block ?? i.lineText);
+}
 
 /** Takes the item out of the Inbox: a thought's block goes; a task's line becomes `line` (or goes);
  *  a capture is marked done. With `toProject`, the new line goes under the project's `heading`. */

@@ -433,7 +433,7 @@ pub fn tools() -> Vec<Value> {
             "Lists what's in Brainstead's Trash, newest first, with how many items it holds and their size as the Trash screen gives it (needs the app). Each row has its id for restore_from_trash. Moving something to the Trash is trash_note.",
             schema(json!({}), &[])),
         tool("restore_from_trash", "Restore from the Trash", Change,
-            "Puts an entry from Brainstead's Trash back where it was, as the Trash's Restore does (needs the app). When something is at that path already, give to for another path, as Restore as… does. The id comes from list_trash.",
+            "Puts an entry from Brainstead's Trash back where it was, as the Trash's Restore does (needs the app). When something is at that path already, give to for another path, as Restore as… does. The id comes from list_trash. It's a change in Changes, with Revert (back to the Trash); a restore into Templates/, or of a note with code that runs, is held for the user to accept in the app.",
             schema(json!({
                 "id": {"type": "string", "description": "The entry's id from list_trash."},
                 "to": {"type": "string", "description": "The vault path to put it back under, instead of where it was."}
@@ -482,7 +482,7 @@ pub fn tools() -> Vec<Value> {
                 "transcript": {"type": "string", "description": "For meeting_note: the transcript's path."},
                 "type": {"type": "string", "enum": ["Meeting", "1-1", "Workshop", "Interview"], "description": "For meeting_note: the note's type, as the screen offers them, if Brainstead guessed wrong."},
                 "name": {"type": "string", "description": "For meeting_note: the meeting's name, or who the 1-1 was with."},
-                "date": {"type": "string", "pattern": DATE, "description": "For meeting_note: the meeting's day, YYYY-MM-DD; needed when list_transcripts says the date is only the capture day (ask the user). For daily_summary: the day to summarise (default yesterday); for weekly_summary: a day in the week to summarise."}
+                "date": {"type": "string", "pattern": DATE, "description": "For meeting_note: the meeting's day, YYYY-MM-DD; needed when list_transcripts says the date is only the capture day (ask the user). For daily_summary: the day to summarise (default yesterday); for weekly_summary: a day in a week that has ended (default the week just ended, as Run now; this week is refused)."}
             }), &["run"])),
         tool("run_status", "How runs are going", Read,
             "How Brainstead's runs are going (needs the app): ingests running and lately done, the daily check, the daily and weekly summaries, the weekly review's preparation, Find tasks and projects, the contradictions check, meeting notes being written and Write Current state. Each says whether it's running, done or failed, with its progress; ingests and meeting notes give their ids, for stop_run, the meeting notes lately finished or failed are listed with the note made, and an ingest or meeting note says what the checks left out of it and why. Then the last eight summary runs, as Settings › Jobs & schedule's Recent runs lists them: kind, day, when, how it was started, its status and its note, and the id of its change in Changes (changes revert with that id undoes it, as Recent runs' Undo does). A summary run and the weekly review's last preparation give their chat with the model (Jobs' Open), which list_chats with action read and that chat reads. Use it after start_run, rather than starting a run again; stop_run stops one.",
@@ -967,7 +967,19 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
     let unwatched = ctx.unattended.load(std::sync::atomic::Ordering::Relaxed);
     let act = |action: &str, a: Value| -> Result<Out, CallError> { Ok(act(ctx, action, a)?) };
     // The app records these in Changes as this session's (D-20261005-10).
-    if ["edit_task", "move_task", "clarify_inbox", "capture", "create_project", "update_project", "doc_check"].contains(&name) {
+    if [
+        "edit_task",
+        "move_task",
+        "clarify_inbox",
+        "capture",
+        "create_project",
+        "update_project",
+        "doc_check",
+        "restore_from_trash",
+        "contradictions",
+    ]
+    .contains(&name)
+    {
         obj["origin"] = serde_json::to_value(origin(ctx, unattended)).unwrap_or_default();
     }
     match name {

@@ -24,5 +24,7 @@ Click **Restore** on a row to put the file back where it was. To restore several
 
 **Restore as…** on any row restores to a path you type; use it when a file now exists at the old path, which the row then points out.
 
+When an assistant restores something, it's listed in [Changes](app:review), with **Revert** to move it back; a restore into `Templates/`, or of a note with code that runs, waits there for you to accept.
+
 ## Delete for good
 Tick files and click **Delete forever**, or click **Empty the Trash** in the top bar to delete everything, which also says how much space it frees. Both ask first. The files are then removed from the vault's `.trash` folder, and no other app can restore them either. This can't be undone.

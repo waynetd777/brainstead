@@ -49,6 +49,8 @@ const kindChip = (c: ChangeRow) =>
     <span className="chip">Rename</span>
   ) : c.kind === "trash" ? (
     <span className="chip amber">Moved to the Trash</span>
+  ) : c.kind === "restore" ? (
+    <span className="chip">Restored from the Trash</span>
   ) : null;
 
 function when(iso: string): string {
@@ -502,7 +504,7 @@ function Detail({ row, onMove }: { row: ChangeRow; onMove: (d: number) => void }
       <div className="iopen faint">Loading…</div>
     );
   const page = v.to ?? v.page;
-  const moves = v.kind === "rename" || v.kind === "trash";
+  const moves = v.kind === "rename" || v.kind === "trash" || v.kind === "restore";
   return (
     <div className="iopen qopen selectable">
       <div className="qhead">
@@ -558,11 +560,15 @@ function Detail({ row, onMove }: { row: ChangeRow; onMove: (d: number) => void }
       ))}
       {moves && (
         <div className="card qmove">
-          <Icon name={v.kind === "rename" ? "rename" : "trash"} size={16} />
+          <Icon name={v.kind === "rename" ? "rename" : v.kind === "restore" ? "back" : "trash"} size={16} />
           {v.kind === "rename" ? (
             <span>
               {isHeld ? "Renames" : "Renamed"} <b>{pageName(v.page)}</b> to <b>{pageName(v.to ?? "")}</b> in its folder, and rewrites the
               links to it.
+            </span>
+          ) : v.kind === "restore" ? (
+            <span>
+              {isHeld ? "Puts" : "Put"} <b>{pageName(v.page)}</b> back from Brainstead’s Trash, at {v.page}.
             </span>
           ) : (
             <span>

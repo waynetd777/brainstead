@@ -22,7 +22,7 @@ Click an item, or move with `J` and `K` (or `↑` and `↓`), to open it on the 
 - `N` **Next action**: opens a form for the text, project, context, effort and due date. A next action needs a project or a context, so it lands on a list: on the To Do list with neither, it would be back in the Inbox. Until it has one, the form says so and **Save** stays off.
 - `P` **New project**: opens New project with the item as its name.
 - `W` **Waiting for**: the same form; the task gets `#waiting-for`.
-- `2` **Done now (under 2 min)**: you did it now; a task is ticked, a thought removed, a capture taken out of the Inbox.
+- `2` **Done now (under 2 min)**: you did it now; a task is ticked (a recurring one gets its next occurrence, as everywhere else), a thought removed, a capture taken out of the Inbox.
 - `S` **Someday / maybe**: becomes a task tagged `#someday-maybe`.
 - `R` **File as reference**: adds the text as a bullet at the end of a note you find, or makes a new note.
 - `⌫` **Delete**.

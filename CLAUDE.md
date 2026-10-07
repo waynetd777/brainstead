@@ -16,7 +16,7 @@ The build plan (stages 1 to 10) and the agent-changes plan (D-20261005-03) are c
 
 New work:
 
-- In progress: the MCP parity plan in `archive/mcp-parity.md` (local, untracked; D-20261007-04). Read it before MCP work and tick items off there.
+- The MCP parity plan (`archive/mcp-parity.md`, local) is complete; its known gaps are fixed when their features next change (D-20261007-16).
 
 - Agree a short plan with the user before building anything bigger than a fix: concrete items and a "Done when" line.
 - If anything is unclear, contradictory or missing a decision, ask the user rather than guessing, and record the answer with `sift decide`, so the next session doesn't have to ask again.
@@ -30,7 +30,7 @@ Rules:
 - Keep OS-specific code inside the `platform` module so Windows and Linux stay possible.
 - Update `docs/` and `README.md` in the same change as the behaviour they describe, and record decisions with `sift decide`.
 - Update the screen's help (`src/help/*.md`) in the same change too: the `?` drawer shows it and Ask answers questions about the app from it.
-- Every new feature, and every change to an existing one, is supported by the MCP server in the same change (`src-tauri/mcp/src/lib.rs`, `src/mcpActions.ts`): a tool to read it and, where the screen can change something, a tool to do that, with the same names the UI uses. Assistants should be able to do whatever the screens do.
+- Every new feature, and every change to an existing one, is supported by the MCP server in the same change (`src-tauri/mcp/src/lib.rs`, `src/mcpActions.ts`): a tool to read it and, where the screen can change something, a tool to do that, with the same names the UI uses. Assistants should be able to do whatever the screens do. A tool calls the screen's own functions (its checks, ordering, search, follow-ups) rather than reimplementing them, so the two can't drift; where Rust and TypeScript both need a rule, share it or keep the two copies side by side with a test.
 - Use screenshot scenes (`BRAINSTEAD_SCENE`, `tools/screenshots/scenes.json`) to check UI rather than clicking through it.
 - UI mocks: https://claude.ai/artifact/Trh3uwqjL2Z8juRfWokASH (read with the Artifact tool). The design tokens (the `:root` variables in `src/styles.css`, from the archived plan's §3) are authoritative.
 - The repo is public. Fixtures, docs, comments and UI text use invented names only (Orbit App, Maya, Lena, Acme…); real names, the user's employer, private projects and anything from the real vault never go in the repo.

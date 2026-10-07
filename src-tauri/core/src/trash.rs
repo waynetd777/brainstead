@@ -163,6 +163,14 @@ pub fn list(root: &Path) -> Vec<TrashEntry> {
     out
 }
 
+/// Where an entry goes back to (the path it had) and its file as it lies in the trash, so a restore
+/// can be checked before it's made.
+pub fn entry_file(root: &Path, id: &str) -> Result<(String, PathBuf)> {
+    safe_id(id)?;
+    let m = read_meta(root, id).ok_or_else(|| WriteError::NotFound("That's no longer in the trash.".into()))?;
+    Ok((m.original_rel, entry_dir(root, id).join(&m.basename)))
+}
+
 /// Puts an entry back where it was, or at `as_rel`. Refuses when a file is already there.
 /// Returns the vault-relative path it's at now.
 pub fn restore(root: &Path, id: &str, as_rel: Option<&str>) -> Result<String> {
@@ -242,6 +250,12 @@ mod tests {
         assert_eq!(meta["basename"], "Ann.md");
         assert!(e.id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'));
         assert_eq!(list(root), vec![e.clone()]);
+
+        // Where it goes back to, and its file, for a restore to be checked before it's made.
+        let (back, file) = entry_file(root, &e.id).unwrap();
+        assert_eq!(back, "People/Ann.md");
+        assert_eq!(fs::read_to_string(file).unwrap(), "# Ann\n");
+        assert!(entry_file(root, "abc-000000").is_err());
 
         // Something new took its place: restore refuses, restore as works.
         fs::write(root.join("People/Ann.md"), "new").unwrap();

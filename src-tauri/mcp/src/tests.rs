@@ -596,6 +596,9 @@ fn task_inbox_and_project_edits_carry_the_session() {
         ("clarify_inbox", "inbox.clarify", json!({"item": "task:14", "becomes": "next"})),
         ("create_project", "project.create", json!({"name": "Orbit App beta"})),
         ("update_project", "project.update", json!({"project": "Orbit App launch", "status": "completed"})),
+        // A restore and a saved contradictions report are changes too, held unattended when a check fails.
+        ("restore_from_trash", "trash", json!({"id": "abc-123456", "unattended": true})),
+        ("contradictions", "contradictions", json!({"action": "save", "unattended": true})),
     ] {
         let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Done."), error: None });
         ok(&f.ctx, tool_name, args.clone());

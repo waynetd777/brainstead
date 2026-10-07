@@ -87,8 +87,9 @@ export function addLine(a: Extract<WeekPrepAction, { do: "add" }>, project: Proj
   return due ? `${line.slice(0, due.index)} ${extra}${due[0]}` : `${line} ${extra}`;
 }
 
-/** What a suggestion offers; none for a prompt. */
-export function choice(s: WeekPrepSuggestion, week: string, projects: ProjectRow[]): Choice | null {
+/** What a suggestion offers; none for a prompt. `unattended`: an assistant nobody is watching
+ *  accepts it, so a link (a change in Changes) is held when a check fails. */
+export function choice(s: WeekPrepSuggestion, week: string, projects: ProjectRow[], unattended = false): Choice | null {
   const a = s.action;
   if (!a) return null;
   switch (a.do) {
@@ -183,9 +184,14 @@ export function choice(s: WeekPrepSuggestion, week: string, projects: ProjectRow
         verb: "Link",
         title: `Link “${a.phrase}” to [[${a.target}]] in ${a.path.replace(/\.md$/, "")}; revertable in Changes`,
         run: async () => {
-          await api.weekprepLink(week, a.path, a.phrase, a.target);
+          const o = await api.weekprepLink(week, a.path, a.phrase, a.target, unattended);
+          const where = a.path.replace(/\.md$/, "");
+          if (!o.applied) {
+            toast("Held for you in Changes", { label: "Open", run: () => nav.go("review") }, "ok");
+            return `Held linking ${a.target} in ${where} for the user in Changes: ${o.flags.join(" ")}`;
+          }
           toast("Linked; it's in Changes, with Revert", { label: "Open", run: () => nav.go("review") }, "ok");
-          return `Linked ${a.target} in ${a.path.replace(/\.md$/, "")}`;
+          return `Linked ${a.target} in ${where}`;
         },
       };
   }

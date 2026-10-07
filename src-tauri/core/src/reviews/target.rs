@@ -41,6 +41,14 @@ impl Target {
         Target::Week { year: w.year(), week: w.week() }
     }
 
+    /// Whether the day or week is over by `today`: a week's Sunday is before it.
+    pub fn ended(&self, today: NaiveDate) -> bool {
+        match self {
+            Target::Day(d) => *d < today,
+            Target::Week { .. } => self.label() < Target::week_of(today).label(),
+        }
+    }
+
     pub fn label(&self) -> String {
         match self {
             Target::Day(d) => d.format("%Y-%m-%d").to_string(),
@@ -266,6 +274,15 @@ mod tests {
                 (got, _) => panic!("{case}: got {got:?}, the script said {want}"),
             }
         }
+    }
+
+    #[test]
+    fn a_week_has_ended_once_its_sunday_has_passed() {
+        let wed = NaiveDate::from_ymd_opt(2026, 10, 7).unwrap();
+        assert!(!Target::week_of(wed - Duration::days(1)).ended(wed), "this week's Tuesday: the week runs to Sunday");
+        assert!(!Target::week_of(wed).ended(wed));
+        assert!(Target::week_of(NaiveDate::from_ymd_opt(2026, 10, 4).unwrap()).ended(wed), "last week's Sunday");
+        assert!(Target::Day(wed - Duration::days(1)).ended(wed) && !Target::Day(wed).ended(wed));
     }
 
     #[test]

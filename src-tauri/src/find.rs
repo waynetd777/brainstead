@@ -251,15 +251,17 @@ pub struct Edit {
 }
 
 /// Accepts a suggestion (made as an agent change, revertable in Changes) or skips it; either way
-/// it's never suggested again. The change's message when accepted.
+/// it's never suggested again. The change's message when accepted. `unattended`: an assistant
+/// nobody is watching accepted it, so the change is held when a check fails.
 #[tauri::command]
-pub async fn find_decide(app: AppHandle, id: String, action: String, edit: Option<Edit>) -> Res<Option<String>> {
-    tauri::async_runtime::spawn_blocking(move || decide(&app, &id, &action, edit.unwrap_or_default()))
+pub async fn find_decide(app: AppHandle, id: String, action: String, edit: Option<Edit>, unattended: Option<bool>) -> Res<Option<String>> {
+    let trigger = unattended.unwrap_or(false).then(|| "scheduled".to_string());
+    tauri::async_runtime::spawn_blocking(move || decide(&app, &id, &action, edit.unwrap_or_default(), trigger))
         .await
         .map_err(|e| EditError::from(e.to_string()))?
 }
 
-fn decide(app: &AppHandle, id: &str, action: &str, edit: Edit) -> Res<Option<String>> {
+fn decide(app: &AppHandle, id: &str, action: &str, edit: Edit, trigger: Option<String>) -> Res<Option<String>> {
     if action != "skip" && action != "accept" {
         return Err("action is accept or skip.".to_string().into());
     }
@@ -272,7 +274,7 @@ fn decide(app: &AppHandle, id: &str, action: &str, edit: Edit) -> Res<Option<Str
         (at, s.suggestions.remove(at))
     };
     let message = if action == "accept" {
-        match accept(app, &sg, edit) {
+        match accept(app, &sg, edit, trigger) {
             Ok(m) => Some(m),
             Err(e) => {
                 // Not made: it's back, where it was, to edit and try again.
@@ -297,9 +299,9 @@ fn decide(app: &AppHandle, id: &str, action: &str, edit: Edit) -> Res<Option<Str
     Ok(message)
 }
 
-fn accept(app: &AppHandle, sg: &Suggestion, edit: Edit) -> Res<String> {
+fn accept(app: &AppHandle, sg: &Suggestion, edit: Edit, trigger: Option<String>) -> Res<String> {
     let run = crate::lock(&app.state::<Find>().state).run.as_ref().map(|r| r.id.clone());
-    let origin = Origin { kind: "find".into(), label: Some("Find tasks and projects".into()), run, ..Default::default() };
+    let origin = Origin { kind: "find".into(), label: Some("Find tasks and projects".into()), run, trigger, ..Default::default() };
     let reason = sg.sources.first().map(|s| format!("From {}: “{}”", s.path.trim_end_matches(".md"), s.quote)).unwrap_or_default();
     let clean = |s: String| s.split_whitespace().collect::<Vec<_>>().join(" ");
     let text = edit.text.map(clean).filter(|t| !t.is_empty()).unwrap_or_else(|| sg.text.clone());

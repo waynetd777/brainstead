@@ -150,11 +150,15 @@ pub fn submit_many(app: &AppHandle, list: Vec<Submit>) -> Res<Vec<Outcome>> {
             c.flags.push("Brainstead was read-only when it came.".into());
         }
         if c.instruction.moves() {
-            if current.is_none() {
+            let restore = matches!(c.instruction, Instruction::Restore { .. });
+            if restore && root.join(&c.page).exists() {
+                return Err(invalid(format!("There's already a file at {}. Restore it under another name.", c.page)));
+            }
+            if !restore && current.is_none() {
                 return Err(invalid(format!("{} isn't in the vault.", c.page)));
             }
             let why = s.hold.or(move_needs_the_user(app, &c)?);
-            pages.insert(c.page.clone(), None);
+            pages.insert(c.page.clone(), if restore { restored_text(app, &c) } else { None });
             staged.push(Staged { c, why, current: None, scheduled });
             continue;
         }
@@ -189,15 +193,27 @@ pub fn submit_many(app: &AppHandle, list: Vec<Submit>) -> Res<Vec<Outcome>> {
         .collect()
 }
 
-/// Why a rename or move to the Trash waits for the user: a template, or links rewritten in one.
+/// Why a rename, a move to the Trash or a restore waits for the user: a template, or links
+/// rewritten in one; a restore, as a new page's text is checked (into `Templates/`, or code that runs).
 fn move_needs_the_user(app: &AppHandle, c: &Change) -> Res<Option<String>> {
     Ok(match &c.instruction {
         Instruction::Rename { to } => {
             let plan = tauri::async_runtime::block_on(crate::notes::rename_preview(app.clone(), c.page.clone(), to.clone()))?;
             changes::move_needs_the_user(&c.page, Some(to), plan.changes.iter().map(|l| l.path.as_str()))
         }
+        Instruction::Restore { id } => {
+            brainstead_core::trash::entry_file(&root(app)?, id).map_err(EditError::from)?;
+            changes::needs_the_user(&c.page, None, &restored_text(app, c).unwrap_or_default())
+        }
         _ => changes::move_needs_the_user(&c.page, None, []),
     })
+}
+
+/// A restore's file as it lies in the Trash, as text.
+fn restored_text(app: &AppHandle, c: &Change) -> Option<String> {
+    let Instruction::Restore { id } = &c.instruction else { return None };
+    let (_, file) = brainstead_core::trash::entry_file(&root(app).ok()?, id).ok()?;
+    read_opt(&file)
 }
 
 /// The page's text once the change is made: the instruction run on it, with the assistant's mark
@@ -253,6 +269,10 @@ fn apply(app: &AppHandle, root: &Path, mut c: Change, base: Option<String>) -> R
             let e = tauri::async_runtime::block_on(crate::notes::trash_move(app.clone(), c.page.clone()))?;
             c.trash = Some(e.id);
             format!("Moved {} to the Trash", c.page)
+        }
+        Instruction::Restore { id } => {
+            let to = tauri::async_runtime::block_on(crate::notes::trash_restore(app.clone(), id, Some(c.page.clone())))?;
+            format!("Restored {to} from the Trash")
         }
         _ => {
             let abs = root.join(&c.page);
@@ -458,7 +478,13 @@ fn view(app: &AppHandle, id: &str) -> Res<View> {
     let st = store();
     let c = st.get(id)?;
     let (mut hunks, mut problem) = (vec![], None);
-    if !c.instruction.moves() {
+    if c.status == Status::Held && matches!(c.instruction, Instruction::Restore { .. }) {
+        // What a held restore would put back.
+        match restored_text(app, &c) {
+            Some(t) => hunks = changes::hunks("", &t),
+            None => problem = Some("That's no longer in the Trash.".into()),
+        }
+    } else if !c.instruction.moves() {
         if c.status == Status::Held {
             let current = read_opt(&root(app)?.join(&c.page));
             match preview(&c, current.as_deref()) {
@@ -592,6 +618,11 @@ fn revert_one(app: &AppHandle, id: &str) -> Res<Reverted> {
             let id = c.trash.clone().ok_or_else(|| invalid("This move to the Trash has no Trash entry to restore."))?;
             tauri::async_runtime::block_on(crate::notes::trash_restore(app.clone(), id, None))?;
             format!("Restored {name} from the Trash")
+        }
+        Instruction::Restore { .. } => {
+            let e = tauri::async_runtime::block_on(crate::notes::trash_move(app.clone(), c.page.clone()))?;
+            c.trash = Some(e.id);
+            format!("Moved {name} back to the Trash")
         }
         _ => {
             let after = c.after.as_deref().and_then(|h| st.text(h)).ok_or_else(|| invalid("This change's history is gone."))?;

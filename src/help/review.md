@@ -22,7 +22,7 @@ The checks:
 
 Three kinds of change are always held, whoever started them: a change to a template in `Templates/`, a change to a system note's header (the "This is a system note" callout other parts of Brainstead look for), and a change that adds code that runs when a note is shown (a `dataviewjs` block, inline `$=`, a Tasks `by function` line or Templater's `<% %>`).
 
-Renames and moves to the Trash are made at once, unless the note is a template, the rename would put it in `Templates/`, or the links it updates are in a template: then it's held. Revert renames the note back, or restores it from the Trash.
+Renames and moves to the Trash are made at once, unless the note is a template, the rename would put it in `Templates/`, or the links it updates are in a template: then it's held. An assistant's restore from the Trash is made at once too, unless it puts the file in `Templates/` or the note has code that runs: then it's held, showing what it would put back. Revert renames the note back, restores it from the Trash, or moves a restored one back to the Trash.
 
 Assistants' task, Inbox and project edits are listed here too, and held by the same rules. Tasks and projects you change on their own screens aren't.
 

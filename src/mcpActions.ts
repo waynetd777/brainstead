@@ -1610,7 +1610,7 @@ async function weeklySuggestion(a: Args): Promise<string> {
   let line = "";
   if (how === "accept") {
     const projects = (await api.projectsList()).filter((p) => p.status === "active");
-    const c = toFile(s) ? null : choice(s, week, projects);
+    const c = toFile(s) ? null : choice(s, week, projects, a.unattended === true);
     if (!c) throw new Error(`Accepting it does ${offers(s, week, projects)}. Skip it once it's dealt with.`);
     line = await c.run();
   }
@@ -1626,7 +1626,9 @@ async function weeklySuggestion(a: Args): Promise<string> {
     return `Skipped “${s.text}”.`;
   }
   return s.action?.do === "link"
-    ? `Accepted: ${line}; the link is made (revertable in Changes).`
+    ? line.startsWith("Held ")
+      ? `Accepted: ${line.replace(/\.$/, "")}. Nothing is changed until they accept it.`
+      : `Accepted: ${line}; the link is made (revertable in Changes).`
     : `Accepted: ${line}. ⌘Z in the app undoes it.`;
 }
 
@@ -1828,7 +1830,7 @@ async function fixName(a: Args): Promise<string> {
 
 // ---- the rest
 
-async function trash(a: Args): Promise<string | Listing> {
+async function trash(a: Args, r: McpRequest): Promise<string | Listing> {
   const action = str(a, "action") ?? "list";
   if (action === "list") {
     const all = (await api.trashList()).sort((x, y) => y.deletedAt.localeCompare(x.deletedAt));
@@ -1848,9 +1850,13 @@ async function trash(a: Args): Promise<string | Listing> {
   if (action === "restore") {
     const id = str(a, "id");
     if (!id) throw new Error("Give id: the Trash entry to restore, from list_trash.");
-    const to = await api.trashRestore(id, str(a, "to")?.trim() || null);
-    told(`restored ${to} from the Trash`);
-    return `Restored to ${to}.`;
+    const e = (await api.trashList()).find((t) => t.id === id);
+    if (!e) throw new Error(`Nothing in the Trash has the id ${id}. list_trash lists what's there.`);
+    // Through Changes, so the hold rules apply: a restore into Templates/, or of code that runs, waits for the user.
+    const to = str(a, "to")?.trim() || e.originalRel;
+    const o = await submitAll([sub(a, r, to, "restore", `Restore ${pageName(to)} from the Trash`, { op: "restore", id })]);
+    told(o.applied ? `restored ${to} from the Trash` : `held restoring ${to} from the Trash for you in Changes`);
+    return o.applied ? `Restored to ${to}. Revert it in Changes.` : o.message;
   }
   throw new Error("action is list or restore. Moving a note to the Trash is trash_note.");
 }
@@ -2205,7 +2211,12 @@ async function suggestions(a: Args): Promise<string> {
     const edit: Record<string, unknown> = {};
     if (str(a, "text")) edit.text = str(a, "text");
     if (str(a, "done_looks_like")) edit.outcome = str(a, "done_looks_like");
-    const m = await api.findDecide(id, "accept", Object.keys(edit).length ? edit : null);
+    const m = await api.findDecide(id, "accept", Object.keys(edit).length ? edit : null, a.unattended === true);
+    // Unattended, one that fails a check is held for the user.
+    if (m?.startsWith("Held ")) {
+      told("held a suggested task or project for you in Changes");
+      return `${m} Nothing is changed until they accept it.`;
+    }
     // With Undo ⌘Z, as Found's toast offers it.
     told("accepted a suggested task or project");
     return `${(m ?? "Made it.").replace(/ Revert it in Changes\.$/, "")} ⌘Z in the app undoes it (Undo, as Found's toast offers), and it's in Changes too.`;

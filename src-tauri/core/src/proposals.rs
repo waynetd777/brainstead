@@ -39,6 +39,8 @@ pub enum Kind {
     Rename,
     /// A note moved to Brainstead's Trash.
     Trash,
+    /// A note put back from Brainstead's Trash.
+    Restore,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

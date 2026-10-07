@@ -7,7 +7,7 @@
 //! here writes to the vault: the app applies an instruction through the safe write and records it.
 //!
 //! A held change keeps the agent's instruction (replace a section, find and replace, add a task,
-//! the new page's text, a rename, a move to the Trash), not a copy of the page: accepting runs it
+//! the new page's text, a rename, a move to the Trash or back), not a copy of the page: accepting runs it
 //! on the page as it is then, so it never goes stale; it fails only when its target is gone. An
 //! applied change keeps the page's text before and after, compressed, each text stored once by its
 //! hash in `changes/text/`, for the feed's diff and for Revert.
@@ -72,6 +72,8 @@ pub enum Instruction {
     Rename { to: String },
     /// The note moved to Brainstead's Trash.
     Trash,
+    /// A Trash entry (`id`) put back, at the change's page.
+    Restore { id: String },
 }
 
 impl Instruction {
@@ -140,7 +142,9 @@ impl Instruction {
                 }
                 Ok(text)
             }
-            Instruction::Rename { .. } | Instruction::Trash => Err("A rename or a move to the Trash doesn't change the text.".into()),
+            Instruction::Rename { .. } | Instruction::Trash | Instruction::Restore { .. } => {
+                Err("A rename, a move to the Trash or a restore doesn't change the text.".into())
+            }
         }
     }
 
@@ -151,7 +155,7 @@ impl Instruction {
 
     /// Moves the note rather than changing its text.
     pub fn moves(&self) -> bool {
-        matches!(self, Instruction::Rename { .. } | Instruction::Trash)
+        matches!(self, Instruction::Rename { .. } | Instruction::Trash | Instruction::Restore { .. })
     }
 }
 
@@ -1011,6 +1015,18 @@ mod tests {
                 && !agents_page("Me. To Do List.md")
                 && !agents_page("Me. Weekly Review - 2026-W40.md")
         );
+    }
+
+    #[test]
+    fn a_restore_is_a_move_and_says_its_entry() {
+        let r = Instruction::Restore { id: "abc-123456".into() };
+        assert_eq!(serde_json::to_value(&r).unwrap(), serde_json::json!({"op": "restore", "id": "abc-123456"}));
+        assert!(r.moves() && !r.whole_page());
+        assert!(r.text("Notes.md", None).is_err());
+        // Checked as a new page with the trashed file's text: into Templates/, or code that runs, is held.
+        assert!(needs_the_user("Templates/Meeting.md", None, "# Meeting\n").is_some());
+        assert!(needs_the_user("Notes.md", None, "```dataviewjs\ndv.paragraph(1)\n```\n").is_some());
+        assert!(needs_the_user("Notes.md", None, "# Notes\n").is_none());
     }
 
     #[test]

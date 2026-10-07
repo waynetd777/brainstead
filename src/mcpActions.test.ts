@@ -489,6 +489,21 @@ describe("MCP actions", () => {
       await expect(run("weekly.suggestion", { id: "nope", action: "skip" })).rejects.toThrow(/No suggestion/);
     });
 
+    it("carries unattended into an accepted link's change, and says when it's held", async () => {
+      const link = { do: "link", path: "Meeting. Launch.md", phrase: "Orbit App", target: "Orbit App" };
+      answers.weekprep_status = () => ({
+        prep: { ...prep, suggestions: [...prep.suggestions, { id: "s3", step: "notes", text: "Link it", source: null, action: link }] },
+        running: false,
+        error: null,
+      });
+      answers.weekprep_link = () => ({ id: "c1", applied: false, page: link.path, flags: ["A check failed."], message: "Held" });
+      const out = (await run("weekly.suggestion", { id: "s3", action: "accept", unattended: true })) as string;
+      expect(calls.find(([c]) => c === "weekprep_link")![1]).toMatchObject({ path: link.path, unattended: true });
+      expect(out).toMatch(
+        /^Accepted: Held linking Orbit App in Meeting\. Launch for the user in Changes: A check failed\. Nothing is changed/,
+      );
+    });
+
     it("doesn't start a review to accept or skip one in", async () => {
       answers.weekly_state_read = () => null;
       await expect(run("weekly.suggestion", { id: "s1", action: "skip" })).rejects.toThrow(/isn't started.*weekly_step start/);
@@ -1103,9 +1118,26 @@ describe("MCP actions", () => {
       await expect(run("graph", { page: "Nobody" })).rejects.toThrow(/no page called Nobody/);
     });
 
-    it("restores from the Trash under another path, and stops every run", async () => {
-      answers.trash_restore = (a) => a!.as ?? "x.md";
-      expect(await run("trash", { action: "restore", id: "t1", to: "Idea. Other.md" })).toBe("Restored to Idea. Other.md.");
+    it("restores from the Trash through Changes, under another path, and stops every run", async () => {
+      answers.trash_list = () => [
+        { id: "t1", originalRel: "Idea. One.md", layer: "note", basename: "Idea. One.md", deletedAt: "", sizeBytes: 1 },
+      ];
+      answers.changes_submit_many = outcomes(true);
+      const origin = { kind: "chat", chat: "chat-1", trigger: "scheduled" };
+      expect(await run("trash", { action: "restore", id: "t1", to: "Idea. Other.md", origin })).toBe(
+        "Restored to Idea. Other.md. Revert it in Changes.",
+      );
+      // A change with the session's origin, so the hold rules apply; never a restore behind Changes' back.
+      expect((calls.find(([c]) => c === "changes_submit_many")![1]!.changes as unknown[])[0]).toMatchObject({
+        page: "Idea. Other.md",
+        kind: "restore",
+        instruction: { op: "restore", id: "t1" },
+        origin,
+      });
+      expect(calls.some(([c]) => c === "trash_restore")).toBe(false);
+      answers.changes_submit_many = outcomes(false);
+      expect(await run("trash", { action: "restore", id: "t1" })).toMatch(/^Held for the user in Changes/);
+      await expect(run("trash", { action: "restore", id: "t9" })).rejects.toThrow(/no.*id t9|id t9/i);
       await run("run.stop", { run: "find_tasks" });
       await run("run.stop", { run: "write_current_state" });
       expect(calls.some(([c]) => c === "find_stop") && calls.some(([c]) => c === "current_state_stop")).toBe(true);
@@ -2047,6 +2079,15 @@ describe("MCP actions", () => {
       expect(await run("suggestions", { action: "accept", id: "s1" })).toBe(
         "Added “Book the room” to Orbit App launch. ⌘Z in the app undoes it (Undo, as Found's toast offers), and it's in Changes too.",
       );
+      expect(calls.find(([c]) => c === "find_decide")![1]).toMatchObject({ unattended: false });
+    });
+
+    it("carries unattended into an accepted suggestion's change, and says when it's held", async () => {
+      answers.find_decide = () => "Held for the user in Changes: Add “Book the room”. A check failed.";
+      expect(await run("suggestions", { action: "accept", id: "s1", unattended: true })).toBe(
+        "Held for the user in Changes: Add “Book the room”. A check failed. Nothing is changed until they accept it.",
+      );
+      expect(calls.find(([c]) => c === "find_decide")![1]).toMatchObject({ id: "s1", unattended: true });
     });
 
     it("names Mark complete for a completed project", async () => {
