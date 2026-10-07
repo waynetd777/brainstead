@@ -50,9 +50,9 @@ export function originLabel(c: ChangeRow): string {
   return c.origin.chat ? "Ask" : "An assistant";
 }
 
-/** A run's name in Changes: "Nightly check", "Ingest of Steerco", "Ask", "Terminal session". */
+/** A run's name in Changes: "Daily check", "Ingest of Steerco", "Ask", "Terminal session". */
 export function runLabel(c: ChangeRow): string {
-  if (c.origin.run?.startsWith("nightly-")) return "Nightly check";
+  if (c.origin.run?.startsWith("daily-check-") || c.origin.run?.startsWith("nightly-")) return "Daily check";
   if (c.origin.kind === "contradiction") return "Contradiction check";
   return originLabel(c);
 }

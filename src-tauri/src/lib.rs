@@ -9,6 +9,7 @@ mod capture;
 mod changes;
 mod contradict;
 mod currentstate;
+mod daily_check;
 mod dataview;
 mod edits;
 mod find;
@@ -18,7 +19,6 @@ mod knowledge;
 mod listnotes;
 mod menu;
 mod nativehost;
-mod nightly;
 mod notes;
 mod platform;
 mod reviews;
@@ -777,11 +777,11 @@ pub fn run() {
             ingest::source_provenance,
             ingest::meeting_transcripts,
             ingest::meeting_draft,
-            nightly::nightly_status,
-            nightly::nightly_stop,
+            daily_check::daily_check_status,
+            daily_check::daily_check_stop,
             reviews::reviews_stop,
             contradict::contradictions_stop,
-            nightly::nightly_run_now,
+            daily_check::daily_check_run_now,
             contradict::contradictions_report,
             contradict::contradictions_run,
             contradict::contradictions_mark,
@@ -1037,7 +1037,7 @@ pub fn run() {
             knowledge::watch_health(app.handle());
             if scene().is_none() {
                 reviews::start_scheduler(app.handle());
-                nightly::start_scheduler(app.handle());
+                daily_check::start_scheduler(app.handle());
                 weekprep::start_scheduler(app.handle());
             }
             Ok(())

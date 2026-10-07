@@ -8086,7 +8086,7 @@ button.hc {
   box-shadow: 0 0 0 1.5px var(--amber);
 }
 
-/* Jobs: a running nightly check's progress */
+/* Jobs: a running daily check's progress */
 .jprog {
   display: flex;
   align-items: center;

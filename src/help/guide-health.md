@@ -3,7 +3,7 @@ title: Knowledge health
 kind: guide
 screens: []
 order: 6
-summary: Keep the wiki in good order: fix the safe issues, decide the rest, settle contradictions and let the nightly check watch for you.
+summary: Keep the wiki in good order: fix the safe issues, decide the rest, settle contradictions and let the daily check watch for you.
 ---
 Keep the wiki accurate and well linked as it grows.
 
@@ -19,5 +19,5 @@ For missing pages, click **Create** or **Link to…**; for possible duplicates, 
 ## Settle contradictions
 Click **Contradictions** in [Knowledge health](app:health)'s top bar, then **Check · changed pages only**. Real contradictions come first. Their fixes are made and listed in [Changes](app:review); mark each one resolved or ignored on the [Contradictions](app:contradictions) screen when you're done.
 
-## Turn on the nightly check
-In [Settings › Jobs & schedule](app:settings/jobs), turn on **Nightly check**. Each night it looks for contradictions in the pages that changed. To have it ingest changed sources again too, turn on **Also refresh pages whose sources changed** in [Settings › AI assistants](app:settings/assistants).
+## Turn on the daily check
+In [Settings › Jobs & schedule](app:settings/jobs), turn on **Daily check**. Each day it looks for contradictions in the pages that changed. To have it ingest changed sources again too, turn on **Also refresh pages whose sources changed** in [Settings › AI assistants](app:settings/assistants).

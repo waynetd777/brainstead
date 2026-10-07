@@ -275,7 +275,7 @@ pub fn run_with_images(
         }
         s
     });
-    // A run that hangs is stopped, so a background job (nightly, contradictions, an ingest) never
+    // A run that hangs is stopped, so a background job (the daily check, contradictions, an ingest) never
     // stays "running".
     let pid = child.id();
     let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();

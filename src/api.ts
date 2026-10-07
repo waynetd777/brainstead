@@ -24,7 +24,7 @@ export interface Settings {
   /** Each list's search results order (by the list's plural noun): best match or latest first. */
   searchOrder?: Record<string, "ranked" | "latest">;
   /** Jobs & schedule: ingest a new source as it arrives (a capture, a file dropped or imported);
-   *  and, in the nightly check, ingest again the sources that changed since pages cited them. */
+   *  and, in the daily check, ingest again the sources that changed since pages cited them. */
   ingestOnArrival?: boolean;
   /** After a meeting note is made: ingest it (default on), then move its transcript to the Trash (default on). */
   meetingIngest?: boolean;
@@ -86,7 +86,7 @@ export interface Settings {
   reviewsHere?: boolean;
   /** "Hold the summaries for me": the daily and weekly summaries wait in Changes instead of being written. */
   reviewsToQueue?: boolean;
-  /** The nightly check (stage 7b) and its local HH:MM. */
+  /** The daily check (stage 7b) and its local HH:MM. */
   nightlyEnabled?: boolean;
   /** The weekly review's preparation runs on schedule (default on). */
   weekprepEnabled?: boolean;
@@ -499,7 +499,7 @@ export interface NoteSpec {
   date: string;
 }
 
-export interface NightlyStatus {
+export interface DailyCheckStatus {
   lastRun: string | null;
   next: string | null;
   running: boolean;
@@ -764,7 +764,7 @@ export interface ChangeOrigin {
   kind: string;
   chat?: string;
   label?: string;
-  /** The run it was part of: an ingest, the nightly check (nightly-…), a summary, a chat. */
+  /** The run it was part of: an ingest, the daily check (daily-check-…, or nightly-… from before it was renamed), a summary, a chat. */
   run?: string;
   /** "scheduled" for a scheduled run, or a terminal session that said it's unattended. */
   trigger?: string;
@@ -925,12 +925,12 @@ export const api = {
   meetingTranscripts: () => invoke<Transcript[]>("meeting_transcripts"),
   /** `unattended` (an assistant nobody is watching): its changes are held when a check fails. */
   meetingDraft: (items: [string, NoteSpec][], unattended = false) => invoke<string[]>("meeting_draft", { items, unattended }),
-  nightlyStatus: () => invoke<NightlyStatus>("nightly_status"),
-  nightlyRunNow: (unattended = false) => invoke<void>("nightly_run_now", { unattended }),
-  nightlyStop: () => invoke<void>("nightly_stop"),
+  dailyCheckStatus: () => invoke<DailyCheckStatus>("daily_check_status"),
+  dailyCheckRunNow: (unattended = false) => invoke<void>("daily_check_run_now", { unattended }),
+  dailyCheckStop: () => invoke<void>("daily_check_stop"),
   reviewsStop: (kind: "daily" | "weekly") => invoke<void>("reviews_stop", { kind }),
   contradictionsStop: () => invoke<void>("contradictions_stop"),
-  onNightlyChanged: (f: () => void): Promise<UnlistenFn> => listen("nightly-changed", () => f()),
+  onDailyCheckChanged: (f: () => void): Promise<UnlistenFn> => listen("daily-check-changed", () => f()),
   contradictionsReport: () => invoke<ContradictionsReport>("contradictions_report"),
   contradictionsRun: (unattended = false) => invoke<boolean>("contradictions_run", { unattended }),
   contradictionsMark: (id: string, verdict: string) => invoke<void>("contradictions_mark", { id, verdict }),

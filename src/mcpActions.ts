@@ -907,10 +907,11 @@ async function startRun(a: Args): Promise<string> {
       noted(`started ingesting ${sources.length} source${sources.length === 1 ? "" : "s"}`);
       return `Ingesting ${sources.join(", ")} (run ${ids.join(", ")}). Its page changes are made and listed in Changes${unattended ? "; any that fail a check are held for the user" : ""}; run_status shows how it's going.`;
     }
+    case "daily_check":
     case "nightly":
-      await api.nightlyRunNow(unattended);
-      noted("started the nightly check");
-      return "The nightly check has started; run_status shows how it's going.";
+      await api.dailyCheckRunNow(unattended);
+      noted("started the daily check");
+      return "The daily check has started; run_status shows how it's going.";
     case "find_tasks":
       await api.findRun();
       noted("started looking for tasks and projects in the notes");
@@ -953,14 +954,16 @@ async function startRun(a: Args): Promise<string> {
       return `Drafting the ${spec.type} note “${spec.name}” for ${spec.date}; it's made in the vault when it's ready (listed in Changes)${then ? `, then ${then}` : ""}.`;
     }
     default:
-      throw new Error("run is ingest, nightly, daily_summary, weekly_summary, weekly_prep, find_tasks, contradictions or meeting_note.");
+      throw new Error(
+        "run is ingest, daily_check, daily_summary, weekly_summary, weekly_prep, find_tasks, contradictions or meeting_note.",
+      );
   }
 }
 
 async function runStatus(): Promise<string> {
-  const [runs, nightly, reviews, prep, find, contra, cs] = await Promise.all([
+  const [runs, check, reviews, prep, find, contra, cs] = await Promise.all([
     api.ingestRuns(),
-    api.nightlyStatus(),
+    api.dailyCheckStatus(),
     api.reviewsStatus(),
     api.weekprepJob(),
     api.findStatus().catch(() => null),
@@ -974,7 +977,7 @@ async function runStatus(): Promise<string> {
   return [
     active.length ? `Ingest running: ${active.map((r) => `${r.source} (${r.status}, run ${r.id})`).join("; ")}` : "No ingest running.",
     `Recent ingests: ${recent.map((r) => `${r.source} — ${r.status}${r.error ? ` (${r.error})` : ""}, ${r.proposals.length} change${r.proposals.length === 1 ? "" : "s"}`).join("; ") || "none"}`,
-    `Nightly check: ${nightly.running ? `running (${nightly.doing}, ${Math.round(nightly.progress * 100)}%)` : `last ${nightly.lastRun ?? "never"}, next ${nightly.next ?? "not scheduled"}`}${nightly.summary ? ` — ${nightly.summary}` : ""}`,
+    `Daily check: ${check.running ? `running (${check.doing}, ${Math.round(check.progress * 100)}%)` : `last ${check.lastRun ?? "never"}, next ${check.next ?? "not scheduled"}`}${check.summary ? ` — ${check.summary}` : ""}`,
     `Daily and weekly summaries: ${reviews.running.length ? `running the ${reviews.running.join(" and ")} summary; ` : ""}next daily ${reviews.next.daily ?? "not scheduled"}, next weekly ${reviews.next.weekly ?? "not scheduled"}`,
     `Weekly review preparation: ${
       prep.running
@@ -1013,14 +1016,14 @@ async function stopRun(a: Args): Promise<string> {
     const id = str(a, "id") ?? (await api.ingestRuns()).find((r) => r.status === "running")?.id;
     if (!id) return "No ingest is running.";
     await api.ingestStop(id);
-  } else if (run === "nightly") await api.nightlyStop();
+  } else if (run === "daily_check" || run === "nightly") await api.dailyCheckStop();
   else if (run === "weekly_prep") await api.weekprepStop();
   else if (run === "contradictions") await api.contradictionsStop();
   else if (run === "find_tasks") await api.findStop();
   else if (run === "write_current_state") await api.currentStateStop();
   else
     throw new Error(
-      "run is ingest, nightly, daily_summary, weekly_summary, weekly_prep, find_tasks, contradictions or write_current_state.",
+      "run is ingest, daily_check, daily_summary, weekly_summary, weekly_prep, find_tasks, contradictions or write_current_state.",
     );
   noted(`stopped the ${run.replace("_", " ")}`);
   return `Stopping the ${run.replace("_", " ")}.`;
@@ -1887,8 +1890,8 @@ const SETTINGS: [string, string, string, SettingKind, unknown][] = [
   ["reviews.weeklyReviewDay", "Jobs & schedule", "Weekly review day", "day", "fri"],
   ["reviews.weeklyReviewTime", "Jobs & schedule", "Weekly review time", "time", "16:00"],
   ["weekprepEnabled", "Jobs & schedule", "Prepare the weekly review", "bool", true],
-  ["nightlyEnabled", "Jobs & schedule", "Nightly check", "bool", false],
-  ["nightlyTime", "Jobs & schedule", "Nightly check time", "time", "02:10"],
+  ["nightlyEnabled", "Jobs & schedule", "Daily check", "bool", false],
+  ["nightlyTime", "Jobs & schedule", "Daily check time", "time", "09:00"],
   ["logDays", "About", "Keep logs for (days: 7, 14, 30 or 90)", "number", 14],
 ];
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];

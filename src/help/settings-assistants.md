@@ -20,7 +20,7 @@ With **Ingest new sources as they arrive** on, an email or chat captured from th
 
 Under **Meeting notes**, **Ingest a meeting note once it's made** and **Then move the transcript to the Trash** (both on) are what happens after a note is written from a transcript. With both off, Brainstead asks after each note.
 
-With **Also refresh pages whose sources changed** on, the nightly check in [Settings › Jobs & schedule](app:settings/jobs) ingests again each source that changed since the pages citing it were written. What it finds is made at once, and a change that fails a check is held for you in [Changes](app:review).
+With **Also refresh pages whose sources changed** on, the daily check in [Settings › Jobs & schedule](app:settings/jobs) ingests again each source that changed since the pages citing it were written. What it finds is made at once, and a change that fails a check is held for you in [Changes](app:review).
 
 ## Suggest a next message
 With **Suggest a next message** on (on by default), after each answer in [Ask](app:ask) a model reads the last few exchanges and offers a follow-up in the message box; `→` types it in. It's one more call to the assistant per answer, using the model set for **Next-message suggestions in Ask** under Models by job.

@@ -2,7 +2,7 @@
 // See LICENSE for the full text.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! The nightly job (stage 7b; Settings › Jobs & schedule): contradictions for the pages that
+//! the daily check (stage 7b; Settings › Jobs & schedule): contradictions for the pages that
 //! changed, `index.md`'s catalogue brought up to date, and the wiki pages not in the page shape
 //! counted. Off until switched on; at the time
 //! set, or on waking when the time passed while asleep or closed (the reviews' "most recent
@@ -18,7 +18,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::vault::VaultService;
 use crate::AppState;
 
-const DEFAULT_TIME: &str = "02:10";
+const DEFAULT_TIME: &str = "09:00";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -62,7 +62,7 @@ fn stopped() -> bool {
 }
 
 #[tauri::command]
-pub fn nightly_stop(app: AppHandle) {
+pub fn daily_check_stop(app: AppHandle) {
     STOP.store(true, std::sync::atomic::Ordering::SeqCst);
     crate::contradict::stop(&app);
 }
@@ -132,7 +132,7 @@ pub struct Status {
 }
 
 #[tauri::command]
-pub fn nightly_status(app: AppHandle) -> Status {
+pub fn daily_check_status(app: AppHandle) -> Status {
     let st = load();
     let (on, t) = settings(&app);
     Status {
@@ -159,7 +159,7 @@ pub fn nightly_status(app: AppHandle) -> Status {
 }
 
 #[tauri::command]
-pub fn nightly_run_now(app: AppHandle, unattended: Option<bool>) {
+pub fn daily_check_run_now(app: AppHandle, unattended: Option<bool>) {
     // An assistant nobody is watching started it: its changes are held when a check fails.
     let trigger = unattended.unwrap_or(false).then_some("scheduled");
     std::thread::spawn(move || run(&app, trigger));
@@ -192,11 +192,11 @@ pub fn start_scheduler(app: &AppHandle) {
     });
 }
 
-/// The nightly check: `trigger` is `scheduled` when the scheduler started it, None for Run now.
+/// The daily check: `trigger` is `scheduled` when the scheduler started it, None for Run now.
 /// Its changes, and those of the ingests and contradiction check it starts, are one group in
 /// Changes.
 fn run(app: &AppHandle, trigger: Option<&str>) {
-    let group = format!("nightly-{}", now().format("%Y%m%d%H%M%S"));
+    let group = format!("daily-check-{}", now().format("%Y%m%d%H%M%S"));
     let mut st = load();
     if st.running {
         return;
@@ -205,13 +205,13 @@ fn run(app: &AppHandle, trigger: Option<&str>) {
     st.doing = "contradictions".into();
     save(&st);
     STOP.store(false, std::sync::atomic::Ordering::SeqCst);
-    let _ = app.emit("nightly-changed", ());
+    let _ = app.emit("daily-check-changed", ());
     let mut did: Vec<String> = Vec::new();
     let step = |name: &str| {
         let mut s = load();
         s.doing = name.into();
         save(&s);
-        let _ = app.emit("nightly-changed", ());
+        let _ = app.emit("daily-check-changed", ());
     };
 
     // Contradictions for what changed.
@@ -232,7 +232,7 @@ fn run(app: &AppHandle, trigger: Option<&str>) {
     // Sources changed since the pages citing them: ingested again, when switched on (Settings ›
     // Jobs & schedule), so the pages catch up. The runs go on in the background, applying or
     // queueing their changes like any ingest. A source is tried once per version: a run that
-    // changed nothing isn't repeated every night.
+    // changed nothing isn't repeated every day.
     let refresh = app.state::<AppState>().settings.lock().unwrap().ui.get("refreshStale").and_then(|v| v.as_bool()).unwrap_or(false);
     if refresh && !stopped() {
         step("refresh");
@@ -285,8 +285,8 @@ fn run(app: &AppHandle, trigger: Option<&str>) {
     st.last_run = Some(now().format("%Y-%m-%dT%H:%M:%S").to_string());
     st.summary = did.join("; ");
     save(&st);
-    let _ = app.emit("nightly-changed", ());
-    let _ = tauri_plugin_notification::NotificationExt::notification(app).builder().title("Nightly check").body(&st.summary).show();
+    let _ = app.emit("daily-check-changed", ());
+    let _ = tauri_plugin_notification::NotificationExt::notification(app).builder().title("Daily check").body(&st.summary).show();
 }
 
 fn plural(n: usize, one: &str) -> String {
@@ -320,7 +320,7 @@ fn index_md(app: &AppHandle, trigger: Option<&str>, group: &str) -> String {
         };
     }
     // First time: the markers and the catalogue added, as an agent change (revertable). Held once:
-    // while it waits in Changes, the next night doesn't hold another.
+    // while it waits in Changes, the next day's run doesn't hold another.
     let held = brainstead_core::changes::Store::new(&crate::platform::data_dir()).list();
     if already_held(&held, "index.md", CATALOGUE_TITLE) {
         return "index.md's catalogue is still held in Changes".into();
@@ -364,7 +364,7 @@ mod tests {
         let changed = vec!["sources/a.pdf".to_string(), "sources/b.md".to_string(), "sources/gone.md".to_string()];
         let v = |p: &str| (p != "sources/gone.md").then(|| format!("v1-{p}"));
         assert_eq!(super::to_refresh(&changed, &mut tried, v), ["sources/a.pdf", "sources/b.md"]);
-        // The next night, nothing has changed: nothing to do.
+        // The next day, nothing has changed: nothing to do.
         assert!(super::to_refresh(&changed, &mut tried, v).is_empty());
         // b changed again; a is no longer stale and is forgotten.
         let v2 = |p: &str| (p == "sources/b.md").then(|| "v2".to_string());
@@ -391,7 +391,7 @@ mod tests {
         };
         assert!(!super::already_held(&[], "index.md", super::CATALOGUE_TITLE));
         assert!(super::already_held(&[mk(Status::Held)], "index.md", super::CATALOGUE_TITLE));
-        // Turned down or reverted: the next night may hold it again.
+        // Turned down or reverted: the next day's run may hold it again.
         assert!(!super::already_held(&[mk(Status::Rejected), mk(Status::Reverted)], "index.md", super::CATALOGUE_TITLE));
         assert!(!super::already_held(&[mk(Status::Held)], "wiki/index.md", super::CATALOGUE_TITLE));
     }

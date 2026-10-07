@@ -3,7 +3,7 @@ title: Settings › Jobs & schedule
 kind: screen
 screens: [settings/jobs]
 order: 34
-summary: The weekly review's day and time and its preparation, the scheduled daily and weekly summaries, the nightly check, and recent runs.
+summary: The weekly review's day and time and its preparation, the scheduled daily and weekly summaries, the daily check, and recent runs.
 ---
 The page has two parts. **Your weekly review** is something you do: the guided review of your week. **Summaries Brainstead writes** are done for you: an assistant writes what you did each day and each week. The weekly summary is shown beside your weekly review's steps.
 
@@ -29,10 +29,10 @@ Until it's on, the **Daily summary** and **Weekly summary** rows are greyed, and
 With **Hold the summaries for me** on, each one is held in [Changes](app:review) until you accept it. With it off, they're written straight away, undoable in Recent runs and revertable in Changes. A scheduled one that fails a check (the note is open with unsaved edits, or the vault is read-only) is held in Changes instead. One that would change the note's system-note header is always held.
 
 ## Run a job now or stop it
-**Run now** runs one whether or not it's scheduled, and opens its chat in [Ask](app:ask). The daily summary covers yesterday; click the day after **for** to pick an earlier one in the date picker, and **×** to go back to yesterday. A dated note, such as a meeting note, counts on its own date, not the day it was written up. While a job runs its button becomes **Stop**. Stopping the nightly check keeps what it has read so far for next time.
+**Run now** runs one whether or not it's scheduled, and opens its chat in [Ask](app:ask). The daily summary covers yesterday; click the day after **for** to pick an earlier one in the date picker, and **×** to go back to yesterday. A dated note, such as a meeting note, counts on its own date, not the day it was written up. While a job runs its button becomes **Stop**. Stopping the daily check keeps what it has read so far for next time.
 
-## Check the wiki every night
-**Nightly check** (02:10 unless you change it) checks the wiki pages that changed since the last run for contradictions, making the fixes (held in [Changes](app:review) when a check fails), and brings the list of pages in `index.md` up to date. A bar shows its progress while it runs.
+## Check the wiki every day
+**Daily check** (09:00 unless you change it) checks the wiki pages that changed since the last run for contradictions, making the fixes (held in [Changes](app:review) when a check fails), and brings the list of pages in `index.md` up to date. A bar shows its progress while it runs.
 
 To have it also ingest again the sources that changed, and to ingest new sources as they arrive, use the **Ingest** switches in [Settings › AI assistants](app:settings/assistants).
 

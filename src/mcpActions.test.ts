@@ -289,9 +289,9 @@ describe("MCP actions", () => {
     ]);
     // Every run is told when nobody's watching, not only an ingest.
     answers.contradictions_run = () => true;
-    await run("run.start", { run: "nightly", unattended: true });
+    await run("run.start", { run: "daily_check", unattended: true });
     await run("run.start", { run: "contradictions", unattended: true });
-    expect(calls.filter(([c]) => c === "nightly_run_now" || c === "contradictions_run").map(([, a]) => a)).toEqual([
+    expect(calls.filter(([c]) => c === "daily_check_run_now" || c === "contradictions_run").map(([, a]) => a)).toEqual([
       { unattended: true },
       { unattended: true },
     ]);
@@ -586,7 +586,7 @@ describe("MCP actions", () => {
 
     it("reads and changes the settings it's allowed, never Read-only", async () => {
       answers.settings_write = (a) => a!.settings;
-      expect(await run("settings")).toMatch(/nightlyTime · Settings › Jobs & schedule › Nightly check time: "02:10"/);
+      expect(await run("settings")).toMatch(/nightlyTime · Settings › Jobs & schedule › Daily check time: "09:00"/);
       expect(await run("settings", { action: "set", key: "nightlyTime", value: "03:30" })).toMatch(/is now "03:30"/);
       await run("settings", { action: "set", key: "reviews.weeklyReviewDay", value: "Thursday" });
       expect(await run("settings")).toMatch(/Weekly review day: "thu"/);

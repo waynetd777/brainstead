@@ -28,7 +28,7 @@ These happen at once with no `⌘Z`, and only when you ask:
 - Tasks' saved lists: save one or remove one.
 - Settings: read them, or change one, such as a job's time or a switch. The vault, **Read-only** and the folders left out are yours to change.
 - Find tasks and projects' suggestions: accept one (it's made as a change in [Changes](app:review), with Revert) or skip it.
-- Runs, with their progress and Stop: an ingest (notes, PDFs, Office files and images), the daily or weekly summary, the weekly review's preparation, the nightly check, Find tasks and projects, a contradictions check, a meeting note from a transcript, Knowledge health's **Write Current state**, bookmark triage, a drafted reply (never sent) and a doc check. They use the models set in [Settings › AI assistants](app:settings/assistants). What a run changes in the vault is listed in Changes.
+- Runs, with their progress and Stop: an ingest (notes, PDFs, Office files and images), the daily or weekly summary, the weekly review's preparation, the daily check, Find tasks and projects, a contradictions check, a meeting note from a transcript, Knowledge health's **Write Current state**, bookmark triage, a drafted reply (never sent) and a doc check. They use the models set in [Settings › AI assistants](app:settings/assistants). What a run changes in the vault is listed in Changes.
 
 ## Tasks, the Inbox, projects and prose
 These are made at once too, and each is listed in [Changes](app:review), where you can revert it (and `⌘Z` undoes it straight after):

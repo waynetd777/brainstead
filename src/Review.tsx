@@ -68,7 +68,7 @@ const day = (iso: string) => {
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-/** A run's band: "Nightly check, 5 Oct: 6 changes to 4 pages". */
+/** A run's band: "Daily check, 5 Oct: 6 changes to 4 pages". */
 export function runHeading(label: string, rows: ChangeRow[]): string {
   const pages = new Set(rows.map((r) => r.page)).size;
   const first = rows[rows.length - 1];

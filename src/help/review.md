@@ -10,7 +10,7 @@ Assistants and Brainstead's runs change the vault themselves, and every change t
 ## What's made at once, and what's held
 A change you started is made at once: something you asked for in Ask or in a terminal session using Brainstead's tools, or a run you started by hand (Ingest, **Run now**, **Draft the note**, a Knowledge health fix, **File this answer**, a bookmark made into a wiki page, a link from the weekly review). If one of its checks fails, it's still made, and flagged so you can look.
 
-A change from a scheduled run is made at once when it passes every check, and held for you otherwise. Scheduled runs are the nightly check (with the ingests and contradiction check it starts) and the daily and weekly summaries when they run on their own. A terminal session nobody is watching, such as a loop, can say so, and its changes are then treated the same way.
+A change from a scheduled run is made at once when it passes every check, and held for you otherwise. Scheduled runs are the daily check (with the ingests and contradiction check it starts) and the daily and weekly summaries when they run on their own. A terminal session nobody is watching, such as a loop, can say so, and its changes are then treated the same way.
 
 The checks:
 - A quote isn't found in its source, or the change rests on text read from an image.
@@ -29,7 +29,7 @@ Assistants' task, Inbox and project edits are listed here too, and held by the s
 To have the summaries always held for you, turn on **Hold the summaries for me** in [Settings › Jobs & schedule](app:settings/jobs).
 
 ## Read the feed
-The feed groups changes by run, newest first: "Nightly check, 5 Oct: 6 changes to 4 pages", an ingest, an Ask chat. Each row shows the title, the page, where it came from, the model and how long ago, with **Flagged**, **Reverted** or a kind such as **New page** or **Task**. Press `J` and `K` to move between changes.
+The feed groups changes by run, newest first: "Daily check, 5 Oct: 6 changes to 4 pages", an ingest, an Ask chat. Each row shows the title, the page, where it came from, the model and how long ago, with **Flagged**, **Reverted** or a kind such as **New page** or **Task**. Press `J` and `K` to move between changes.
 
 On the right, the change is shown as a diff under its section: removed lines, then added lines, with a little unchanged text either side. Any flags are listed above it. **What it rests on** lists the quotes behind it, each marked **Found in the source**, **Not found in the source**, or **Not checked** for a file Brainstead can't read. Click a quote's source to open it, or **Open the page**.
 

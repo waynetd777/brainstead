@@ -115,7 +115,7 @@ def make_demo():
     settings = {"vaultPath": str(vault), "excluded": ["archived"], "readOnly": True, "theme": "system"}
     (DEMO / "data" / "settings.json").write_text(json.dumps(settings, indent=2))
     # A few agent changes in Changes (src-tauri/core/src/changes.rs), from the texts in proposals/
-    # (made by the MCP server against the fixture vault): one held from the nightly check, the rest
+    # (made by the MCP server against the fixture vault): one held from the daily check, the rest
     # made from a chat.
     demo_changes(DEMO / "data" / "changes", vault)
     # An email thread from the Outlook extension, waiting in the Inbox.
@@ -265,7 +265,7 @@ def demo_changes(out, vault):
         p = json.loads(f.read_text())
         c = {k: p[k] for k in ("id", "created", "model", "page", "kind", "title", "reason", "quotes", "warnings") if k in p}
         if p["id"] in held:
-            c["origin"] = {"kind": "ingest", "label": "Ingest of Steerco minutes", "run": "nightly-demo", "trigger": "scheduled"}
+            c["origin"] = {"kind": "ingest", "label": "Ingest of Steerco minutes", "run": "daily-check-demo", "trigger": "scheduled"}
             # Its changed lines as find and replace, as from_texts makes them, so it runs on the page as it is.
             pairs = [(a, b) for a, b in zip(p["before"].split("\n"), p["after"].split("\n"), strict=False) if a != b and a.strip()]
             c["instruction"] = {"op": "replace", "edits": [{"find": a, "replace": b} for a, b in pairs[:1]]}

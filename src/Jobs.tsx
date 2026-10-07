@@ -8,7 +8,7 @@
 // can be undone while the file is as the run left it.
 
 import { useEffect, useState } from "react";
-import { api, NightlyStatus, ReviewRun, ReviewSchedule, ReviewsStatus, Weekday, WeekPrepJob } from "./api";
+import { api, DailyCheckStatus, ReviewRun, ReviewSchedule, ReviewsStatus, Weekday, WeekPrepJob } from "./api";
 import { Icon } from "./icons";
 import { openReviewRun, selectReviewRun } from "./askState";
 import { nav } from "./nav";
@@ -242,7 +242,7 @@ export function Jobs() {
         schedule is on.
       </p>
       <AutomatedTools />
-      <Nightly />
+      <DailyCheck />
       {!!st?.runs.length && (
         <section className="sgroup">
           <h2 className="h3">Recent runs</h2>
@@ -405,9 +405,9 @@ function WeekPrep({ here }: { here: boolean }) {
 }
 
 /** HH:MM, 24-hour. Saved when it's a valid time. */
-/** How far the nightly check has got; a bar that just moves when the app can't say (a build from
+/** How far the daily check has got; a bar that just moves when the app can't say (a build from
  *  before the step was reported). */
-function NightlyProgress({ doing, progress }: { doing?: string; progress?: number }) {
+function DailyCheckProgress({ doing, progress }: { doing?: string; progress?: number }) {
   const known = typeof progress === "number" && Number.isFinite(progress) && progress > 0;
   const pct = known ? Math.round(progress * 100) : 0;
   return (
@@ -426,18 +426,18 @@ function NightlyProgress({ doing, progress }: { doing?: string; progress?: numbe
   );
 }
 
-/** The nightly check: contradictions in the pages that changed, and the list of pages in index.md. */
-function Nightly() {
+/** The daily check: contradictions in the pages that changed, and the list of pages in index.md. */
+function DailyCheck() {
   const s = useStore(settings);
-  const [st, setSt] = useState<NightlyStatus | null>(null);
+  const [st, setSt] = useState<DailyCheckStatus | null>(null);
   const load = () =>
     void api
-      .nightlyStatus()
+      .dailyCheckStatus()
       .then(setSt)
       .catch(() => {});
   useEffect(() => {
     load();
-    const off = api.onNightlyChanged(() => load()).catch(() => () => {});
+    const off = api.onDailyCheckChanged(() => load()).catch(() => () => {});
     // Its contradiction step reports each batch.
     const off2 = api.onContradictionsChanged(() => load()).catch(() => () => {});
     return () => {
@@ -451,7 +451,7 @@ function Nightly() {
       <div className="card">
         <div className={`job ${on ? "" : "off"}`}>
           <div className="t">
-            <div className="pt">Nightly check</div>
+            <div className="pt">Daily check</div>
             <div className="faint small">
               {st?.running
                 ? "Running now…"
@@ -464,8 +464,8 @@ function Nightly() {
             </div>
           </div>
           <label className="jtime">
-            <span className="muted">Every night at</span>
-            <TimeField value={s.nightlyTime ?? "02:10"} onChange={(t) => settings.update({ nightlyTime: t })} label="Nightly check time" />
+            <span className="muted">Every day at</span>
+            <TimeField value={s.nightlyTime ?? "09:00"} onChange={(t) => settings.update({ nightlyTime: t })} label="Daily check time" />
           </label>
           <button
             type="button"
@@ -473,15 +473,15 @@ function Nightly() {
             title={
               st?.running
                 ? "Stop the check; what it has read so far is kept for next time"
-                : "Run the nightly check now: look for contradictions and update index.md"
+                : "Run the daily check now: look for contradictions and update index.md"
             }
-            onClick={() => void (st?.running ? api.nightlyStop() : api.nightlyRunNow()).then(load)}
+            onClick={() => void (st?.running ? api.dailyCheckStop() : api.dailyCheckRunNow()).then(load)}
           >
             {st?.running ? "Stop" : "Run now"}
           </button>
-          <Switch label="Nightly check" on={on} onChange={(v) => settings.update({ nightlyEnabled: v })} />
+          <Switch label="Daily check" on={on} onChange={(v) => settings.update({ nightlyEnabled: v })} />
         </div>
-        {st?.running && <NightlyProgress doing={st.doing} progress={st.progress} />}
+        {st?.running && <DailyCheckProgress doing={st.doing} progress={st.progress} />}
         <p className="faint small pad">
           Checks the wiki pages that changed since the last run for contradictions, making the fixes (held in Changes when a check fails),
           and brings the list of pages in index.md up to date. It can also refresh pages whose sources changed: see Ingest in Settings › AI

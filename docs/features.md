@@ -10,7 +10,7 @@ The user guide to Brainstead, a Mac app for tasks, notes and a wiki over one fol
 | [Notes](notes.md) | View, Edit and Source, saving and drafts, queries and callouts, templates, search and ⌘K, the Trash |
 | [The wiki and sources](wiki.md) | Sources and the browser extensions, ingest, Changes, wiki pages, Knowledge health, contradictions, meeting notes and the other tools |
 | [Ask and assistants](ask.md) | Chats with Claude Code, Codex, Copilot and Antigravity, what an assistant can do, Brainstead's tools in Terminal |
-| [Day to day](day-to-day.md) | The menu bar, the daily and weekly summaries and the nightly check, help, Settings, and what happens in the background |
+| [Day to day](day-to-day.md) | The menu bar, the daily and weekly summaries and the daily check, help, Settings, and what happens in the background |
 
 ## Requirements
 

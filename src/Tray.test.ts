@@ -27,7 +27,7 @@ describe("the menu-bar window", () => {
     });
     expect(trayStatus({ ...base, inbox: 1 })).toMatchObject({ headline: "Things need you", attention: true });
     // A run going takes the headline and makes the icon busy.
-    const busy = trayStatus({ ...base, inbox: 4, running: [run("Ingesting Steerco minutes"), run("Running the nightly check")] });
+    const busy = trayStatus({ ...base, inbox: 4, running: [run("Ingesting Steerco minutes"), run("Running the daily check")] });
     expect(busy).toEqual({ headline: "2 runs going", busy: true, attention: true });
   });
 

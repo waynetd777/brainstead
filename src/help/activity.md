@@ -16,7 +16,7 @@ Click a day to filter the log to it. A card above the log then lists the files t
 On the right, **Notes by type** and **Notes by tag** are pie charts of your notes: the five most common types or tags, then the rest as one slice. The legend beside each names every slice with its count and share. Click a slice or its row (other than the "other tags" one) to see those notes: a type opens [Notes](app:notes) filtered to it, a tag searches for it. **Most linked** lists the notes and wiki pages the most other files link to, with how many; click one to open it.
 
 ## Read the log
-The log lists every change Brainstead makes to the vault: ingests, assistants' changes, Knowledge health fixes, the daily and weekly summaries, name fixes and the nightly catalogue update. Your own edits, captures and dropped files aren't logged.
+The log lists every change Brainstead makes to the vault: ingests, assistants' changes, Knowledge health fixes, the daily and weekly summaries, name fixes and the daily check's catalogue update. Your own edits, captures and dropped files aren't logged.
 
 Entries are banded by day, each band with its count; click a band to show that day. An entry's title opens its page when it names one, and hovering the entry shows its description.
 

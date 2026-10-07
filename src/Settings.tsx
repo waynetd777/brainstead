@@ -949,7 +949,7 @@ function Assistants() {
             <div className="t">
               <div className="pt">Also refresh pages whose sources changed</div>
               <div className="faint">
-                The nightly check (Settings › Jobs &amp; schedule) ingests again each source that changed since the pages citing it were
+                The daily check (Settings › Jobs &amp; schedule) ingests again each source that changed since the pages citing it were
                 written; the wiki is updated at once, and a change that fails a check is held for you in Changes.
               </div>
             </div>

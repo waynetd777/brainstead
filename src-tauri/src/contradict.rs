@@ -2,8 +2,8 @@
 // See LICENSE for the full text.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Contradictions between wiki pages (stage 7b), run from the report screen or by the nightly
-//! job: pages not yet read are read into claims by the model (cached by their content), code
+//! Contradictions between wiki pages (stage 7b), run from the report screen or by the daily check:
+//! pages not yet read are read into claims by the model (cached by their content), code
 //! finds the clashes, the model judges only the ones not judged before, and a contradiction with
 //! a known fix is made as an agent change (held in Changes when a check fails).
 
@@ -27,7 +27,7 @@ static RUNNING: AtomicBool = AtomicBool::new(false);
 /// Asked to stop: the run ends at its next batch, and the model call going now is cancelled.
 static STOP: AtomicBool = AtomicBool::new(false);
 
-/// Stops a run that's going (Stop, on its screen or the nightly check's).
+/// Stops a run that's going (Stop, on its screen or the daily check's).
 pub fn stop(app: &AppHandle) {
     if RUNNING.load(Ordering::SeqCst) {
         STOP.store(true, Ordering::SeqCst);
@@ -126,7 +126,7 @@ pub fn start(app: &AppHandle, trigger: Option<&'static str>) -> bool {
     true
 }
 
-/// Runs a check here and now (the nightly job's way, `scheduled` when it was, its changes in the
+/// Runs a check here and now (the daily check's way, `scheduled` when it was, its changes in the
 /// job's `group`); None when one is going already.
 pub fn run_now(app: &AppHandle, trigger: Option<&str>, group: Option<&str>) -> Option<Last> {
     if RUNNING.swap(true, Ordering::SeqCst) {

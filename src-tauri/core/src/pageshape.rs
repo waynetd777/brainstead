@@ -1252,7 +1252,7 @@ pub fn with_section(rel: &str, page: &str, heading: &str, content: &str) -> Resu
     crate::proposals::patched(&page, &crate::proposals::Patch::Section { section: h.to_string(), content: content.to_string() })
 }
 
-/// The nightly check's line on the page shape: how many pages aren't in it, and how many of those
+/// The daily check's line on the page shape: how many pages aren't in it, and how many of those
 /// Reshape pages can do by itself.
 pub fn drift_line(results: &[PageResult]) -> String {
     let out: Vec<&PageResult> = results.iter().filter(|r| !r.in_shape).collect();

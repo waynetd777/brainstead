@@ -132,11 +132,11 @@ pub struct Run {
     /// Its changes' ids (in Changes), applied or held.
     #[serde(default)]
     pub proposals: Vec<String>,
-    /// `scheduled` when the nightly check (or an unattended session) started it; None when the
+    /// `scheduled` when the daily check (or an unattended session) started it; None when the
     /// user did.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trigger: Option<String>,
-    /// The run it's part of in Changes (the nightly check's); its own id when None.
+    /// The run it's part of in Changes (the daily check's); its own id when None.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
     #[serde(default)]
@@ -281,7 +281,7 @@ pub fn ingest_stop(app: AppHandle, id: String) {
 }
 
 /// The runs waiting, and whether a worker is taking them: every ingest and meeting note goes
-/// through this one queue, whoever asked (a screen, an assistant, the nightly check), so two
+/// through this one queue, whoever asked (a screen, an assistant, the daily check), so two
 /// never change the same page at once (D-20261006-05).
 static QUEUE: Mutex<(Vec<Run>, bool)> = Mutex::new((Vec::new(), false));
 
@@ -622,7 +622,7 @@ fn steps(app: &AppHandle, r: &mut Run, stopped: &dyn Fn(&Run) -> bool) -> Result
     })?;
 
     // 6. Made, or held: by the rule for agent changes (src/changes.rs). Started by the user, they're
-    // applied and flagged where a check failed; from the nightly check, a change that fails a
+    // applied and flagged where a check failed; from the daily check, a change that fails a
     // check is held in Changes.
     let on_disk = on_disk.filter(|t| !matches!(&source.text, SourceText::Text(now) if now == t)).map(|t| proposals::normalise_quote(&t));
     step(app, r, 5, |r| {

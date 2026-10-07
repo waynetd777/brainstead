@@ -5,7 +5,7 @@
 // Ingest runs (stage 7b): started from the Sources screen or a note's menu, one source at a time
 // in the background. Each run shows its steps as they go (read, correct names, find the pages,
 // draft, check the quotes, make the changes), can be stopped, and ends with its changes made and
-// listed in Changes (a run from the nightly check holds the ones that fail a check).
+// listed in Changes (a run from the daily check holds the ones that fail a check).
 
 import { useEffect, useState } from "react";
 import { api, IngestRun } from "./api";

@@ -63,7 +63,7 @@ pub struct Origin {
     /// `daily-review …` before the rename), which the window shows as "Daily summary 2026-10-02".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    /// The run it was part of, for Changes' groups: an ingest, the nightly check, a summary.
+    /// The run it was part of, for Changes' groups: an ingest, the daily check, a summary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run: Option<String>,
     /// `scheduled` for a scheduled run, or a terminal session that said it's unattended; else

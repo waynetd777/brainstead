@@ -4,7 +4,7 @@
 
 //! `index.md`'s catalogue of the wiki (§7 skill verdicts: "regenerated catalogue, kept current"):
 //! every entity, concept and summary page with its description, by kind, between
-//! `<!-- brainstead:index -->` markers so the rest of the file stays the user's. The nightly job
+//! `<!-- brainstead:index -->` markers so the rest of the file stays the user's. the daily check
 //! brings it up to date; adding the markers the first time is a proposal.
 
 use std::path::Path;

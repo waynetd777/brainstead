@@ -73,7 +73,7 @@ describe("changes", () => {
     expect(held(rows).map((r) => r.id)).toEqual(["a"]);
     const g = byRun(rows);
     expect(g.map((x) => [x.group, x.label, x.rows.length])).toEqual([
-      ["nightly-1", "Nightly check", 2],
+      ["nightly-1", "Daily check", 2],
       ["Chat. Launch.md", "Ask", 1],
     ]);
   });

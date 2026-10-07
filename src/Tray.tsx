@@ -11,7 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, IngestRun, NightlyStatus, ReviewsStatus, TaskRow } from "./api";
+import { api, IngestRun, DailyCheckStatus, ReviewsStatus, TaskRow } from "./api";
 import { CaptureBox } from "./Capture";
 import { unclarified } from "./Inbox";
 import { Icon, Mark } from "./icons";
@@ -76,7 +76,7 @@ const when = (iso: string | null) => {
     : `${d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })} at ${time}`;
 };
 
-function runningOf(ingests: IngestRun[], nightly: NightlyStatus, reviews: ReviewsStatus, contradictions: boolean): Running[] {
+function runningOf(ingests: IngestRun[], dailyCheck: DailyCheckStatus, reviews: ReviewsStatus, contradictions: boolean): Running[] {
   const out: Running[] = [];
   for (const r of ingests.filter((x) => x.status === "running" || x.status === "queued")) {
     const steps = r.steps.length;
@@ -89,13 +89,13 @@ function runningOf(ingests: IngestRun[], nightly: NightlyStatus, reviews: Review
       stop: () => api.ingestStop(r.id),
     });
   }
-  if (nightly.running)
+  if (dailyCheck.running)
     out.push({
-      key: "nightly",
-      label: "Running the nightly check",
-      doing: nightly.doing,
-      progress: nightly.progress,
-      stop: () => api.nightlyStop(),
+      key: "daily-check",
+      label: "Running the daily check",
+      doing: dailyCheck.doing,
+      progress: dailyCheck.progress,
+      stop: () => api.dailyCheckStop(),
     });
   for (const k of reviews.running)
     out.push({
@@ -117,12 +117,12 @@ function runningOf(ingests: IngestRun[], nightly: NightlyStatus, reviews: Review
 }
 
 async function load(): Promise<TrayData> {
-  const [tasks, inbox, changes, ingests, nightly, reviews, contra] = await Promise.all([
+  const [tasks, inbox, changes, ingests, dailyCheck, reviews, contra] = await Promise.all([
     api.tasksAll().catch(() => null as TaskRow[] | null),
     api.inboxList().catch(() => null),
     api.changesList().catch(() => null),
     api.ingestRuns().catch(() => []),
-    api.nightlyStatus().catch(() => ({ running: false }) as NightlyStatus),
+    api.dailyCheckStatus().catch(() => ({ running: false }) as DailyCheckStatus),
     api.reviewsStatus().catch(() => ({ runs: [], next: { daily: null, weekly: null }, running: [] }) as ReviewsStatus),
     api.contradictionsReport().catch(() => null),
   ]);
@@ -141,7 +141,7 @@ async function load(): Promise<TrayData> {
     waiting: tasks ? (waitingView ? viewRows(tasks, waitingView, today).filter((r) => !deferredPast(r, today)).length : 0) : null,
     inbox: inbox && inbox.filter(unclarified).length,
     held: changes && changes.filter((c) => c.status === "held").length,
-    running: runningOf(ingests, nightly, reviews, !!contra?.last?.running),
+    running: runningOf(ingests, dailyCheck, reviews, !!contra?.last?.running),
     nextReview: next ? `${next[1]} ${when(next[0])}` : null,
   };
 }
@@ -185,8 +185,8 @@ function Item({
 export function TrayWindow() {
   const [d, setD] = useState<TrayData | null>(null);
   const [capKey, setCapKey] = useState(0);
-  // The nightly check started from here: "starting", "started", or the error.
-  const [nightly, setNightly] = useState<string | null>(null);
+  // The daily check started from here: "starting", "started", or the error.
+  const [dailyCheck, setDailyCheck] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const readOnly = !!useStore(settings).readOnly;
   // Open at login: null where macOS can't manage it for this copy of the app (`make dev`).
@@ -221,14 +221,14 @@ export function TrayWindow() {
           applyTheme(s.theme);
         });
         setCapKey((k) => k + 1);
-        setNightly(null);
+        setDailyCheck(null);
         refresh();
       }),
       api.onVaultChanged(() => refresh()),
       api.onChangesChanged(() => refresh()),
       // Runs starting and stopping, so the rows and the icon's dots don't wait for the poll.
       api.onIngestChanged(() => refresh()),
-      api.onNightlyChanged(() => refresh()),
+      api.onDailyCheckChanged(() => refresh()),
       api.onReviewsChanged(() => refresh()),
       api.onContradictionsChanged(() => refresh()),
       api.onLoginItemChanged(setLogin),
@@ -373,24 +373,24 @@ export function TrayWindow() {
         <Item
           icon="health"
           label={
-            nightly === "starting"
-              ? "Starting the nightly check…"
-              : nightly === "started"
-                ? "Nightly check started"
-                : "Run the nightly check now"
+            dailyCheck === "starting"
+              ? "Starting the daily check…"
+              : dailyCheck === "started"
+                ? "Daily check started"
+                : "Run the daily check now"
           }
           keepOpen
           onClick={() => {
-            if (nightly === "starting") return;
-            setNightly("starting");
+            if (dailyCheck === "starting") return;
+            setDailyCheck("starting");
             void api
-              .nightlyRunNow()
-              .then(() => setNightly("started"))
-              .catch((e) => setNightly(`Couldn't start it: ${String(e)}`))
+              .dailyCheckRunNow()
+              .then(() => setDailyCheck("started"))
+              .catch((e) => setDailyCheck(`Couldn't start it: ${String(e)}`))
               .finally(refresh);
           }}
         />
-        {nightly && nightly !== "starting" && nightly !== "started" && <div className="tray-err small">{nightly}</div>}
+        {dailyCheck && dailyCheck !== "starting" && dailyCheck !== "started" && <div className="tray-err small">{dailyCheck}</div>}
         <div className="tray-rule" />
         <Item icon="settings" label="Settings…" keys="⌘," onClick={() => show("settings")} />
         <Item icon="x" label="Quit Brainstead" keys="⌘Q" onClick={() => void invoke("tray_quit")} />

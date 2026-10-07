@@ -1,6 +1,6 @@
 # Day to day
 
-Brainstead keeps working while its window is closed: Quick capture, captures from the browser, the daily and weekly summaries and the nightly check all run from the menu bar.
+Brainstead keeps working while its window is closed: Quick capture, captures from the browser, the daily and weekly summaries and the daily check all run from the menu bar.
 
 [The menu bar](#the-menu-bar) · [Summaries and jobs](#summaries-and-jobs) · [Help](#help) · [Settings](#settings) · [In the background](#in-the-background)
 
@@ -14,21 +14,21 @@ Brainstead's icon in the menu bar shows three dots while a run is going, and a d
 - A capture box, the same as Quick capture.
 - Each run that's going, with its progress and **Stop**.
 - Changes held for you and items in the Inbox, each opening its screen.
-- **Open Brainstead** (⌘O), **Today** (⌘T), **Ask** (⌘J), **Run the nightly check now**, **Settings…** (⌘,) and **Quit Brainstead** (⌘Q).
+- **Open Brainstead** (⌘O), **Today** (⌘T), **Ask** (⌘J), **Run the daily check now**, **Settings…** (⌘,) and **Quit Brainstead** (⌘Q).
 
 With **Open at login** (in Settings › General or the menu-bar window) and **Only in the menu bar when the window is closed** on in Settings › General, Brainstead starts when you log in and lives in the menu bar, out of the Dock until you open its window.
 
 ## Summaries and jobs
 
-<a href="images/index.md#day-to-day"><picture><source media="(prefers-color-scheme: dark)" srcset="images/settings-jobs-dark.png"><img alt="Settings › Jobs & schedule: the daily and weekly summaries, the nightly check and recent runs" src="images/settings-jobs-light.png"></picture></a>
+<a href="images/index.md#day-to-day"><picture><source media="(prefers-color-scheme: dark)" srcset="images/settings-jobs-dark.png"><img alt="Settings › Jobs & schedule: the daily and weekly summaries, the daily check and recent runs" src="images/settings-jobs-light.png"></picture></a>
 
 In Settings › Jobs & schedule:
 
 - **Daily summary** and **Weekly summary**: Brainstead gathers the day's or week's notes, tasks and Claude Code sessions, and a model writes the summary from them. A note with a day in its name, such as a meeting note, counts on that day, however late it was written up. **Run now** can write a past day's summary again (pick the day in **for**). (The weekly summary isn't the Weekly review screen, which you go through yourself.) Brainstead puts it at the top of the month's summaries note, undoable, or holds it for you in Changes first (**Hold the summaries for me**). Each runs as a chat in Ask, in a tab marked with a calendar.
 - **Prepare the weekly review**: on the review day, 4 hours before the review, a model reads the week and suggests actions for each step of the [weekly review](tasks.md); nothing changes until you accept one. It has its own switch, Run now and Stop, and runs on schedule only while Brainstead runs the summaries.
 - To use them, turn on **Brainstead runs the daily and weekly summaries**, and switch them off in any other app that writes them.
-- **Nightly check**: contradictions in the wiki pages that changed, the list of pages in `index.md` brought up to date, and a count of the wiki pages edited out of the page shape (for Knowledge health's Reshape pages); optionally re-ingesting sources that changed (a switch under Ingest in Settings › AI assistants).
-- **Recent runs**, with **Open**, **Show** and **Undo**; the Daily, Weekly and Nightly rows have **Stop** while one runs.
+- **Daily check**: contradictions in the wiki pages that changed, the list of pages in `index.md` brought up to date, and a count of the wiki pages edited out of the page shape (for Knowledge health's Reshape pages); optionally re-ingesting sources that changed (a switch under Ingest in Settings › AI assistants).
+- **Recent runs**, with **Open**, **Show** and **Undo**; the Daily, Weekly and Daily check rows have **Stop** while one runs.
 
 The summaries split what you did into **Work done** and **Personal** by your projects' areas: a project with the area Personal is personal, any other area is work, done projects included. Brainstead lists the projects and their areas in the summary's inputs and marks each Claude Code session whose folder is named after a project (letters and digits compared, so `orbit-app` is Orbit App).
 
