@@ -10,7 +10,7 @@ The build plan that took Brainstead through its ten stages is complete and kept 
 |---|---|
 | `make dev` | Run the app with hot reload (Vite on localhost:1440) |
 | `make help` | List the targets |
-| `make check` | The core's, the MCP server's and the app's Rust tests, the TypeScript check, Vitest, then `make lint` |
+| `make check` | The core's, the MCP server's and the app's Rust tests and Clippy, the TypeScript check, ESLint, Vitest, and the formatting and repo checks, side by side (`tools/check.py`; `python3 tools/check.py rust` runs one group). Cargo builds into `src-tauri/target/check`, so a running `make dev` doesn't hold it up; a warm run takes about 15 s, the first a few minutes |
 | `make test` | The same as `make check` |
 | `make lint` | rustfmt, Clippy (warnings are errors), Prettier, ESLint, stylelint, ruff, a licence header on every source file and a tooltip on every button; checks only |
 | `make fmt` | Reformat everything, and add the licence header where it's missing |

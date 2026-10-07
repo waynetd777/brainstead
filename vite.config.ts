@@ -24,6 +24,11 @@ export default defineConfig(() => ({
   },
   test: {
     environment: "jsdom",
+    // One jsdom per worker rather than per test file, each file still in its own context: 15 s to 5 s.
+    pool: "vmThreads",
+    setupFiles: ["src/testSetup.ts"],
+    // As for waitFor (src/testSetup.ts): room for a busy machine.
+    testTimeout: 20_000,
     include: ["src/**/*.test.{ts,tsx}", "extensions/**/*.test.js"],
   },
 }));

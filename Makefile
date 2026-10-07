@@ -18,16 +18,13 @@ export APPLE_SIGNING_IDENTITY := $(if $(SIGN_ID),$(SIGN_ID),-)
 
 .PHONY: check test lint fmt app install-app dmg dev icons sign-check screenshots evals help
 
-## cargo test (the core, the MCP server and the app), TypeScript type-check, Vitest, then make lint.
+## cargo test and Clippy, the TypeScript type-check and ESLint, Vitest, and the formatting and repo checks: side by side (tools/check.py), cargo in its own target folder so make dev doesn't hold it up.
 check:
-	cd src-tauri && cargo test -p brainstead-core && cargo test -p brainstead-mcp && cargo test --lib -p brainstead
-	npx tsc --noEmit -p tsconfig.json
-	npx vitest run
-	@$(MAKE) --no-print-directory lint
+	@python3 tools/check.py
 
 ## Formatting (rustfmt, Prettier, ruff), Clippy, ESLint, stylelint, ruff, the licence headers and every button's tooltip, all checked, nothing changed.
 lint:
-	cd src-tauri && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
+	cd src-tauri && cargo fmt --all --check && CARGO_TARGET_DIR=target/check cargo clippy --workspace --all-targets -- -D warnings
 	npx prettier --check .
 	npx eslint .
 	npx stylelint "src/**/*.css"

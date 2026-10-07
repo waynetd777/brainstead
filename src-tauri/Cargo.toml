@@ -83,3 +83,7 @@ opt-level = 2
 # rerun takes seconds in the dev build (7 s against 1 s on a 2,000-file vault).
 [profile.dev.package.brainstead-core]
 opt-level = 2
+
+# Not for the tests, which make check builds and which would wait on the optimiser for little gain.
+[profile.test.package.brainstead-core]
+opt-level = 0
