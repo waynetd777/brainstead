@@ -43,8 +43,13 @@ pub enum Instruction {
     Replace { edits: Vec<Edit> },
     /// The page's whole text: a new page, or one written over.
     Page { content: String },
-    /// A task line, at the end of a project's Next actions or the top of the To Do list's Other.
-    AddTask { line: String },
+    /// A task line, at the end of a project's Next actions (or its `heading`, Waiting for as the
+    /// Inbox files a waiting task) or the top of the To Do list's Other.
+    AddTask {
+        line: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        heading: Option<String>,
+    },
     /// A thought at the top of the Scratchpad, under a `## stamp` heading, as Quick capture adds it
     /// (the Scratchpad is started when it isn't there).
     AddThought { text: String, stamp: String },
@@ -80,7 +85,7 @@ impl Instruction {
             Instruction::Section { section, content } => crate::pageshape::with_section(page, have()?, section, content),
             Instruction::Replace { edits } => proposals::patched(have()?, &proposals::Patch::Replace { edits: edits.clone() })
                 .map_err(|e| e.replace("isn't in the page", "isn't on the page any more")),
-            Instruction::AddTask { line } => {
+            Instruction::AddTask { line, heading } => {
                 let text = have()?;
                 let (mut lines, eol, trailing) = split_lines(text);
                 if lines.iter().any(|l| l.trim_end() == line.trim_end()) {
@@ -89,7 +94,7 @@ impl Instruction {
                 if page == crate::inbox::TODO_LIST {
                     crate::write::insert_other(&mut lines, line);
                 } else {
-                    crate::write::append_under(&mut lines, crate::projects::NEXT_ACTIONS, line);
+                    crate::write::append_under(&mut lines, heading.as_deref().unwrap_or(crate::projects::NEXT_ACTIONS), line);
                 }
                 Ok(join_lines(&lines, &eol, trailing || text.is_empty()))
             }
@@ -896,8 +901,8 @@ mod tests {
     fn several_task_additions_to_one_page_all_apply() {
         let page = "Project. Orbit App launch.md";
         let before = "---\nstatus: active\n---\n\n## Next actions\n\n## Waiting for\n";
-        let a = Instruction::AddTask { line: "- [ ] Book the venue".into() };
-        let b = Instruction::AddTask { line: "- [ ] Email Maya".into() };
+        let a = Instruction::AddTask { line: "- [ ] Book the venue".into(), heading: None };
+        let b = Instruction::AddTask { line: "- [ ] Email Maya".into(), heading: None };
         let one = a.text(page, Some(before)).unwrap();
         let two = b.text(page, Some(&one)).unwrap();
         assert!(two.contains("## Next actions\n\n- [ ] Book the venue\n- [ ] Email Maya\n\n## Waiting for"));
@@ -905,6 +910,9 @@ mod tests {
         let d = Instruction::DeleteLine { line: "- [ ] Email Maya".into(), at: None };
         assert_eq!(d.text(page, Some(&two)).unwrap(), one);
         assert!(d.text(page, Some(&one)).unwrap_err().contains("isn't in"));
+        // Under the heading given: a waiting task in the project's Waiting for, as the Inbox files it.
+        let w = Instruction::AddTask { line: "- [ ] Lena's quote #waiting-for".into(), heading: Some("Waiting for".into()) };
+        assert!(w.text(page, Some(&two)).unwrap().ends_with("## Waiting for\n\n- [ ] Lena's quote #waiting-for\n"));
     }
 
     #[test]

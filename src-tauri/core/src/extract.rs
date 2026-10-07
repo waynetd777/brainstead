@@ -76,6 +76,14 @@ pub fn kind_of(rel: &str) -> Option<&'static str> {
     }
 }
 
+/// Whether ingest can read a source: markdown and text, or a kind this reads. The Sources screen's
+/// `ingestable` (src/Lists.tsx) is the same rule, for the window; the MCP server's pending_sources
+/// leaves the rest out with this.
+pub fn ingestable(rel: &str) -> bool {
+    let ext = rel.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
+    matches!(ext.as_deref(), Some("md" | "txt")) || kind_of(rel).is_some()
+}
+
 /// Reads a file's text. PDFs need `pdf` and images `image`; without one they're an error.
 pub fn extract(path: &Path, pdf: Option<PdfReader>, image: Option<ImageReader>) -> Result<Extracted, String> {
     let rel = path.to_string_lossy();
@@ -496,6 +504,16 @@ impl TextCache {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ingestable_as_the_sources_screen_has_it() {
+        for p in ["sources/a.md", "sources/b.TXT", "sources/c.pdf", "sources/d.docx", "sources/e.png", "sources/f.HEIC"] {
+            assert!(ingestable(p), "{p}");
+        }
+        for p in ["sources/g.svg", "sources/h.zip", "sources/i.vtt", "sources/noext"] {
+            assert!(!ingestable(p), "{p}");
+        }
+    }
+
     use super::*;
     use std::io::Write;
 

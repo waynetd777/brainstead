@@ -265,11 +265,11 @@ export async function setTaskDate(t: TaskRow, kind: TaskDateKind, date: string |
   }
 }
 
-/** Puts `moved` between the rows that are now above and below it in `order` (the list after the
- *  drop). Uses the nearest ranked neighbours; renumbers the whole list when there's no room or
- *  some rows have no rank yet (the previous app's TaskQueryBlock). */
-/** Ranks `moved` where it now is in `order`; false (and said) when that couldn't be written. */
-export async function moveTask(order: TaskRow[], moved: TaskRow): Promise<boolean> {
+/** Where `moved` goes in `order`: the ranks of its nearest ranked neighbours, or null when the
+ *  whole list is to be renumbered, as some rows have no rank yet (src/mcpActions.ts's move_task
+ *  places a task by the same rule). */
+export function rankBetween(order: TaskRow[], moved: TaskRow): { prev: number | null; next: number | null } | null {
+  if (order.some((t) => t.rank === null)) return null;
   const i = order.indexOf(moved);
   const prev =
     order
@@ -277,9 +277,17 @@ export async function moveTask(order: TaskRow[], moved: TaskRow): Promise<boolea
       .reverse()
       .find((t) => t.rank !== null)?.rank ?? null;
   const next = order.slice(i + 1).find((t) => t.rank !== null)?.rank ?? null;
+  return { prev, next };
+}
+
+/** Puts `moved` between the rows that are now above and below it in `order` (the list after the
+ *  drop): its nearest ranked neighbours, or the whole list renumbered when there's no room or some
+ *  rows have no rank yet (the previous app's TaskQueryBlock). False (and said) when that couldn't
+ *  be written. */
+export async function moveTask(order: TaskRow[], moved: TaskRow): Promise<boolean> {
+  const gap = rankBetween(order, moved);
   try {
-    const unranked = order.some((t) => t.rank === null);
-    if (!unranked && (await api.taskRank(moved, prev, next))) return true;
+    if (gap && (await api.taskRank(moved, gap.prev, gap.next))) return true;
     await api.tasksRankAll(order);
     return true;
   } catch (e) {

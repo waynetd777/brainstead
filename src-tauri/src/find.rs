@@ -345,7 +345,14 @@ fn accept(app: &AppHandle, sg: &Suggestion, edit: Edit) -> Res<String> {
         if let Some(d) = &sg.due {
             line = write::with_date(&line, write::DateKind::Due, Some(d)).map_err(|e| e.to_string())?;
         }
-        crate::changes::Submit::new(&page, Kind::Task, &format!("Add “{text}”"), &reason, origin, Instruction::AddTask { line })
+        crate::changes::Submit::new(
+            &page,
+            Kind::Task,
+            &format!("Add “{text}”"),
+            &reason,
+            origin,
+            Instruction::AddTask { line, heading: None },
+        )
     };
     let mut s = s;
     s.quotes = sg

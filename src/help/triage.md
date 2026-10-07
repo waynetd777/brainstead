@@ -25,4 +25,4 @@ Press a key, or click the choice:
 
 Every choice but Keep takes the line out of `Me. Bookmarks.md`. Press `⌘Z` to undo. **Open** opens the note.
 
-An assistant can ask for suggestions too, named as the choices here are; it changes nothing until you decide.
+An assistant can ask for suggestions too, named as the choices here are; it changes nothing until you decide, and then does what the button does (Make a task captures the task to the Inbox, and Ingest into the wiki and Make a task take the bookmark off).

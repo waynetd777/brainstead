@@ -163,6 +163,17 @@ fn reading_tools() {
     assert!(refused(&f.ctx, "pending_sources", json!({"status": "pending"})).contains("status is all"));
     // Images are ingested too (their text read from the picture), so they're listed.
     assert!(pending.contains("sources/Whiteboard photo.png"), "{pending}");
+    // A file ingest can't read isn't one to ingest, as the Sources screen gives it no Ingest; all marks it.
+    std::fs::write(f.ctx.vault.join("sources/Diagram.svg"), "<svg/>").unwrap();
+    std::fs::write(f.ctx.vault.join("sources/Bundle.zip"), "PK").unwrap();
+    let mut ix = Index::open(&f.ctx.data.join("index.db")).unwrap();
+    ix.sync(&brainstead_core::vault::Vault::new(f.ctx.vault.clone(), vec![])).unwrap();
+    drop(ix);
+    let pending = ok(&f.ctx, "pending_sources", json!({}));
+    assert!(!pending.contains("Diagram.svg") && !pending.contains("Bundle.zip"), "{pending}");
+    assert!(!ok(&f.ctx, "pending_sources", json!({"status": "new"})).contains("Bundle.zip"));
+    let all = ok(&f.ctx, "pending_sources", json!({"status": "all"}));
+    assert!(all.contains("- sources/Bundle.zip · New · can't be ingested"), "{all}");
     let lint = ok(&f.ctx, "lint", json!({"page": "Hub Platform"}));
     assert!(lint.contains("[[Missing Concept]]"), "{lint}");
     // Each check names its id; the grey ones say they aren't counted, and safe fixes are marked.
@@ -361,6 +372,9 @@ fn create_task_sends_a_line() {
     // In Follow-ups, as New task there does: with its tag, before the fields.
     let (_, c) = submitted(&f, "create_task", json!({"text": "Ask Lena about the venue", "view": "followups", "due": "2026-10-09"}));
     assert_eq!(c["instruction"]["line"], "- [ ] Ask Lena about the venue #followup 📅 2026-10-09");
+    // Deferred until and starts, as edit_task sets them.
+    let (_, c) = submitted(&f, "create_task", json!({"text": "Book the bus", "defer": "2026-10-12", "start": "2026-10-14"}));
+    assert_eq!(c["instruction"]["line"], "- [ ] Book the bus ⏳ 2026-10-12 🛫 2026-10-14");
     assert!(refused(&f.ctx, "create_task", json!({"text": "x", "view": "today"})).contains("view is followups"));
     assert!(refused(&f.ctx, "create_task", json!({"text": "x", "project": "Nowhere"})).contains("no project"));
     assert!(refused(&f.ctx, "create_task", json!({"text": "x", "effort": "lots"})).contains("Not an effort"));
@@ -792,12 +806,31 @@ fn search_takes_the_screens_order() {
 }
 
 #[test]
+fn search_since_is_the_screens_date_range() {
+    let f = fixture();
+    // since adds `since:` to the query, as the screen's date range does: by the note's own date.
+    let all = ok(&f.ctx, "search", json!({"query": "Orbit", "order": "latest", "detail": true, "limit": 30}));
+    let since = ok(&f.ctx, "search", json!({"query": "Orbit", "since": "2026-10-03", "order": "latest", "detail": true, "limit": 30}));
+    let typed = ok(&f.ctx, "search", json!({"query": "Orbit since:2026-10-03", "order": "latest", "detail": true, "limit": 30}));
+    assert_eq!(since.replace(" since:2026-10-03", ""), typed.replace(" since:2026-10-03", ""));
+    let days = |out: &str| -> Vec<String> {
+        out.lines()
+            .filter(|l| l.ends_with(')') && l.contains(". "))
+            .filter_map(|l| l.rsplit(", ").next().map(|d| d.trim_end_matches(')').to_string()))
+            .collect()
+    };
+    assert!(!days(&since).is_empty() && days(&since).len() < days(&all).len(), "{since}");
+    assert!(days(&since).iter().all(|d| d.as_str() >= "2026-10-03"), "{since}");
+}
+
+#[test]
 fn the_re_audits_tools_and_arguments_go_to_the_app() {
     let f = fixture();
     for (tool_name, args, action) in [
         ("capture", json!({"kind": "thought", "text": "Ask Lena about the venue"}), "inbox.capture"),
         ("capture_extensions", json!({}), "capture.status"),
         ("glance", json!({}), "glance"),
+        ("list_assistants", json!({"look_again": true}), "assistants.found"),
         ("doc_check", json!({"start_register": true}), "doccheck.register"),
         ("doc_check", json!({"document": "sources/Roadmap Update 2026-09-18.md", "save": true}), "doccheck.run"),
     ] {
@@ -817,6 +850,9 @@ fn the_re_audits_tools_and_arguments_go_to_the_app() {
         ("edit_task", "words"),
         ("edit_task", "followup"),
         ("create_task", "view"),
+        ("create_task", "defer"),
+        ("create_task", "start"),
+        ("fix_name", "ask_about_each_file"),
         ("save_chat", "chat"),
         ("fix_name", "files_to_leave_alone"),
         ("fix_name", "where_its_from"),

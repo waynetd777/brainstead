@@ -21,6 +21,10 @@ import { Seg } from "../ui";
 
 type Tone = "brief" | "warm" | "formal";
 
+/** Add task's task: the follow-up, linked to the captured thread it came from. */
+export const replyTask = (task: string, thread: string | null) =>
+  thread ? `${task} ([[${thread.split("/").pop()!.replace(/\.md$/, "")}]])` : task;
+
 /** A captured thread: an Outlook email or a Teams chat in sources/. */
 export const isThread = (path: string) => /^sources\/(Email\. |Teams\. Chat\. )/.test(path);
 
@@ -36,7 +40,8 @@ export function threadLabel(f: Pick<FileSummary, "title" | "date" | "path">): st
   return `${kind}${subject}${f.date ? ` · ${fmtShortDate(f.date)}` : ""}`;
 }
 
-const ANSWERED: Record<string, [string, string]> = {
+/** Whether the draft answered the thread, as the verdict above it says (an assistant's draft_reply too). */
+export const ANSWERED: Record<string, [string, string]> = {
   yes: ["It answered the question", "green"],
   partly: ["Partly answered", "amber"],
   no: ["It didn't answer the question", "amber"],
@@ -105,11 +110,7 @@ export function ReplyScreen() {
   const addTask = async () => {
     if (!r?.task) return;
     try {
-      toast(
-        await api.capture("task", chosen ? `${r.task} ([[${chosen.split("/").pop()!.replace(/\.md$/, "")}]])` : r.task, captureStamp()),
-        undefined,
-        "ok",
-      );
+      toast(await api.capture("task", replyTask(r.task, chosen), captureStamp()), undefined, "ok");
     } catch (e) {
       reportEditError(e);
     }

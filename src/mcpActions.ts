@@ -40,17 +40,17 @@ import {
   WeeklyState,
   WeekPrepSuggestion,
 } from "./api";
-import { ACTION as FIX_ACTION, chosenRows } from "./FixName";
+import { ACTION as FIX_ACTION, chosenRows, startUnticked } from "./FixName";
 import { contextName, projectFlag, projectName } from "./gtd";
 import { captureStamp, prepareCapture } from "./Capture";
-import { taskLine, unclarified } from "./Inbox";
+import { bandOf, inboxRows, taskLine, unclarified } from "./Inbox";
 import { appendAsReference, newReferenceNote, settleInboxItem } from "./inboxActions";
 import { ADVISORY, byRun, fixOf, makePage, originLabel, OWN_ACTIONS, pageName, safeFixes } from "./knowledge";
 import { localToday } from "./md/taskQuery";
 import { composeFilename } from "./notes/filename";
 import { Ask, Env, freeName, runTemplate, StopRun } from "./notes/templater";
-import { vaultEnv } from "./notes/TemplateRun";
-import { deferredPast, retitled, todayRows, toggleTaskEdit, undoAction, viewRows, VIEWS } from "./taskModel";
+import { runHooks, vaultEnv } from "./notes/TemplateRun";
+import { deferredPast, rankBetween, retitled, todayRows, toggleTaskEdit, undoAction, viewRows, VIEWS } from "./taskModel";
 import { taskLabel } from "./md/TaskBlock";
 import { cancelled, completion, inQuote, LineChange, reopened, started, tagToggled, waitingToggled, withPriority } from "./tasksq/edits";
 import { parseTask, statusOf, type PriorityName } from "./tasksq/fields";
@@ -59,6 +59,7 @@ import { fmtBytes, fmtCount } from "./ui";
 import { fresh, keepsPaused, reviewBody, reviewWeek, scheduleLabel, STEPS } from "./Weekly";
 import {
   ask,
+  CLI_LABEL,
   clis,
   DEFAULT_MODEL,
   findClis,
@@ -75,20 +76,24 @@ import { loadVoices, speechSettingsChanged, voiceLabel, voices } from "./speech/
 import { applyReadSize, applyTheme, READ_SIZE, settings } from "./store";
 import { nav, Screen, SettingsPane } from "./nav";
 import { DEFAULT_SCHEDULE, DEFAULT_WEEKLY_REVIEW } from "./Jobs";
-import { languageName } from "./Settings";
+import { foundDetail, INSTALL, languageName, scriptsFolder } from "./Settings";
 import { choice, prepStep, WEEKLY_STATE_CHANGED } from "./weeklyPrep";
 import { draftNotes, followThrough, isTranscriptPath, noteFile, specOf } from "./meetingFlow";
 import { DONE as MEETING_DONE, noteExists, TYPES as MEETING_TYPES } from "./Meeting";
 import { reportMarkdown } from "./Contradictions";
 import { checklist, isDone, isRetired, STOP_FIRST } from "./Switchover";
 import { ingestable } from "./Lists";
+import { offerFollowUp } from "./Ingest";
 import { findingsMarkdown, findingsNote, REGISTER, REGISTER_STUB, STATUS as REGISTER_STATUS } from "./skills/DocCheck";
 import { LABEL as TRIAGE } from "./skills/Triage";
+import { ANSWERED, replyTask } from "./skills/Reply";
 import { actionLabel, actionsIn, filterLog, rankLog } from "./activityModel";
-import { EFFORT_LIMITS, GroupBy, groupTasks, withinEffort } from "./taskGroups";
+import { EFFORT_LIMITS, GroupBy, groupTasks, matchesSearch, withinEffort } from "./taskGroups";
 
 const TODO_LIST = "Me. To Do List.md";
 const SCRATCHPAD = "Me. Scratchpad.md";
+/** A project's heading a waiting task goes under, as the Inbox files it. */
+const WAITING_FOR = "Waiting for";
 
 /** A request as Rust hands it on (core/src/bridge.rs). */
 export interface McpRequest {
@@ -105,17 +110,23 @@ const str = (a: Args, k: string): string | undefined =>
 const has = (a: Args, k: string) => k in a && a[k] !== undefined;
 
 /** A long list a page at a time, as every listing tool gives one: the rows whose text has all of
- *  `query`'s words, then `limit` of them (`def` unless said, at most 500) from `offset`, and a head
- *  saying how many there are and how to see the rest. */
+ *  `query`'s words (or that `match` the query, where the screen searches its own way), then `limit`
+ *  of them (`def` unless said, at most 500) from `offset`, and a head saying how many there are and
+ *  how to see the rest. */
 export function pagedRows<T>(
   a: Args,
   rows: T[],
   text: (r: T) => string,
   noun: [string, string],
   def = 50,
+  match?: (r: T, query: string) => boolean,
 ): { shown: T[]; head: string; page: PageInfo } {
   const words = (str(a, "query") ?? "").toLowerCase().split(/\s+/).filter(Boolean);
-  const hit = words.length ? rows.filter((r) => words.every((w) => text(r).toLowerCase().includes(w))) : rows;
+  const hit = !words.length
+    ? rows
+    : match
+      ? rows.filter((r) => match(r, str(a, "query")!))
+      : rows.filter((r) => words.every((w) => text(r).toLowerCase().includes(w)));
   const limit = Math.min(Math.max(Math.floor(Number(a.limit)) || def, 1), 500);
   const offset = Math.max(Math.floor(Number(a.offset)) || 0, 0);
   const shown = hit.slice(offset, offset + limit);
@@ -158,9 +169,10 @@ export function listed<T>(
     item: (r: T) => Record<string, unknown>;
     empty: string;
     before?: string[];
+    match?: (r: T, query: string) => boolean;
   },
 ): Listing {
-  const { shown, head, page } = pagedRows(a, rows, o.text, o.noun, o.def);
+  const { shown, head, page } = pagedRows(a, rows, o.text, o.noun, o.def, o.match);
   const lines = rows.length ? [`${head}:`, ...shown.map(o.line)] : [o.empty];
   return { text: [...(o.before ?? []), ...lines].join("\n"), structured: { ...page, items: shown.map(o.item) } };
 }
@@ -321,10 +333,12 @@ async function listTasks(a: Args): Promise<Listing> {
   }
   // Today's bands head the rows unless Group by asks for other headings.
   const banded = group === "none" && band.size > 0;
-  // A page at a time, query's words all in the task's line, as every listing tool pages.
+  // A page at a time; query matches as the Tasks screen's search does (matchesSearch: the task's
+  // words, note, heading, project, tags and contexts, accents ignored).
   const shown = viewName(view);
   const out = listed(a, rows, {
     text: (t) => t.text,
+    match: matchesSearch,
     noun: [`task in ${shown}`, `tasks in ${shown}`],
     line: (t) => taskLineOut(t, a.detail === true),
     item: (t) =>
@@ -486,6 +500,12 @@ async function editTask(a: Args, r: McpRequest): Promise<string> {
   return `Done (${done.join(", ")}). The task is now:\n${taskLineOut(now)}\n${o.message}`;
 }
 
+/** The spacing a renumbered list's ranks get (1024, 2048…), as Rust's RANK_SPACING. */
+const RANK_SPACING = 1024;
+
+/** move_task: the drag in a manual list, as the Tasks screen does it (taskModel's rankBetween): in
+ *  the list both tasks are in, between its real neighbours there, or the whole list renumbered when
+ *  some rows have no rank or there's no room. Every line it changes is one change, made together. */
 async function moveTask(a: Args, r: McpRequest): Promise<string> {
   const all = await api.tasksAll();
   const t = findTask(all, str(a, "task") ?? "", str(a, "text"));
@@ -493,13 +513,47 @@ async function moveTask(a: Args, r: McpRequest): Promise<string> {
   const after = ref("after");
   const before = ref("before");
   if (!after && !before) throw new Error("Give after or before: the id of the task it should follow or come ahead of.");
-  const line = await api.changeTaskLine(t.lineText, { op: "rank", prev: after?.rank ?? null, next: before?.rank ?? null });
-  const where = `${after ? ` after “${after.text}”` : ""}${before ? ` before “${before.text}”` : ""}`;
-  const o = await submitAll([
-    sub(a, r, t.path, "task", `Move “${taskWords(t.text)}”${where}`, { op: "lines", at: t.line, old: [t.lineText], new: [line] }),
-  ]);
+  const other = (after ?? before)!;
+  if (other === t) throw new Error("A task can't move next to itself.");
+  // The manual list they're both in, as the screen drags within one list.
+  const today = localToday();
+  const inbox = await api.inboxList();
+  const lists = VIEWS.filter((v) => v.manual).map((v) => ({ v, rows: viewRows(all, v, today, v.id === "next" ? inbox : null) }));
+  const list = lists.find((l) => l.rows.includes(t) && (!after || l.rows.includes(after)) && (!before || l.rows.includes(before)));
+  if (!list)
+    throw new Error(
+      "Those tasks aren't in one list with a manual order (Next actions, Follow-ups, Waiting for, Someday / maybe): move a task next to one in its own list.",
+    );
+  const rest = list.rows.filter((x) => x !== t);
+  const at = after ? rest.indexOf(after) + 1 : rest.indexOf(before!);
+  const order = [...rest.slice(0, at), t, ...rest.slice(at)];
+  const where = `${after ? ` after “${taskWords(after.text)}”` : ""}${before ? ` before “${taskWords(before.text)}”` : ""}`;
+  const title = `Move “${taskWords(t.text)}”${where}`;
+  const line = (x: TaskRow, ln: string) => ({ at: x.line, old: [x.lineText], new: [ln] });
+  let edits: [TaskRow, { at: number; old: string[]; new: string[] }][] = [];
+  const gap = rankBetween(order, t);
+  if (gap) {
+    const ln = await api.changeTaskLine(t.lineText, { op: "rank", prev: gap.prev, next: gap.next }).catch(() => null);
+    if (ln) edits = [[t, line(t, ln)]];
+  }
+  // No room, or rows with no rank: the list renumbered in its new order, as the screen does.
+  let renumbered = false;
+  if (!edits.length) {
+    renumbered = true;
+    for (const [i, x] of order.entries()) {
+      const ln = await api.changeTaskLine(x.lineText, { op: "rank", prev: i * RANK_SPACING, next: null });
+      if (ln !== x.lineText) edits.push([x, line(x, ln)]);
+    }
+  }
+  if (!edits.length) return `“${taskWords(t.text)}” is there already.`;
+  const o = await submitAll(
+    edits.map(([x, e]) =>
+      sub(a, r, x.path, "task", x === t ? title : `Renumber “${taskWords(x.text)}” in ${list.v.label}`, { op: "lines", ...e }),
+    ),
+  );
   told(o.applied ? `moved “${t.text}”` : `held a move of “${t.text}” for you in Changes`);
-  return o.applied ? `Moved “${t.text}”${where}. ${o.message}` : o.message;
+  const how = renumbered ? `; the list is renumbered, ${edits.length} lines, as there was no room or some tasks had no rank yet` : "";
+  return o.applied ? `Moved “${t.text}”${where} in ${list.v.label}${how}. ${o.message}` : o.message;
 }
 
 async function projectPath(name: string): Promise<string> {
@@ -521,7 +575,8 @@ const inboxKey = (i: InboxItem) => `${i.kind}:${i.line + 1}`;
 const SUGGEST_AT_MOST = 20;
 
 async function listInbox(a: Args): Promise<Listing> {
-  const items = (await api.inboxList()).filter(unclarified);
+  // In the screen's order, band by band, so Suggest asks about the same first 20.
+  const items = inboxRows(await api.inboxList());
   const where = (i: InboxItem) =>
     i.kind === "capture" ? `capture ${i.path}` : i.kind === "thought" ? `Scratchpad ${i.stamp ?? ""}` : "To Do list › Other";
   const line = (i: InboxItem) => `- ${i.text.replace(/\n/g, " ").slice(0, 200)} — ${where(i)}  (${inboxKey(i)})`;
@@ -553,7 +608,7 @@ async function listInbox(a: Args): Promise<Listing> {
     const how = g.becomes === "meeting" ? " (start_run meeting_note)" : g.becomes === "reply" ? " (draft_reply)" : "";
     return `\n  suggests ${g.becomes}${how}${bits.length ? `: ${bits.join(" · ")}` : ""}${g.why ? ` — ${g.why}` : ""}`;
   };
-  return listed(a, items, {
+  const out = listed(a, items, {
     text: line,
     noun: ["item to clarify", "items to clarify"],
     line: (i) => line(i) + suggested(i),
@@ -562,6 +617,7 @@ async function listInbox(a: Args): Promise<Listing> {
       return {
         id: inboxKey(i),
         kind: i.kind,
+        group: bandOf(i),
         text: i.text,
         path: i.path,
         stamp: i.stamp,
@@ -575,13 +631,27 @@ async function listInbox(a: Args): Promise<Listing> {
       };
     },
     empty: "The Inbox is empty.",
-    before:
-      a.suggest === true && items.length
-        ? [
-            "Suggestions only, nothing changed: accept one with clarify_inbox, becomes as suggested and its values (its text as text, or as project_name for a project and note for reference).",
-          ]
-        : [],
   });
+  if (!items.length) return out;
+  // Each band's heading where it starts on the page, as the screen's bands (Captures, Scratchpad…).
+  const [head, ...rows] = out.text.split("\n");
+  const bands = (out.structured.items as { group: string }[]).map((x) => x.group);
+  const lines: string[] = [];
+  let k = -1;
+  for (const l of rows) {
+    if (l.startsWith("- ")) {
+      k++;
+      if (k === 0 || bands[k] !== bands[k - 1]) lines.push(`${bands[k]}:`);
+    }
+    lines.push(l);
+  }
+  const note =
+    a.suggest === true
+      ? [
+          "Suggestions only, nothing changed: accept one with clarify_inbox, becomes as suggested and its values (its text as text, or as project_name for a project and note for reference).",
+        ]
+      : [];
+  return { ...out, text: [...note, head, ...lines].join("\n") };
 }
 
 async function clarify(a: Args, r: McpRequest): Promise<string> {
@@ -632,14 +702,16 @@ export async function clarifyChanges(
             new: [],
           }),
         ];
-  const addTask = (page: string, line: string) => sub(a, r, page, "task", `Add “${taskWords(line)}”`, { op: "add_task", line });
+  // Under a project's Next actions, or the heading given (Waiting for, as the Inbox files a waiting task).
+  const addTask = (page: string, line: string, heading?: string) =>
+    sub(a, r, page, "task", `Add “${taskWords(line)}”`, { op: "add_task", line, ...(heading ? { heading } : {}) });
   // The item settled as a task line (src/inboxActions.ts's settleInboxItem).
-  const settle = (line: string, toProject: string | null): ChangeSubmit[] =>
+  const settle = (line: string, toProject: string | null, heading?: string): ChangeSubmit[] =>
     i.kind === "task"
       ? toProject
-        ? [...takeOut(), addTask(toProject, line)]
+        ? [...takeOut(), addTask(toProject, line, heading)]
         : [sub(a, r, i.path, "task", `Clarify “${short}”`, { op: "lines", at: i.line, old: [i.lineText], new: [line] })]
-      : [addTask(toProject ?? TODO_LIST, line), ...takeOut()];
+      : [addTask(toProject ?? TODO_LIST, line, toProject ? heading : undefined), ...takeOut()];
   switch (becomes) {
     case "next":
       return {
@@ -648,7 +720,11 @@ export async function clarifyChanges(
         after: captureDone,
       };
     case "waiting":
-      return { said: "waiting for", changes: settle(taskLine({ ...fields, tag: "waiting-for" }), proj), after: captureDone };
+      return {
+        said: `waiting for${proj ? ` in ${projectName(proj)}` : ""}`,
+        changes: settle(taskLine({ ...fields, tag: "waiting-for" }), proj, WAITING_FOR),
+        after: captureDone,
+      };
     case "someday":
       return { said: "someday / maybe", changes: settle(taskLine({ ...fields, tag: "someday-maybe" }), proj), after: captureDone };
     case "project": {
@@ -720,7 +796,7 @@ export async function clarifyItem(i: InboxItem, a: Args): Promise<string> {
       said = `a next action${proj ? ` in ${projectName(proj)}` : ""}`;
       break;
     case "waiting":
-      await settleInboxItem(i, taskLine({ ...fields, tag: "waiting-for" }), proj);
+      await settleInboxItem(i, taskLine({ ...fields, tag: "waiting-for" }), proj, WAITING_FOR);
       said = "waiting for";
       break;
     case "someday":
@@ -887,8 +963,11 @@ async function noteFromTemplate(a: Args, chat: string | null): Promise<string> {
       }.`,
     );
   // An answer is text, or for a question with several choices (tp.system.multi_suggester) a list
-  // of them, as ticking several on the screen does.
-  const answers = (Array.isArray(a.answers) ? a.answers : []).map((x) => (Array.isArray(x) ? x.map(String) : String(x)));
+  // of them, as ticking several on the screen does; null is the screen's Cancel (no answer, and the
+  // template carries on), as "" is for a question with choices.
+  const answers = (Array.isArray(a.answers) ? a.answers : []).map((x) =>
+    x === null ? null : Array.isArray(x) ? x.map(String) : String(x),
+  );
   let n = 0;
   const asked: string[] = [];
   // Past the answers given, a question about the type, name or date takes the note's own.
@@ -901,7 +980,13 @@ async function noteFromTemplate(a: Args, chat: string | null): Promise<string> {
           ? str(a, "title")
           : undefined;
   const ask = async (q: Ask): Promise<string | number[] | null> => {
-    const ans = answers[n++] ?? guess(q.text);
+    const given = n < answers.length ? answers[n] : undefined;
+    n++;
+    if (given === null || (given === "" && q.kind !== "prompt")) {
+      asked.push(`“${q.text}” → (cancelled)`);
+      return null;
+    }
+    const ans = given ?? guess(q.text);
     if (q.kind === "prompt") {
       if (Array.isArray(ans)) throw new Error(`“${q.text}” asks for text, not a list of choices.`);
       const v = ans ?? q.value;
@@ -923,7 +1008,15 @@ async function noteFromTemplate(a: Args, chat: string | null): Promise<string> {
   // the note's own; a test run, as the template editor's, only lists them.
   const testRun = a.test_run === true;
   const others: [path: string, content: string][] = [];
-  const env = await vaultEnv(tpath, ask as Env["ask"], async (p, c) => void others.push([p, c]));
+  // Once the note is made, a note its finishing steps (tp.hooks) make is a change of its own.
+  let made = false;
+  const late: string[] = [];
+  const create = async (p: string, c: string) => {
+    if (!made) return void others.push([p, c]);
+    const o = await makePage(p, c, `New note ${p.replace(/\.md$/, "")}`, origin);
+    late.push(o.message);
+  };
+  const env = await vaultEnv(tpath, ask as Env["ask"], create);
   let r;
   try {
     r = await runTemplate((await api.docRead(tpath)).content, env);
@@ -942,11 +1035,6 @@ async function noteFromTemplate(a: Args, chat: string | null): Promise<string> {
   }
   if (taken.has(path.toLowerCase())) throw new Error(`${path} exists already. To change it, use edit_page.`);
   const qa = asked.length ? ` The template asked: ${asked.join("; ")}.` : "";
-  if (!others.length) {
-    const o = await makePage(path, r.content, `New note ${path.replace(/\.md$/, "")}`, origin);
-    told(o.applied ? `made the note ${path.replace(/\.md$/, "")}` : `held the note ${path.replace(/\.md$/, "")} for you in Changes`);
-    return `${o.message} It was made from ${tpath}.${qa}`;
-  }
   // The note and the others it made, made or held together.
   const all: [string, string][] = [[path, r.content], ...others];
   const outs = await api.changesSubmitMany(
@@ -958,13 +1046,18 @@ async function noteFromTemplate(a: Args, chat: string | null): Promise<string> {
       origin,
     })),
   );
-  const made = outs.every((o) => o.applied);
-  told(
-    made
-      ? `made the note ${path.replace(/\.md$/, "")} and ${others.length} more`
-      : `held the note ${path.replace(/\.md$/, "")} and ${others.length} more for you in Changes`,
-  );
-  return `${outs.map((o) => o.message).join(" ")} It was made from ${tpath}, with ${others.map(([p]) => p).join(", ")}, which the template makes too.${qa}`;
+  made = outs.every((o) => o.applied);
+  const name = path.replace(/\.md$/, "");
+  const more = others.length ? ` and ${others.length} more` : "";
+  told(made ? `made the note ${name}${more}` : `held the note ${name}${more} for you in Changes`);
+  // Its finishing steps (tp.hooks.on_all_templates_executed), once the note is made, as New note runs them.
+  const hooks = !r.hooks.length
+    ? ""
+    : made
+      ? ` Its finishing steps ran${await runHooks(r.hooks).then((f) => (f.length ? `, but ${f.join(" ")}` : ""))}.${late.length ? ` ${late.join(" ")}` : ""}`
+      : " Its finishing steps (tp.hooks) didn't run, as the note isn't made yet.";
+  const also = others.length ? `, with ${others.map(([p]) => p).join(", ")}, which the template makes too` : "";
+  return `${outs.map((o) => o.message).join(" ")} It was made from ${tpath}${also}.${qa}${hooks}`;
 }
 
 // ---- agent changes
@@ -977,6 +1070,13 @@ async function submitChange(a: Args): Promise<string> {
   const name = c.page.replace(/\.md$/, "").split("/").pop();
   told(o.applied ? `changed ${name}: ${c.title}` : `held a change to ${name} for you in Changes`);
   return o.message;
+}
+
+/** A meeting note accepted from Changes: the screen's follow-up offered in the app (offerFollowUp,
+ *  ingest it and move its transcript to the Trash), and what's next said for the assistant. */
+function followUpOf(note: string, transcript: string): string {
+  offerFollowUp({ note, transcript });
+  return `${pageName(note)} is a meeting note: Brainstead now asks the user whether to ingest it and move its transcript (${transcript}) to the Trash, as accepting it on the Changes screen does. Leave that to them, or, if they ask you, start_run ingest with ${note} and trash_note the transcript.`;
 }
 
 /** The changes tool: the feed and the held changes, one change, accept, reject, revert. */
@@ -1041,6 +1141,7 @@ async function changesTool(a: Args): Promise<string | Listing> {
         structured: { history: { days: cur.changesKeepDays ?? 90, mb: cur.changesKeepMb ?? 500 } },
       };
     settings.update({ ...(days !== undefined ? { changesKeepDays: days } : {}), ...(mb !== undefined ? { changesKeepMb: mb } : {}) });
+    await settings.flush();
     const now = settings.get();
     noted(`set Changes to keep ${now.changesKeepDays ?? 90} days or ${size(now.changesKeepMb ?? 500)} of history`);
     return `Changes now keeps its history for ${now.changesKeepDays ?? 90} days or up to ${size(now.changesKeepMb ?? 500)}, whichever comes first. Older history goes at the next daily tidy.`;
@@ -1053,9 +1154,18 @@ async function changesTool(a: Args): Promise<string | Listing> {
   if (action === "accept_run" || action === "reject_run") {
     const group = str(a, "group");
     if (!group) throw new Error("Which run? Give its group from list_changes.");
+    // The run's held meeting notes, offered their follow-up once made, as the screen's Accept all does.
+    const meetings =
+      action === "accept_run"
+        ? (await api.changesList()).filter((c) => c.group === group && c.status === "held" && c.origin.kind === "meeting" && c.origin.chat)
+        : [];
     const m = action === "accept_run" ? await api.changesAcceptAll(group, true) : await api.changesRejectAll(group);
     noted(`${action === "accept_run" ? "accepted" : "rejected"} ${m.done} held change${m.done === 1 ? "" : "s"}`);
-    return `${action === "accept_run" ? "Accepted" : "Rejected"} ${m.done}.${m.failed.length ? ` Couldn't: ${m.failed.join("; ")}` : ""}`;
+    const offered = m.failed.length ? [] : meetings.map((c) => followUpOf(c.to ?? c.page, c.origin.chat!));
+    return [
+      `${action === "accept_run" ? "Accepted" : "Rejected"} ${m.done}.${m.failed.length ? ` Couldn't: ${m.failed.join("; ")}` : ""}`,
+      ...offered,
+    ].join(" ");
   }
   if (action === "revert_run") {
     const group = str(a, "group");
@@ -1103,8 +1213,11 @@ async function changesTool(a: Args): Promise<string | Listing> {
     };
   }
   if (action === "accept") {
+    const row = (await api.changesList()).find((c) => c.id === id);
     const o = await api.changeAccept(id, true);
     noted("accepted a held change");
+    // A meeting note held in Changes: its follow-up offered once it's made, as the screen's Accept does.
+    if (row?.origin.kind === "meeting" && row.origin.chat) return `${o.message} ${followUpOf(o.page, row.origin.chat)}`;
     return o.message;
   }
   if (action === "reject") {
@@ -1143,6 +1256,12 @@ async function startRun(a: Args): Promise<string> {
     case "ingest": {
       const sources = (Array.isArray(a.sources) ? a.sources : []).map(String);
       if (!sources.length) throw new Error("Give sources: the paths in sources/ to ingest.");
+      // Only what an ingest can read, as the screens offer Ingest only on those.
+      const cant = sources.filter((p) => !ingestable(p));
+      if (cant.length)
+        throw new Error(
+          `An ingest can't read ${cant.join(", ")}: it takes notes and text, PDFs, Office files (Word, PowerPoint, Excel) and images.`,
+        );
       const ids = await api.ingestStart(sources, unattended);
       noted(`started ingesting ${sources.length} source${sources.length === 1 ? "" : "s"}`);
       return `Ingesting ${sources.join(", ")} (run ${ids.join(", ")}). Its page changes are made and listed in Changes${unattended ? "; any that fail a check are held for the user" : ""}; run_status shows how it's going.`;
@@ -1596,12 +1715,15 @@ async function fixName(a: Args): Promise<string> {
   // unless false, as on the screen.
   const guards = (Array.isArray(a.files_to_leave_alone) ? a.files_to_leave_alone : []).map((g) => String(g).trim()).filter(Boolean);
   const remember = a.remember !== false;
+  // Ask about each file: every note to rewrite starts unticked, to be given in files once read, and
+  // the remembered correction is marked ambiguous, as on the screen.
+  const askEach = a.ask_about_each_file === true;
   const req: FixNameRequest = {
     wrong,
     right,
     rightPage: null,
     guards,
-    ambiguous: false,
+    ambiguous: askEach,
     note: remember ? (str(a, "where_its_from") ?? "") : "",
     skipSubstitution: !remember,
   };
@@ -1610,14 +1732,17 @@ async function fixName(a: Args): Promise<string> {
     // As the screen lists it: every file the name is in, with what happens to it; only the
     // rewrites and the alias change.
     if (!plan.rows.length) return `“${wrong}” isn't in any note.`;
-    const change = chosenRows(plan.rows, new Set()).length;
+    const unticked = startUnticked(plan.rows, askEach);
+    const change = chosenRows(plan.rows, unticked).length;
     const row = (r: (typeof plan.rows)[number]) =>
-      `- ${r.file}: ${r.count} line${r.count === 1 ? "" : "s"} · ${FIX_ACTION[r.action] ?? r.action}${r.inFilename ? " · In the file name: rename it separately" : ""}`;
+      `- ${r.file}: ${r.count} line${r.count === 1 ? "" : "s"} · ${FIX_ACTION[r.action] ?? r.action}${unticked.has(r.file) ? " · unticked: read it, then give it in files" : ""}${r.inFilename ? " · In the file name: rename it separately" : ""}`;
     return [
-      `Fixing “${wrong}” → “${right}” would change ${change} of the ${plan.rows.length} file${plan.rows.length === 1 ? "" : "s"} it's in${plan.rightPage ? ` (${right} has a wiki page, which gets “${wrong}” as an alias)` : ""}:`,
+      `Fixing “${wrong}” → “${right}” would change ${change} of the ${plan.rows.length} file${plan.rows.length === 1 ? "" : "s"} it's in${unticked.size ? ` (${unticked.size} more to tick one by one: Ask about each file)` : ""}${plan.rightPage ? ` (${right} has a wiki page, which gets “${wrong}” as an alias)` : ""}:`,
       ...plan.rows.slice(0, 40).map(row),
       ...(plan.rows.length > 40 ? [`…and ${plan.rows.length - 40} more.`] : []),
-      change ? "Call again with apply true to make the change, and files to make it only in those." : "None of them would change.",
+      change || unticked.size
+        ? "Call again with apply true to make the change, and files to make it only in those."
+        : "None of them would change.",
     ].join("\n");
   }
   // files: the ticked files, as Fix name's ticks are; the rest stay as they are.
@@ -1630,7 +1755,10 @@ async function fixName(a: Args): Promise<string> {
         `Not among the files the fix would change: ${unknown.join(", ")}. They are: ${can.map((r) => r.file).join(", ") || "none"}.`,
       );
   }
-  const take = files ? chosenRows(plan.rows, new Set(can.map((r) => r.file).filter((f) => !files.includes(f)))) : can;
+  // Without files, the ones ticked to start with: with Ask about each file, no note to rewrite.
+  const take = files
+    ? chosenRows(plan.rows, new Set(can.map((r) => r.file).filter((f) => !files.includes(f))))
+    : chosenRows(plan.rows, startUnticked(plan.rows, askEach));
   if (!take.length) return "Nothing to change: no file given.";
   const said = await api.fixnameApply({ ...req, rightPage: plan.rightPage }, take);
   told(`fixed the name “${wrong}” → “${right}”`);
@@ -1762,7 +1890,15 @@ async function activity(a: Args): Promise<Listing> {
 }
 
 async function graph(a: Args): Promise<string> {
-  const g = await api.graph(str(a, "page") ?? null, Math.min(Math.max(Number(a.depth) || 1, 1), 3));
+  // The page by its name or [[link]], as open and note_look take it; the whole wiki without one.
+  const page = str(a, "page");
+  let center: string | null = null;
+  if (page) {
+    [center] = await api.linksResolve([page.replace(/^\[\[|\]\]$/g, "")]);
+    if (!center) throw new Error(`There's no page called ${page}.`);
+  }
+  // Two links away unless said, as the Graph screen starts.
+  const g = await api.graph(center, Math.min(Math.max(Number(a.depth) || 2, 1), 3));
   const name = new Map(g.nodes.map((n) => [n.id, n.title ?? n.id]));
   const lines = g.edges.map(([s, t]) => `- ${name.get(s)} → ${name.get(t)}`);
   // Cut to the nearest 400 pages, as the screen says under it.
@@ -1840,6 +1976,21 @@ async function glanceTool(): Promise<string> {
     `Wiki pages by type: ${counts(g.wikiTypes)}`,
     `Wiki pages by tag: ${counts(g.wikiTags)}`,
     `Most linked: ${g.mostLinked.map((m) => `${m.title} (${m.path}, ${fmtCount(m.links)} links)`).join("; ") || "none"}`,
+  ].join("\n");
+}
+
+/** Settings › AI assistants' Found on this computer, as the pane lists it; look_again is its Look
+ *  again (findClis(true)), for one installed or signed in since. */
+async function assistantsFound(a: Args): Promise<string> {
+  await findClis(a.look_again === true);
+  const found = clis.get() ?? [];
+  const n = found.filter((c) => c.path).length;
+  return [
+    `Found on this computer (Settings › AI assistants)${a.look_again === true ? ", looked for again just now" : ""}: ${n ? `${n} assistant${n === 1 ? "" : "s"}` : "no assistants"}.`,
+    ...found.map(
+      (c) =>
+        `- ${CLI_LABEL[c.cli]}${c.version ? ` · ${c.version}` : ""}: ${foundDetail(c)}${c.path ? "" : ` How to install: ${INSTALL[c.cli]}`}`,
+    ),
   ].join("\n");
 }
 
@@ -2004,8 +2155,32 @@ async function triageSuggest(a: Args): Promise<string> {
     return `- ${i.target}: ${TRIAGE[g.decision][0]}${what} — ${g.why}${g.summary ? ` ${g.summary}` : ""}`;
   });
   return [
-    "Suggestions only, nothing changed. Keep is bookmarks keep; Archive and Remove take the bookmark off (bookmarks with page); Ingest into the wiki is edit_page making the page; Make a task is create_task.",
+    "Suggestions only, nothing changed. Keep is bookmarks keep; Archive and Remove take the bookmark off (bookmarks with page); Ingest into the wiki is edit_page making the page, and Make a task is capture with kind task (to the Inbox), each then taking the bookmark off with bookmarks with page, as the screen's buttons do.",
     ...lines,
+  ].join("\n");
+}
+
+/** Draft a reply, as its screen shows the result: whether it answered the thread and each point,
+ *  the draft, what's left to fill in, what it drew on, and its Add task. */
+async function draftReply(a: Args): Promise<string> {
+  // The screen's Tone: Brief (the default), Warm or Formal.
+  const tone = str(a, "tone") ?? "brief";
+  if (!["brief", "warm", "formal"].includes(tone)) throw new Error("tone is brief, warm or formal (brief when left out).");
+  const thread = str(a, "thread") ?? null;
+  const r = await api.draftReply(thread, str(a, "text") ?? null, tone);
+  const said = ANSWERED[r.answered];
+  const head = [said ? `${said[0]}${r.verdict ? `: ${r.verdict}` : ""}` : "", ...r.callouts.map((c) => `- ${c.status}: ${c.point}`)];
+  const tail = [
+    r.gaps.length ? `To fill in:\n${r.gaps.map((g) => `- ${g}`).join("\n")}` : "",
+    r.grounded.length ? `Drew on ${r.grounded.join(", ")}.` : "",
+    r.task ? `Its Add task, if the user wants it: capture with kind task and text “${replyTask(r.task, thread)}”.` : "",
+  ].filter(Boolean);
+  return [
+    ...head.filter(Boolean),
+    `Drafted reply (${tone[0].toUpperCase()}${tone.slice(1)}), not sent: give it to the user to paste into Outlook or Teams.`,
+    "",
+    r.draft,
+    ...(tail.length ? ["", ...tail] : []),
   ].join("\n");
 }
 
@@ -2065,17 +2240,13 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   graph: graph,
   status: status,
   "index.rebuild": rebuildIndex,
+  "assistants.found": assistantsFound,
   "capture.status": captureExtensions,
   glance: glanceTool,
   automated: automated,
   suggestions: suggestions,
   "triage.suggest": triageSuggest,
-  "reply.draft": (a) => {
-    // The screen's Tone: Brief (the default), Warm or Formal.
-    const tone = str(a, "tone") ?? "brief";
-    if (!["brief", "warm", "formal"].includes(tone)) throw new Error("tone is brief, warm or formal (brief when left out).");
-    return api.draftReply(str(a, "thread") ?? null, str(a, "text") ?? null, tone);
-  },
+  "reply.draft": draftReply,
   "doccheck.register": docCheckRegister,
   "doccheck.run": docCheck,
   "weekly.status": weeklyStatus,
@@ -2654,6 +2825,9 @@ async function settingsTool(a: Args): Promise<string> {
         `${key} is one of: ${cs.map(([id]) => id).join(", ") || "none here"}${none ? `, or null for ${none}` : ""}. list_settings lists them.`,
       );
     v = hit[0];
+  } else if (key === "templateScripts") {
+    // As the screen keeps it: no slashes at its ends, and the default unset.
+    v = scriptsFolder(String(v ?? ""));
   } else v = String(v ?? "").trim() || undefined;
   const [head, sub] = key!.split(".");
   if (key === "openAtLogin") {

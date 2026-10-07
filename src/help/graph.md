@@ -10,7 +10,7 @@ Graph draws pages as bubbles and links as lines. It updates as the vault changes
 ## Centre the graph on a page
 Click **Graph** in an open note's top bar to see the graph around it. Or type in **Find a page to centre on** and pick a page. Opened from the sidebar for the first time, Graph shows the whole wiki.
 
-**Neighbourhood** shows the centre page with what it links to and what links to it. The **Depth** slider (1 to 3) takes in links of links. **Whole wiki** shows every wiki page. Back and forward (`⌘[`, `⌘]`) step through the pages you centred on.
+**Neighbourhood** shows the centre page with what it links to and what links to it. The **Depth** slider (1 to 3, 2 to start) takes in links of links; an assistant's `graph` reads the same neighbourhood, of a page named as you'd link it. **Whole wiki** shows every wiki page. Back and forward (`⌘[`, `⌘]`) step through the pages you centred on.
 
 ## Move around
 - Hover a bubble to name it and dim everything but its neighbours. Only the centre and the biggest bubbles are named otherwise.

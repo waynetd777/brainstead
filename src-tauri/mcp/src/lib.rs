@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use brainstead_core::changes::{self, Instruction};
 use brainstead_core::proposals::{self, Kind, Origin, Patch, Quote, SourceText};
 use brainstead_core::search::SearchRequest;
-use brainstead_core::{bridge, filename, lint, projects, write, Index};
+use brainstead_core::{bridge, extract, filename, lint, projects, write, Index};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use unicode_normalization::UnicodeNormalization;
@@ -267,7 +267,7 @@ pub fn tools() -> Vec<Value> {
             schema(json!({
                 "query": {"type": "string", "description": "Words, \"exact phrases\", +required, -excluded and #tag, as Search takes them: soft launch +Orbit."},
                 "layers": layers,
-                "since": day("only files changed on or after this day."),
+                "since": day("only files from this day on, by the note's own date (else the day it last changed), as Search's date range adds since: to the query."),
                 "limit": {"type": "integer", "minimum": 1, "maximum": 30, "description": "How many files, at most 30. Default 10."},
                 "order": {"type": "string", "enum": ["best_match", "latest", "oldest"], "description": "Search's Order: best_match (Best match, the default), latest (Latest) or oldest (Oldest), by the note's date or the day it last changed."},
                 "detail": detail
@@ -289,7 +289,7 @@ pub fn tools() -> Vec<Value> {
                 "attribute": {"type": "string", "description": "Which fact: go_live_date, owner, status, role… (synonyms count)."}
             }), &[])),
         tool("pending_sources", "Sources not yet in the wiki", Read,
-            "Files in sources/ with their Status, as the Sources screen gives it: New (no wiki page cites it yet in its sources: property), Changed (changed since the pages citing it) or Ingested. Without status, the ones still to ingest, New and Changed: notes, PDFs, Office files and images (whose text is read from the picture), each path ready to pass to start_run's ingest (a Teams transcript is written up with start_run meeting_note instead). An empty list means the wiki is up to date with Sources.",
+            "Files in sources/ with their Status, as the Sources screen gives it: New (no wiki page cites it yet in its sources: property), Changed (changed since the pages citing it) or Ingested. Without status, the ones still to ingest, New and Changed: notes, PDFs, Office files and images (whose text is read from the picture), each path ready to pass to start_run's ingest (a Teams transcript is written up with start_run meeting_note instead); a file an ingest can't read is never listed as one to ingest, and status all marks it. An empty list means the wiki is up to date with Sources.",
             schema(json!({"status": {"type": "string", "enum": ["all", "new", "changed", "ingested"], "description": "The Sources screen's Status: only New, Changed or Ingested sources, or all; New and Changed when left out."}}), &[])),
         tool("lint", "Knowledge health report", Read,
             "Knowledge health's checks on the wiki, as its screen lists them when Brainstead is open (ignored issues and pairs marked not duplicates left out, and the checks only the app runs: claims with no citation and system notes missing their header), else from the vault. Each check says whether it's counted (the grey ones, only worth a look, aren't) and each item marked [safe fix] can be fixed with fix_health. Wiki checks: missing pages, broken sources, orphan pages, missing cross-links, stale updated: dates, unlogged writes, sources not yet ingested and images nothing uses. More checks: possible duplicates, stale pages others rely on, sources changed since they were cited, pages not in the page shape (reshape_pages) and pages with no Current state (write_current_state). For one page when given. Missing pages, duplicates and unused images have health_issue for their buttons.",
@@ -303,7 +303,7 @@ pub fn tools() -> Vec<Value> {
             }), &[])),
         // Tasks.
         tool("list_tasks", "List tasks", Read,
-            "Tasks as Brainstead's lists show them (needs the app). Each line gives the task, its dates and chips (priority and #tags among them), and its id (path:line) to act on it with edit_task, move_task or delete_task. Narrow with view, project, context, effort, query (every word in the task's line) or a saved list rather than raising limit; offset gives the next page, as the reply says. group puts them under headings, as the Tasks screen's Group by does.",
+            "Tasks as Brainstead's lists show them (needs the app). Each line gives the task, its dates and chips (priority and #tags among them), and its id (path:line) to act on it with edit_task, move_task or delete_task. Narrow with view, project, context, effort, query (every word somewhere in the task's words, note, heading, project, #tags or contexts, accents ignored, as the Tasks screen's search matches) or a saved list rather than raising limit; offset gives the next page, as the reply says. group puts them under headings, as the Tasks screen's Group by does.",
             schema(json!({
                 "view": {"type": "string", "enum": ["today", "next", "followups", "waiting", "deferred", "someday", "done-this-week", "done-last-week", "all"], "description": "today: the Today screen's bands, Overdue, Due today, Deferred until now and Waiting for, each under its label (a task can be in two), leaving out tasks deferred to a later day. next: open tasks that aren't follow-ups, waiting, someday, deferred or still in the Inbox (the default). deferred: the Deferred list, tasks deferred to a later day. all: every open task."},
                 "project": {"type": "string", "description": "Only this project's tasks, by its name."},
@@ -329,7 +329,7 @@ pub fn tools() -> Vec<Value> {
                 "status": {"type": "string", "enum": ["cancelled", "open", "in_progress"], "description": "cancelled drops it without deleting the line."}
             }), &["task", "text"])),
         tool("move_task", "Reorder a task", Change,
-            "Moves a task in the manual order of Next actions, Follow-ups, Waiting for and Someday (needs the app), next to another task. Give after or before, with the other task's id from list_tasks. The move is recorded in Changes, where the user can revert it. To change what a task is (its dates, project or status), use edit_task.",
+            "Moves a task in the manual order of Next actions, Follow-ups, Waiting for or Someday / maybe (needs the app), next to another task in the same list, as dragging it there does: between its neighbours in that list, or the list renumbered when some of it has no rank yet or there's no room. Give after or before, with the other task's id from list_tasks. The move is recorded in Changes, where the user can revert it. To change what a task is (its dates, project or status), use edit_task.",
             schema(json!({
                 "task": task, "text": task_text,
                 "after": {"type": "string", "description": "The id of the task it should come after."},
@@ -344,6 +344,8 @@ pub fn tools() -> Vec<Value> {
                 "contexts": {"type": "array", "items": {"type": "string"}, "description": "Where or with what, as edit_task takes them: [\"calls\"], [\"computer\", \"office\"]."},
                 "effort": {"type": "string", "description": "15m, 1h, 1h30m, 2d."},
                 "due": day("the due date."),
+                "defer": day("Deferred until: the day it shows in Next actions from, as edit_task's defer."),
+                "start": day("the start date, as edit_task's start."),
                 "reason": reason
             }), &["text"])),
         tool("delete_task", "Delete a task", Destroy,
@@ -354,7 +356,7 @@ pub fn tools() -> Vec<Value> {
             "What's waiting in the Inbox to clarify (needs the app): captures from Outlook and Teams, Scratchpad thoughts and tasks under Other on the To Do list. Each row has its id (task:14, capture:…) for clarify_inbox. Clarified items aren't listed. With suggest, the model suggests what each of the first 20 rows shown is, as the Inbox's Suggest does; nothing changes, and accepting one is clarify_inbox with its values.",
             schema(json!({"suggest": {"type": "boolean", "description": "true asks the model what each of the first 20 rows shown is (a run on the user's account): becomes, text, project, context, effort, due and why, as clarify_inbox takes them."}}), &[])),
         tool("clarify_inbox", "Clarify an Inbox item", Change,
-            "Decides what an Inbox item is, as the Inbox screen does (needs the app); its edits to notes are recorded in Changes, where the user can revert them, and held together when one is held. next and waiting write a task (to a project's Next actions when project is given); someday writes a #someday-maybe task; project makes a new project from it; done ticks or clears it; reference files it in a note (note or new_note), or keeps a capture in Sources; ingest ingests a capture into the wiki; delete takes it out (a capture goes to the Trash).",
+            "Decides what an Inbox item is, as the Inbox screen does (needs the app); its edits to notes are recorded in Changes, where the user can revert them, and held together when one is held. next and waiting write a task (with project, under the project's Next actions, or its Waiting for for waiting, as the Inbox files them); someday writes a #someday-maybe task; project makes a new project from it; done ticks or clears it; reference files it in a note (note or new_note), or keeps a capture in Sources; ingest ingests a capture into the wiki; delete takes it out (a capture goes to the Trash).",
             schema(json!({
                 "item": {"type": "string", "description": "The item's id from list_inbox, as in task:14."},
                 "becomes": {"type": "string", "enum": ["next", "waiting", "someday", "project", "done", "reference", "ingest", "delete"], "description": "What it is, as the Inbox's buttons name it."},
@@ -398,7 +400,7 @@ pub fn tools() -> Vec<Value> {
         // Notes and pages.
         tool("edit_page", "Change a page", Change, EDIT_PAGE, edit_schema),
         tool("create_note", "Make a new note", Change,
-            "Makes a new note (not a wiki page: edit_page makes those), needs the app; recorded in Changes, where the user can revert it. Brainstead names it the vault's way, `Type. Title - YYYY-MM-DD.md`, from type, title and date. Either give content (write it as the vault's other notes of that type are written: read the type's template in Templates/ with read_section and follow its properties and headings), or give template to have Brainstead run that template as New note does, answering its questions from answers in order (with test_run, only shown, as the template editor's Test run does); other notes the template makes (tp.file.create_new) are new notes too, made or held together with this one. To change a note that exists, use edit_page.",
+            "Makes a new note (not a wiki page: edit_page makes those), needs the app; recorded in Changes, where the user can revert it. Brainstead names it the vault's way, `Type. Title - YYYY-MM-DD.md`, from type, title and date. Either give content (write it as the vault's other notes of that type are written: read the type's template in Templates/ with read_section and follow its properties and headings), or give template to have Brainstead run that template as New note does, answering its questions from answers in order (with test_run, only shown, as the template editor's Test run does); other notes the template makes (tp.file.create_new) are new notes too, made or held together with this one. Once the note is made, the template's finishing steps (tp.hooks.on_all_templates_executed) run, as after New note. To change a note that exists, use edit_page.",
             schema(json!({
                 "type": {"type": "string", "description": "The note's type, as the vault's names use it: Meeting, 1-1, Idea, Project, Ask… Leave out for a plain title."},
                 "title": {"type": "string", "description": "The note's title, the part of its name after the type."},
@@ -406,7 +408,7 @@ pub fn tools() -> Vec<Value> {
                 "folder": {"type": "string", "description": "A folder in the vault to put it in; the top level when left out. Not sources/, wiki/ or Templates/."},
                 "content": {"type": "string", "description": "The whole note: properties (frontmatter) if any, then the body. Not with template."},
                 "template": {"type": "string", "description": "A template's name in Templates/ (Meeting, 1-1…) to make the note from, instead of content."},
-                "answers": {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]}, "description": "With template: answers to its questions, in the order it asks them: text, a choice by its label, or for a question that takes several choices a list of their labels."},
+                "answers": {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}, {"type": "null"}]}, "description": "With template: answers to its questions, in the order it asks them: text, a choice by its label, or for a question that takes several choices a list of their labels. null is the screen's Cancel (no answer; the template carries on), as \"\" is for a question with choices."},
                 "test_run": {"type": "boolean", "description": "With template: the template editor's Test run, the note it would make shown and nothing written (other notes it would make only listed)."},
                 "reason": reason
             }), &["title"])),
@@ -459,7 +461,7 @@ pub fn tools() -> Vec<Value> {
                 "detail": detail
             }), &[])),
         tool("changes", "Accept, reject or revert changes", Destroy,
-            "Decides on what assistants and runs changed (needs the app); list_changes lists them. accept makes a held change (on the page as it is now) and reject turns it down; accept_run and reject_run do every held change in a run (its group); revert undoes a change that was made, also after later edits, and says when its lines have been edited since; revert_run reverts every change a run made (Changes' Revert all); history with days or mb sets how long Changes keeps its history. accept and accept_run work only while the user is there (never with unattended) and only for a change held because a check failed: one held because it changes a template, adds code that runs, changes a system note's header, renames or trashes a template (or rewrites links in one), or comes from a job set to hold its changes is the user's to accept, in the app. Accept, reject, revert or change the history only as the user asked.",
+            "Decides on what assistants and runs changed (needs the app); list_changes lists them. accept makes a held change (on the page as it is now; a meeting note's follow-up, ingesting it and trashing its transcript, is then offered to the user in the app, as the screen's Accept does, and the reply says so) and reject turns it down; accept_run and reject_run do every held change in a run (its group); revert undoes a change that was made, also after later edits, and says when its lines have been edited since; revert_run reverts every change a run made (Changes' Revert all); history with days or mb sets how long Changes keeps its history. accept and accept_run work only while the user is there (never with unattended) and only for a change held because a check failed: one held because it changes a template, adds code that runs, changes a system note's header, renames or trashes a template (or rewrites links in one), or comes from a job set to hold its changes is the user's to accept, in the app. Accept, reject, revert or change the history only as the user asked.",
             schema(json!({
                 "action": {"type": "string", "enum": ["accept", "reject", "accept_run", "reject_run", "revert", "revert_run", "history"]},
                 "id": {"type": "string", "description": "For accept, reject and revert: the change's id from list_changes."},
@@ -472,7 +474,7 @@ pub fn tools() -> Vec<Value> {
             "Starts work Brainstead does with a model on the user's account, as its screens do (needs the app): ingest sources into the wiki (notes, PDFs, Office files or images; their changes are made and recorded in Changes), the daily check, the daily or weekly summary (daily_summary, weekly_summary; date picks the day or week; summary reads them), the weekly review's preparation (weekly_prep: suggestions for each step of the review's week, a paused review's own as on the screen, nothing changed until one is accepted; weekly_review lists them), a look through the last 90 days of notes for tasks and projects (find_tasks; list_suggestions lists what it found), a contradictions check, or a meeting note from a Teams transcript (list_transcripts; once made, the note is ingested and the transcript moved to the Trash, as the user's settings say). Write Current state has its own tool, write_current_state. It returns once started; run_status shows progress and stop_run stops it.",
             schema(json!({
                 "run": {"type": "string", "enum": ["ingest", "daily_check", "daily_summary", "weekly_summary", "weekly_prep", "find_tasks", "contradictions", "meeting_note"], "description": "Which run."},
-                "sources": {"type": "array", "items": {"type": "string"}, "description": "For ingest: vault paths to ingest, in sources/ or notes (pending_sources lists those not yet ingested). All are checked before any is queued. Every ingest waits in one queue with the app's own, one at a time, oldest source first (by the date in its name, else the file's), so the order given and how many calls make no difference."},
+                "sources": {"type": "array", "items": {"type": "string"}, "description": "For ingest: vault paths to ingest, in sources/ or notes (pending_sources lists those not yet ingested): notes and text, PDFs, Office files and images; anything else is refused. All are checked before any is queued. Every ingest waits in one queue with the app's own, one at a time, oldest source first (by the date in its name, else the file's), so the order given and how many calls make no difference."},
                 "transcript": {"type": "string", "description": "For meeting_note: the transcript's path."},
                 "type": {"type": "string", "enum": ["Meeting", "1-1", "Workshop", "Interview"], "description": "For meeting_note: the note's type, as the screen offers them, if Brainstead guessed wrong."},
                 "name": {"type": "string", "description": "For meeting_note: the meeting's name, or who the 1-1 was with."},
@@ -577,19 +579,20 @@ pub fn tools() -> Vec<Value> {
                 "stop": {"type": "boolean", "description": "true stops the run after the page it's on."}
             }), &[])),
         tool("fix_name", "Fix a name everywhere", Change,
-            "Corrects a misspelt name across the notes and wiki, as Fix name does (needs the app); sources are left alone, and so are the files to leave alone. Without apply it only lists the files the name is in, as the screen does, with what happens to each (Rewrite, Add as alias, Left alone, Guarded: someone else; a name in the file name is renamed separately) and how many will change; with apply true it changes the files (undoable), or with files only those, as ticking files in Fix name does. The correction is remembered for future captures, transcripts and ingests unless remember is false.",
+            "Corrects a misspelt name across the notes and wiki, as Fix name does (needs the app); sources are left alone, and so are the files to leave alone; with ask_about_each_file, as Ask about each file, the notes to rewrite start unticked. Without apply it only lists the files the name is in, as the screen does, with what happens to each (Rewrite, Add as alias, Left alone, Guarded: someone else; a name in the file name is renamed separately) and how many will change; with apply true it changes the files (undoable), or with files only those, as ticking files in Fix name does. The correction is remembered for future captures, transcripts and ingests unless remember is false.",
             schema(json!({
                 "written_as": {"type": "string", "description": "Written as: the name as it's misspelt, Lenna."},
                 "correct_spelling": {"type": "string", "description": "Correct spelling: the name as it should be, Lena."},
                 "apply": {"type": "boolean", "description": "true makes the change; left out, it only says what would change."},
                 "files": {"type": "array", "items": {"type": "string"}, "description": "With apply: only these files, by their path as the preview lists them (the ticked files); every file the preview would change when left out."},
                 "files_to_leave_alone": {"type": "array", "items": {"type": "string"}, "description": "Files to leave alone, when the misspelling is also a real name: part of each file's name (Lina Park); those files aren't changed."},
+                "ask_about_each_file": {"type": "boolean", "description": "Ask about each file, as on the screen: every note to rewrite starts unticked, so with apply only those given in files (read each first) are rewritten, and the remembered correction is marked ambiguous, so an ingest never applies it on its own."},
                 "remember": {"type": "boolean", "description": "Remember this correction: also correct it in future captures, transcripts and ingests. On unless false, as on the screen."},
                 "where_its_from": {"type": "string", "description": "With remember: where it's from, kept with the correction (confirmed today via a 1-1)."}
             }), &["written_as", "correct_spelling"])),
         // The skill screens.
         tool("triage_bookmarks", "Triage bookmarks", Run,
-            "Asks the model what to do with each bookmark given, as the Triage screen does (needs the app), in its choices: Keep, Ingest into the wiki (with the page to make), Make a task (with the task), Archive, or Remove for one whose note is gone; nothing is changed. list_bookmarks lists them, with how long since each changed. Act on a suggestion as the user decides: Keep is bookmarks keep, Archive and Remove are bookmarks with page, Ingest into the wiki is edit_page, Make a task is create_task.",
+            "Asks the model what to do with each bookmark given, as the Triage screen does (needs the app), in its choices: Keep, Ingest into the wiki (with the page to make), Make a task (with the task), Archive, or Remove for one whose note is gone; nothing is changed. list_bookmarks lists them, with how long since each changed. Act on a suggestion as the user decides, as its button does: Keep is bookmarks keep; Archive and Remove are bookmarks with page (the bookmark taken off); Ingest into the wiki is edit_page making the page, and Make a task is capture with kind task (to the Inbox), each then taking the bookmark off with bookmarks with page, as the screen's do.",
             schema(json!({"items": {"type": "array", "minItems": 1, "description": "The bookmarks to ask about, as list_bookmarks gives them.", "items": schema(json!({
                 "target": {"type": "string", "description": "The bookmark's target, from list_bookmarks."},
                 "path": {"type": "string", "description": "The note it points at, from list_bookmarks."}
@@ -609,8 +612,8 @@ pub fn tools() -> Vec<Value> {
             "log.md, newest first: what Brainstead and the assistants changed in the vault (needs the app), a line an entry with its date, action and title. action keeps one kind of entry, as the Activity screen's action chips do; query keeps the entries with all its words in their title, description or action, as its search does, best matches first or with order latest the newest first. With date, the files changed that day instead. detail adds each entry's time and description.",
             schema(json!({"date": day("the files changed that day."), "action": {"type": "string", "description": "Only entries of this action, as the log names it or its chip on the Activity screen does: ingest, review, trash…"}, "order": {"type": "string", "enum": ["best_match", "latest"], "description": "With query, the screen's order of search results: best_match (Best match, the default) or latest (Latest). Newest first without query."}, "detail": detail}), &[])),
         tool("graph", "Links around a page", Read,
-            "The pages linked to and from a page, to a depth of 1 to 3 (needs the app), as the Graph screen draws it; the whole wiki without page. Like the screen it keeps the nearest 400 pages, and says so when there were more. It lists the links between them, one `from → to` a line. detail lists the pages too, each with its type, how far it is from the page and how many links it has.",
-            schema(json!({"page": page, "depth": {"type": "integer", "minimum": 1, "maximum": 3, "description": "How many links away to go. Default 1."}, "detail": detail}), &[])),
+            "The pages linked to and from a page (by name, [[link]] or path), to a depth of 1 to 3 (needs the app), as the Graph screen draws it; the whole wiki without page. Like the screen it keeps the nearest 400 pages, and says so when there were more. It lists the links between them, one `from → to` a line. detail lists the pages too, each with its type, how far it is from the page and how many links it has.",
+            schema(json!({"page": page, "depth": {"type": "integer", "minimum": 1, "maximum": 3, "description": "How many links away to go. Default 2, as the Graph screen starts."}, "detail": detail}), &[])),
         tool("list_suggestions", "Suggested tasks and projects", Read,
             "Find tasks and projects' suggestions (needs the app): tasks and projects a read of the user's notes from the last 90 days found, each with the note and quote it rests on and its id, and how the last look went. Accept or skip one with suggestions; start_run find_tasks looks again.",
             schema(json!({}), &[])),
@@ -709,6 +712,9 @@ pub fn tools() -> Vec<Value> {
         tool("app_status", "Brainstead's state", Read,
             "The vault, whether it's read-only (then nothing can be changed until the user switches it off in Settings › Vault), the index as Settings › Vault shows it (its counts, or why it failed), Full Disk Access, Brainstead's version and its app data folder, whether Brainstead runs the daily and weekly summaries, whether the previous app's skills are still in the vault (moving_over retires them), and what ⌘Z would undo (needs the app).",
             schema(json!({}), &[])),
+        tool("list_assistants", "AI assistants found", Read,
+            "Settings › AI assistants' Found on this computer, as the pane lists it (needs the app): Claude Code, Codex, Antigravity and Copilot, each with its version, how many models it offers and where it is, or that it isn't installed (with where to read how to install it) or lists no models (then the user runs it in Terminal and signs in). look_again looks for them again, as the pane's Look again does, after one is installed or signed in.",
+            schema(json!({"look_again": {"type": "boolean", "description": "true looks for the assistants again first, as Look again does."}}), &[])),
         tool("rebuild_index", "Rebuild the index", Run,
             "Reads every file in the vault again and rebuilds Brainstead's index from scratch, as Settings › Vault's Rebuild index does (needs the app); the files aren't changed. It returns once started; app_status says how the index stands. For when search, tasks or links seem out of date with the files; only when the user asks.",
             schema(json!({}), &[])),
@@ -1092,6 +1098,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         "graph" => act("graph", obj),
         "open" => act("open", obj),
         "capture_extensions" => act("capture.status", obj),
+        "list_assistants" => act("assistants.found", obj),
         "glance" => act("glance", obj),
         "app_status" => act("status", obj),
         "rebuild_index" => act("index.rebuild", obj),
@@ -1567,9 +1574,15 @@ fn search(ctx: &Ctx, a: SearchArgs) -> Result<Out, String> {
         None => None,
     };
     let limit = a.limit.unwrap_or(10).clamp(1, 30);
-    let res = ix.search(&SearchRequest { q: a.query.clone(), layers, limit: 200 })?;
+    // since is the screen's date range: `since:` added to the query unless it has its own (src/Search.tsx),
+    // so the search itself goes by the note's own date, as `since:` does.
+    let q = match since {
+        Some(d) if !a.query.split_whitespace().any(|w| w.starts_with("since:")) => format!("{} since:{d}", a.query),
+        _ => a.query.clone(),
+    };
+    let res = ix.search(&SearchRequest { q, layers, limit: 200 })?;
     let day = |ms: i64| chrono::DateTime::from_timestamp_millis(ms).map(|d| d.with_timezone(&chrono::Local).date_naive());
-    let mut hits: Vec<_> = res.hits.iter().filter(|h| since.is_none_or(|s| day(h.file.mtime).is_some_and(|d| d >= s))).collect();
+    let mut hits: Vec<_> = res.hits.iter().collect();
     // The screen's Order: as ranked, or by the note's date (else the day it last changed), as
     // src/Search.tsx's sortHits orders them.
     let when = |h: &&brainstead_core::search::Hit| {
@@ -1933,10 +1946,12 @@ fn pending_sources(ctx: &Ctx, a: PendingArgs) -> Result<String, String> {
             };
             (p, st)
         })
-        .filter(|(_, st)| match want {
-            None => *st != "ingested",
+        // A file ingest can't read (a zip, an SVG…) is never one to ingest, as the Sources screen
+        // offers it no Ingest; Show all lists it, marked.
+        .filter(|(p, st)| match want {
+            None => *st != "ingested" && extract::ingestable(p),
             Some("all") => true,
-            Some(w) => *st == w,
+            Some(w) => *st == w && extract::ingestable(p),
         })
         .collect();
     let label = |st: &str| match st {
@@ -1955,7 +1970,13 @@ fn pending_sources(ctx: &Ctx, a: PendingArgs) -> Result<String, String> {
     let mut out = format!("{head}{what}:\n");
     for (p, st) in shown {
         let name = p.rsplit('/').next().unwrap_or(p);
-        let note = if brainstead_core::meeting::is_transcript(name) { " · a transcript: start_run meeting_note writes it up" } else { "" };
+        let note = if !extract::ingestable(p) {
+            " · can't be ingested (not text, a PDF, an Office file or an image)"
+        } else if brainstead_core::meeting::is_transcript(name) {
+            " · a transcript: start_run meeting_note writes it up"
+        } else {
+            ""
+        };
         out.push_str(&format!("- {p} · {}{note}\n", label(st)));
     }
     Ok(out)
@@ -2219,6 +2240,9 @@ struct TaskArgs {
     contexts: Vec<String>,
     effort: Option<String>,
     due: Option<String>,
+    /// Deferred until, as edit_task names it.
+    defer: Option<String>,
+    start: Option<String>,
     #[serde(default)]
     reason: String,
     #[serde(default)]
@@ -2251,8 +2275,11 @@ fn create_task(ctx: &Ctx, a: TaskArgs) -> Result<String, String> {
     if let Some(e) = a.effort.as_deref().filter(|e| !e.trim().is_empty()) {
         line = write::with_effort(&line, Some(e)).map_err(|e| e.to_string())?;
     }
-    if let Some(d) = a.due.as_deref().filter(|d| !d.trim().is_empty()) {
-        line = write::with_date(&line, write::DateKind::Due, Some(d.trim())).map_err(|e| e.to_string())?;
+    // Its dates, as edit_task sets them: due, deferred until and starts.
+    for (d, kind) in [(&a.due, write::DateKind::Due), (&a.defer, write::DateKind::Scheduled), (&a.start, write::DateKind::Start)] {
+        if let Some(d) = d.as_deref().filter(|d| !d.trim().is_empty()) {
+            line = write::with_date(&line, kind, Some(d.trim())).map_err(|e| e.to_string())?;
+        }
     }
     let dest = match a.project.as_deref().filter(|p| !p.trim().is_empty()) {
         Some(p) => {
@@ -2264,7 +2291,7 @@ fn create_task(ctx: &Ctx, a: TaskArgs) -> Result<String, String> {
         None => TODO_LIST.to_string(),
     };
     read_text(ctx, &dest).map_err(|_| format!("{dest} isn't in the vault."))?;
-    let c = change(ctx, &dest, Kind::Task, &format!("Add “{text}”"), &a.reason, a.unattended, Instruction::AddTask { line });
+    let c = change(ctx, &dest, Kind::Task, &format!("Add “{text}”"), &a.reason, a.unattended, Instruction::AddTask { line, heading: None });
     send(ctx, c, vec![])
 }
 

@@ -61,6 +61,16 @@ const SOURCES: { kind: InboxItem["kind"]; label: string; icon: string; tip: stri
   { kind: "thought", label: "Scratchpad", icon: "note", tip: "on the Scratchpad" },
   { kind: "task", label: "To Do list › Other", icon: "tasks", tip: "under Other on the To Do list" },
 ];
+/** The items to clarify in the order the list shows them, band by band (Captures, Scratchpad, To Do
+ *  list › Other), so Suggest for all asks about the same first 20 (an assistant's list_inbox too). */
+export function inboxRows(raw: InboxItem[]): InboxItem[] {
+  const open = raw.filter(unclarified);
+  return SOURCES.flatMap((g) => open.filter((i) => i.kind === g.kind));
+}
+
+/** The band an item is listed under. */
+export const bandOf = (i: InboxItem) => SOURCES.find((g) => g.kind === i.kind)!.label;
+
 /** What a row says under its text; its band already says where it came from. */
 const rowNote = (i: InboxItem) => (i.kind === "capture" ? [i.lineText, i.stamp].filter(Boolean).join(" · ") : (i.stamp ?? ""));
 const sourceOf = (i: InboxItem) =>
@@ -73,10 +83,7 @@ const startText = (i: InboxItem) => (i.kind === "capture" ? `Follow up on [[${i.
 export function InboxScreen() {
   const raw = useInbox();
   const projects = useProjects();
-  const items = useMemo(() => {
-    const open = (raw ?? []).filter(unclarified);
-    return SOURCES.flatMap((g) => open.filter((i) => i.kind === g.kind));
-  }, [raw]);
+  const items = useMemo(() => inboxRows(raw ?? []), [raw]);
   const [sel, setSel] = useViewState<string | null>("inbox:sel", null);
   const [form, setForm] = useState<{ mode: "next" | "waiting"; c: Clarified } | null>(null);
   const [filing, setFiling] = useState(false);

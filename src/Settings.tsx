@@ -551,10 +551,7 @@ function Notes() {
               defaultValue={s.templateScripts || DEFAULT_SCRIPTS}
               aria-label="User scripts folder"
               spellCheck={false}
-              onBlur={(e) => {
-                const v = e.target.value.trim().replace(/^\/+|\/+$/g, "");
-                settings.update({ templateScripts: v && v !== DEFAULT_SCRIPTS ? v : undefined });
-              }}
+              onBlur={(e) => settings.update({ templateScripts: scriptsFolder(e.target.value) })}
             />
           </span>
           <TemplaterDocsLink className="btn" />
@@ -797,12 +794,28 @@ function ExampleNotes() {
 /** "1 template", "3 templates". */
 const counted = (n: number, one: string) => `${fmtCount(n)} ${one}${n === 1 ? "" : "s"}`;
 
-const INSTALL: Record<string, string> = {
+/** The User scripts folder as it's kept: trimmed, without slashes at its ends, and unset for the
+ *  default (an assistant's settings tool keeps it the same way). */
+export function scriptsFolder(typed: string): string | undefined {
+  const v = typed.trim().replace(/^\/+|\/+$/g, "");
+  return v && v !== DEFAULT_SCRIPTS ? v : undefined;
+}
+
+/** Where to read how to install each assistant (How to install). */
+export const INSTALL: Record<string, string> = {
   claude: "https://docs.claude.com/en/docs/claude-code/setup",
   codex: "https://developers.openai.com/codex/cli",
   antigravity: "https://antigravity.google",
   copilot: "https://docs.github.com/copilot/how-tos/set-up/install-copilot-cli",
 };
+
+/** An assistant's line under Found on this computer: its models and where it is, or what to do. */
+export function foundDetail(c: CliInfo): string {
+  if (!c.path) return "Not installed.";
+  return c.models.length
+    ? `${c.models.length} model${c.models.length === 1 ? "" : "s"} · ${c.path}`
+    : `No models listed: open Terminal, run ${c.cli === "antigravity" ? "agy" : c.cli} and sign in.`;
+}
 
 function Assistants() {
   const s = useStore(settings);
@@ -990,13 +1003,7 @@ function Assistants() {
                 <div className="pt">
                   {CLI_LABEL[c.cli]} {c.version && <span className="faint">· {c.version}</span>}
                 </div>
-                <div className="faint">
-                  {c.path
-                    ? c.models.length
-                      ? `${c.models.length} model${c.models.length === 1 ? "" : "s"} · ${c.path}`
-                      : `No models listed: open Terminal, run ${c.cli === "antigravity" ? "agy" : c.cli} and sign in.`
-                    : "Not installed."}
-                </div>
+                <div className="faint">{foundDetail(c)}</div>
               </div>
               {!c.path && (
                 <button

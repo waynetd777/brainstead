@@ -18,7 +18,7 @@ import { Dialog } from "../ui";
 import { closeNoteDialog, setNewNoteCursor } from "./dialogs";
 import { composeFilename } from "./filename";
 import { checkTemplate, freeName, runTemplate, StopRun } from "./templater";
-import { AskPanel, TemplaterDocsLink, useAsker, vaultEnv } from "./TemplateRun";
+import { AskPanel, runHooks, TemplaterDocsLink, useAsker, vaultEnv } from "./TemplateRun";
 
 export interface LoadedTemplate {
   path: string;
@@ -128,11 +128,7 @@ export function NewNoteDialog({ initial }: { initial?: string }) {
       if (r.cursor !== null) setNewNoteCursor(path, r.cursor);
       closeNoteDialog();
       openDoc(path);
-      for (const h of r.hooks) {
-        Promise.resolve()
-          .then(h)
-          .catch((e) => toast(`The template's finishing step failed: ${e instanceof Error ? e.message : String(e)}`, undefined, "bad"));
-      }
+      void runHooks(r.hooks).then((failed) => failed.forEach((f) => toast(f, undefined, "bad")));
       if (r.open.length) toast(`Also made ${r.open.join(", ")}`);
     } catch (e) {
       setBusy(false);

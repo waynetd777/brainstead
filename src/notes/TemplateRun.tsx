@@ -53,6 +53,22 @@ export function useAsker() {
   return { ask, pending, answer, stop };
 }
 
+/** Runs a template's tp.hooks.on_all_templates_executed callbacks, once its note is made, as New
+ *  note does (and an assistant's create_note): each on its own, and why any failed. */
+export async function runHooks(hooks: (() => unknown)[]): Promise<string[]> {
+  const ran = await Promise.all(
+    hooks.map((h) =>
+      Promise.resolve()
+        .then(h)
+        .then(
+          () => null,
+          (e: unknown) => `The template's finishing step failed: ${e instanceof Error ? e.message : String(e)}`,
+        ),
+    ),
+  );
+  return ran.filter((x): x is string => x !== null);
+}
+
 /** An Env over the open vault. `create` defaults to making the file (Test run passes its own). */
 export async function vaultEnv(templatePath: string, ask: Env["ask"], create?: Env["create"]): Promise<Env> {
   const [files, scripts] = await Promise.all([

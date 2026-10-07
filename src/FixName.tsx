@@ -32,6 +32,12 @@ export const ACTION: Record<string, string> = {
 };
 
 /** Which rows the fix will change: rewrites and the alias, those still ticked. */
+/** The files unticked to start with: with Ask about each file, every note to rewrite, so each is
+ *  ticked once it's read (an assistant's fix_name starts from the same). */
+export function startUnticked(rows: FixNameRow[], askAboutEach: boolean): Set<string> {
+  return new Set(askAboutEach ? rows.filter((x) => x.action === "rewrite").map((x) => x.file) : []);
+}
+
 export function chosenRows(rows: FixNameRow[], off: Set<string>): FixNameRow[] {
   return rows.filter((r) => (r.action === "rewrite" || r.action === "alias") && !off.has(r.file));
 }
@@ -112,7 +118,7 @@ function FixName({ start, startRight, onClose }: { start: string; startRight: st
         if (!live) return;
         setPlan(p);
         // A file that's ambiguous is unticked to start with: you tick it once you've read it.
-        setOff(new Set(ambiguous ? p.rows.filter((x) => x.action === "rewrite").map((x) => x.file) : []));
+        setOff(startUnticked(p.rows, ambiguous));
       })
       .catch((e) => live && reportEditError(e));
     return () => {

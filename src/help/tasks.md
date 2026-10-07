@@ -17,7 +17,7 @@ The lists on the left each show their count:
 - **Someday / maybe**: tasks tagged `#someday-maybe`.
 - **Done this week** and **Done last week**: ticked tasks by their done date, weeks starting on Monday.
 
-The top bar says how many tasks the list holds. In Next actions, Follow-ups, Waiting for and Someday / maybe you can drag rows by their grip to set your own order, while the list isn't grouped. The order is saved in the note, as `^rank-1024` at the end of each line.
+The top bar says how many tasks the list holds. In Next actions, Follow-ups, Waiting for and Someday / maybe you can drag rows by their grip to set your own order, while the list isn't grouped. The order is saved in the note, as `^rank-1024` at the end of each line; when some rows have no rank yet, or there's no room between two, the whole list is renumbered. An assistant moves a task the same way (`move_task`).
 
 ## Use the keys
 `↑` and `↓` choose a task, going on into the next list past a list's end. `↩` puts the task's words in the pane to change, `Space` ticks or unticks it, `⌫` deletes it (`⌘Z` puts it back) and `/` goes to **Search tasks**. The same keys work on [Today](app:today), [Projects](app:projects) and the [Weekly review](app:weekly), where `↩` opens the task's note, but not in task blocks inside a note.
@@ -37,7 +37,7 @@ Click a task to show it in the pane on the right. Click its words to change them
 ## Group, filter and save lists
 **Group by** in the top bar (**None**, **Project**, **Context** or **Due**) groups the current list, with a band and count per group. Grouped lists can't be dragged. An assistant reading your tasks can use the same grouping and effort filter.
 
-Above the table, **Search tasks** narrows every list to the tasks with all the words you type, in their text, note, heading, project, tags or context; the counts on the left show how many match in each list, and `Esc` clears it. Beside it, context chips (**All**, `@calls`, `@office`…) show only tasks in that context; click the chip again, or **All**, to show all. The effort menu limits the list to tasks of 15 minutes, 30 minutes or an hour or less, by their effort field.
+Above the table, **Search tasks** narrows every list to the tasks with all the words you type, in their text, note, heading, project, tags or context; the counts on the left show how many match in each list, and `Esc` clears it (an assistant's `list_tasks` with `query` matches the same way). Beside it, context chips (**All**, `@calls`, `@office`…) show only tasks in that context; click the chip again, or **All**, to show all. The effort menu limits the list to tasks of 15 minutes, 30 minutes or an hour or less, by their effort field.
 
 Once you've chosen a context, effort or grouping, **Save this list…** keeps the combination under a name. It shows under Saved on the left. The x beside a saved list forgets it; its tasks stay as they are.
 
