@@ -12,6 +12,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml_ng = "0.10"
 regex = "1"
+aho-corasick = "1"
 sha2 = "0.10"
 hex = "0.4"
 unicode-normalization = "0.1"

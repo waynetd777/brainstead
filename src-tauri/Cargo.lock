@@ -387,6 +387,7 @@ dependencies = [
 name = "brainstead-core"
 version = "0.1.0"
 dependencies = [
+ "aho-corasick",
  "base64 0.23.1",
  "chrono",
  "flate2",

@@ -101,6 +101,35 @@ struct File {
     rel: String,
     abs: PathBuf,
     mtime: i64,
+    size: u64,
+}
+
+/// The notes' text from the last run, by path with the modified time and size it was read at. The
+/// checks rerun after every change to the vault, and reading two thousand notes through a synced
+/// folder takes most of a run (about half a second), so only the files that changed are read again.
+static TEXTS: LazyLock<std::sync::Mutex<Kept>> = LazyLock::new(Default::default);
+
+/// A file's text by path, with the modified time and size it was read at.
+type Kept = HashMap<PathBuf, (i64, u64, String)>;
+
+/// Each markdown file's text: from TEXTS when it's unchanged since, else read (and kept).
+fn read_all(files: &[File]) -> Vec<(&File, String)> {
+    let mut kept = TEXTS.lock().unwrap_or_else(|e| e.into_inner());
+    let mut next = HashMap::with_capacity(kept.len());
+    let out = files
+        .iter()
+        .filter(|f| f.rel.ends_with(".md"))
+        .map(|f| {
+            let text = match kept.remove(&f.abs) {
+                Some((m, s, t)) if m == f.mtime && s == f.size && f.mtime != 0 => t,
+                _ => read(&f.abs),
+            };
+            next.insert(f.abs.clone(), (f.mtime, f.size, text.clone()));
+            (f, text)
+        })
+        .collect();
+    *kept = next;
+    out
 }
 
 /// Every file outside `.obsidian` and `.trash`, at any depth.
@@ -113,8 +142,9 @@ fn walk(root: &Path) -> Vec<File> {
         .filter(|e| e.file_type().is_file())
         .filter_map(|e| {
             let rel = crate::vault::rel_of(root, e.path())?;
-            let mtime = e.metadata().ok().map(|m| crate::vault::mtime_ms(&m)).unwrap_or(0);
-            Some(File { rel, abs: e.path().to_path_buf(), mtime })
+            let meta = e.metadata().ok();
+            let mtime = meta.as_ref().map(crate::vault::mtime_ms).unwrap_or(0);
+            Some(File { rel, abs: e.path().to_path_buf(), mtime, size: meta.map_or(0, |m| m.len()) })
         })
         .collect()
 }
@@ -199,7 +229,7 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
     let t0 = std::time::Instant::now();
     let files = walk(root);
     let day = |ms: i64| zone.ms_to_local(ms).date();
-    let md: Vec<(&File, String)> = files.iter().filter(|f| f.rel.ends_with(".md")).map(|f| (f, read(&f.abs))).collect();
+    let md: Vec<(&File, String)> = read_all(&files);
     let wiki: Vec<&(&File, String)> = md.iter().filter(|(f, _)| is_wiki_page(&f.rel)).collect();
     let mut index: HashSet<String> = HashSet::new();
     for f in &files {
@@ -369,25 +399,49 @@ pub(crate) fn run_in(root: &Path, today: NaiveDate, dismissed: &HashSet<String>,
     checks.push(Check { id: "uningested-sources", title: "Sources not yet ingested", classic: true, ignored: 0, items });
 
     // 8. Unreferenced images: files directly in images/ that no .md or .txt file embeds or links.
-    let referrers: Vec<String> = files
-        .iter()
-        .filter(|f| f.rel.ends_with(".md") || f.rel.ends_with(".txt"))
-        .map(|f| md.iter().find(|(m, _)| m.rel == f.rel).map(|(_, t)| t.clone()).unwrap_or_else(|| read(&f.abs)).nfc().collect())
-        .collect();
-    let mut items = Vec::new();
-    for f in files.iter().filter(|f| f.rel.starts_with("images/") && !f.rel[7..].contains('/')) {
+    // Every image's ways of being referred to, looked for in one pass over each file (rather than
+    // each image's in every file: images × text).
+    let images: Vec<&File> =
+        files.iter().filter(|f| f.rel.starts_with("images/") && !f.rel[7..].contains('/') && !name_of(&f.rel).starts_with('.')).collect();
+    let mut needles: Vec<String> = Vec::new();
+    let mut owner: Vec<usize> = Vec::new();
+    for (i, f) in images.iter().enumerate() {
         let n = name_of(&f.rel);
-        if n.starts_with('.') {
-            continue;
-        }
         let s = stem(n);
-        let needles: Vec<String> = [f.rel.clone(), format!("[[{n}]]"), format!("[[{n}|"), format!("[[{s}]]"), format!("[[{s}|")]
-            .iter()
-            .map(|x| x.nfc().collect())
-            .collect();
-        if !referrers.iter().any(|t| needles.iter().any(|n| t.contains(n.as_str()))) {
-            items.push(Item { text: f.rel.clone(), page: Some(f.rel.clone()), ..Default::default() });
+        for x in [f.rel.clone(), format!("[[{n}]]"), format!("[[{n}|"), format!("[[{s}]]"), format!("[[{s}|")] {
+            needles.push(x.nfc().collect());
+            owner.push(i);
         }
+    }
+    let mut used = vec![false; images.len()];
+    if !images.is_empty() {
+        let ac = aho_corasick::AhoCorasick::new(&needles).expect("image names make a matcher");
+        let texts: HashMap<&str, &String> = md.iter().map(|(f, t)| (f.rel.as_str(), t)).collect();
+        for f in files.iter().filter(|f| f.rel.ends_with(".md") || f.rel.ends_with(".txt")) {
+            let owned;
+            let t: &str = match texts.get(f.rel.as_str()) {
+                Some(t) => t,
+                None => {
+                    owned = read(&f.abs);
+                    &owned
+                }
+            };
+            // Most notes are NFC already: normalised only when they might not be.
+            let t: std::borrow::Cow<str> = match unicode_normalization::is_nfc_quick(t.chars()) {
+                unicode_normalization::IsNormalized::Yes => t.into(),
+                _ => t.nfc().collect::<String>().into(),
+            };
+            for m in ac.find_overlapping_iter(t.as_ref()) {
+                used[owner[m.pattern().as_usize()]] = true;
+            }
+            if used.iter().all(|u| *u) {
+                break;
+            }
+        }
+    }
+    let mut items = Vec::new();
+    for (f, _) in images.iter().zip(&used).filter(|(_, u)| !**u) {
+        items.push(Item { text: f.rel.clone(), page: Some(f.rel.clone()), ..Default::default() });
     }
     sort(&mut items);
     checks.push(Check { id: "unreferenced-images", title: "Images nothing uses", classic: true, ignored: 0, items });
@@ -559,17 +613,20 @@ fn fold(s: &str) -> String {
 /// Names differing only in their digits (Sprint 21, Sprint 22) aren't.
 pub fn duplicates(pages: &[(String, Vec<String>)]) -> Vec<Duplicate> {
     let mut out = Vec::new();
-    let named: Vec<(&str, String, Vec<String>)> = pages
+    // Each name folded once, not once per pair.
+    let named: Vec<(&str, String, Vec<String>, String)> = pages
         .iter()
         .map(|(rel, aliases)| {
-            (rel.as_str(), stem(name_of(rel)).to_string(), aliases.iter().map(|a| fold(a)).filter(|a| !a.is_empty()).collect())
+            let name = stem(name_of(rel)).to_string();
+            let folded = fold(&name);
+            (rel.as_str(), name, aliases.iter().map(|a| fold(a)).filter(|a| !a.is_empty()).collect(), folded)
         })
         .collect();
     for i in 0..named.len() {
         for j in i + 1..named.len() {
-            let (ra, na, aa) = &named[i];
-            let (rb, nb, ab) = &named[j];
-            let (fa, fb) = (fold(na), fold(nb));
+            let (ra, na, aa, fa) = &named[i];
+            let (rb, nb, ab, fb) = &named[j];
+            let (fa, fb) = (fa.clone(), fb.clone());
             if fa.is_empty() || fb.is_empty() {
                 continue;
             }
@@ -734,6 +791,24 @@ mod tests {
 
     fn today() -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 10, 2).unwrap()
+    }
+
+    #[test]
+    fn reads_a_note_again_once_it_changes() {
+        let t = tempfile::tempdir().unwrap();
+        let page = t.path().join("wiki/entities/A.md");
+        std::fs::create_dir_all(page.parent().unwrap()).unwrap();
+        let missing = |root: &Path| run_in(root, today(), &HashSet::new(), fixture::zone()).checks[0].items.len();
+        std::fs::write(&page, "See [[Ghost]].\n").unwrap();
+        fixture::set_mtime(&page, "2026-01-01 12:00");
+        assert_eq!(missing(t.path()), 1);
+        // The same time, another size; then the same size, another time: read again both ways.
+        std::fs::write(&page, "See nothing.\n").unwrap();
+        fixture::set_mtime(&page, "2026-01-01 12:00");
+        assert_eq!(missing(t.path()), 0);
+        std::fs::write(&page, "See [[Ghos]].\n").unwrap();
+        fixture::set_mtime(&page, "2026-01-01 12:01");
+        assert_eq!(missing(t.path()), 1);
     }
 
     #[test]
