@@ -736,6 +736,15 @@ describe("MCP actions", () => {
       await run("run.stop", { run: "find_tasks" });
       await run("run.stop", { run: "write_current_state" });
       expect(calls.some(([c]) => c === "find_stop") && calls.some(([c]) => c === "current_state_stop")).toBe(true);
+      // A meeting note is stopped as the ingest queue's run of its kind, not the ingest beside it.
+      answers.ingest_runs = () => [
+        { id: "i1", kind: "ingest", status: "running" },
+        { id: "m1", kind: "meeting", status: "running" },
+      ];
+      await run("run.stop", { run: "meeting_note" });
+      expect(calls.filter(([c]) => c === "ingest_stop").at(-1)![1]).toEqual({ id: "m1" });
+      answers.ingest_runs = () => [];
+      expect(await run("run.stop", { run: "meeting_note" })).toBe("No meeting note is being written.");
     });
   });
 

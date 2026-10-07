@@ -1012,9 +1012,11 @@ async function stopRun(a: Args): Promise<string> {
     noted(`stopped the ${summary} summary`);
     return `Stopping the ${summary} summary.`;
   }
-  if (run === "ingest") {
-    const id = str(a, "id") ?? (await api.ingestRuns()).find((r) => r.status === "running")?.id;
-    if (!id) return "No ingest is running.";
+  if (run === "ingest" || run === "meeting_note") {
+    // A meeting note is a run in the ingest queue, of its own kind.
+    const meeting = run === "meeting_note";
+    const id = str(a, "id") ?? (await api.ingestRuns()).find((r) => r.status === "running" && (r.kind === "meeting") === meeting)?.id;
+    if (!id) return meeting ? "No meeting note is being written." : "No ingest is running.";
     await api.ingestStop(id);
   } else if (run === "daily_check" || run === "nightly") await api.dailyCheckStop();
   else if (run === "weekly_prep") await api.weekprepStop();
@@ -1023,7 +1025,7 @@ async function stopRun(a: Args): Promise<string> {
   else if (run === "write_current_state") await api.currentStateStop();
   else
     throw new Error(
-      "run is ingest, daily_check, daily_summary, weekly_summary, weekly_prep, find_tasks, contradictions or write_current_state.",
+      "run is ingest, daily_check, daily_summary, weekly_summary, weekly_prep, find_tasks, contradictions, meeting_note or write_current_state.",
     );
   noted(`stopped the ${run.replace("_", " ")}`);
   return `Stopping the ${run.replace("_", " ")}.`;
