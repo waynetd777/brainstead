@@ -22,7 +22,8 @@ import { Store, useStore } from "./store";
 export const fixNameOpen = new Store<{ wrong?: string; right?: string } | null>(null);
 export const openFixName = (wrong?: string) => fixNameOpen.set({ wrong });
 
-const ACTION: Record<string, string> = {
+/** What happens to each file, as the screen labels it. */
+export const ACTION: Record<string, string> = {
   rewrite: "Rewrite",
   alias: "Add as alias",
   leave: "Left alone",

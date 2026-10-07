@@ -27,7 +27,7 @@ The **Note**, **Wiki** and **Source** chips choose which layers are searched; at
 `↑` and `↓` move through the results and `↩` opens one; a click works too. `Esc` clears the box. A note opened from a search scrolls to the first match, with every match marked. Right-click a result for the same menu as on [Notes](app:notes).
 
 ## Keep a search
-Click **Save search**, give it a name and click **Save**. It's kept in `Me. Smart Lists.md` in the vault, with the layers chosen, and listed under **Saved searches** on the left. Click one to run it again. The x beside one deletes it (`⌘Z` puts it back). To change a saved search, edit `Me. Smart Lists.md`.
+Click **Save search**, give it a name and click **Save**. It's kept in `Me. Smart Lists.md` in the vault, with the layers chosen, and listed under **Saved searches** on the left. Click one to run it again. The x beside one deletes it (`⌘Z` puts it back). To change a saved search, edit `Me. Smart Lists.md`. An assistant listing your saved searches gets each one's layers too, so it runs one as clicking it does.
 
 ## Jump anywhere with ⌘K
 `⌘K` opens a box over any screen. Type to find:

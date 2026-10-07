@@ -268,3 +268,4 @@
 {"commit": "95247768", "detail": "D-20261007-09 - MCP parity: argument shapes for the 2026-10-07 items", "id": "j-20261007-110333-e957", "kind": "decision-ref", "ts": "2026-10-07T11:03:33Z", "who": "waynetd777@users.noreply.github.com"}
 {"commit": "fd87c172", "detail": "D-20261007-10 - Emptying the Trash and Delete for good stay with the screen", "id": "j-20261007-115841-a206", "kind": "decision-ref", "ts": "2026-10-07T11:58:41Z", "who": "waynetd777@users.noreply.github.com"}
 {"commit": "fd87c172", "detail": "D-20261007-11 - MCP parity part 2: tool and argument shapes", "id": "j-20261007-121951-29f2", "kind": "decision-ref", "ts": "2026-10-07T12:19:51Z", "who": "waynetd777@users.noreply.github.com"}
+{"commit": "26376716", "detail": "D-20261007-12 - MCP parity part 3: tool and argument shapes", "id": "j-20261007-141622-853b", "kind": "decision-ref", "ts": "2026-10-07T14:16:22Z", "who": "waynetd777@users.noreply.github.com"}

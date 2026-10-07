@@ -37,7 +37,7 @@ With **Hold the summaries for me** on, each one is held in [Changes](app:review)
 To have it also ingest again the sources that changed, and to ingest new sources as they arrive, use the **Ingest** switches in [Settings › AI assistants](app:settings/assistants).
 
 ## Look back at recent runs
-**Recent runs** lists the last eight daily and weekly summary runs, scheduled or run now. **Open** shows the run's chat in Ask, **Show** opens the note it wrote, and **Undo** puts the note back as it was, as long as it hasn't been edited since (the line in `log.md` stays, as a record). Each run's summary is also a change in [Changes](app:review): reverting it there undoes the run the same way, and Recent runs then marks it undone.
+**Recent runs** lists the last eight daily and weekly summary runs, scheduled or run now. **Open** shows the run's chat in Ask, **Show** opens the note it wrote, and **Undo** puts the note back as it was, as long as it hasn't been edited since (the line in `log.md` stays, as a record). Each run's summary is also a change in [Changes](app:review): reverting it there undoes the run the same way, and Recent runs then marks it undone. An assistant sees the same list, each run's chat included, and the weekly review preparation's last chat.
 
 ## Keep your tools' sessions out of the summaries
 The summaries put each project's work under **Work done** or **Personal** by the project's area: a project with the area Personal is personal, one with any other area is work, done projects included. A session counts for a project when its folder is named after it (`orbit-app` for Orbit App) or its messages are plainly about it. To move a project's work across, change its area on [Projects](app:projects).

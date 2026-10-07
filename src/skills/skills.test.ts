@@ -61,7 +61,7 @@ describe("skill screens", () => {
       ],
     });
     expect(md).toContain("Checked against Acme Operating Model v2.3 (in force).");
-    expect(md).toContain("Not used: Acme Operating Model v2.2 (superseded).");
+    expect(md).toContain("Not used: Acme Operating Model v2.2 (Superseded).");
     expect(md).toContain("## Conflict (material): Funding");
     expect(md).toContain("## Agrees\n\n- Pod size");
   });

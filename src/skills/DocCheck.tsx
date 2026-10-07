@@ -39,7 +39,8 @@ const KIND: Record<string, [string, string]> = {
   aligned: ["Agrees", "green"],
 };
 
-const STATUS: Record<string, [string, string]> = {
+/** A register row's status as the screen names it. */
+export const STATUS: Record<string, [string, string]> = {
   canonical: ["In force", "green"],
   draft: ["Draft", "amber"],
   superseded: ["Superseded", ""],
@@ -55,7 +56,8 @@ export function findingsNote(name: string, d = new Date()): string {
 export function findingsMarkdown(name: string, r: CheckResult): string {
   const lines = [`# Doc check: ${name}`, ""];
   if (r.against) lines.push(`Checked against ${r.against.title} ${r.against.version} (in force).`);
-  if (r.excluded.length) lines.push(`Not used: ${r.excluded.map((e) => `${e.title} ${e.version} (${e.status})`).join(", ")}.`);
+  if (r.excluded.length)
+    lines.push(`Not used: ${r.excluded.map((e) => `${e.title} ${e.version} (${STATUS[e.status]?.[0] ?? e.status})`).join(", ")}.`);
   lines.push("", `**${r.verdict}**`, "", r.summary, "");
   for (const f of r.findings.filter((x) => x.kind !== "aligned")) {
     lines.push(`## ${KIND[f.kind]?.[0] ?? f.kind}${f.material ? " (material)" : ""}: ${f.title}`, "");

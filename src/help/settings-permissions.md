@@ -14,4 +14,4 @@ If your vault lives in a cloud-synced folder, macOS without Full Disk Access ask
 2. Under Privacy & Security › Full Disk Access, turn Brainstead on.
 3. If macOS offers to quit and reopen Brainstead, say yes.
 
-The card checks again when Brainstead's window comes to the front, or at once with **Check again**. Once granted, the card says so and the buttons go.
+The card checks again when Brainstead's window comes to the front, or at once with **Check again**. Once granted, the card says so and the buttons go. An assistant can tell whether Brainstead has it.

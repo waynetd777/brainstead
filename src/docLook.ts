@@ -10,6 +10,7 @@
 // always print light.
 
 import { useEffect, useState } from "react";
+import type { Settings } from "./api";
 import { settings, useStore } from "./store";
 
 export const DOC_ACCENTS: [id: string, label: string, swatch: string][] = [
@@ -54,10 +55,40 @@ function useSystemDark() {
   return dark;
 }
 
+type Look = { style?: string; accent?: string };
+
+/** The defaults from Settings › Notes, in these settings. */
+export const docDefaults = (s: Settings) => ({
+  style: known(DOC_STYLES, s.docStyle, "brainstead"),
+  accent: known(DOC_ACCENTS, s.docAccent, "brainstead"),
+});
+
+/** The notes' own looks with `patch` made to the one at `path`: a choice that matches the
+ *  default isn't kept, and a note left with none is dropped. */
+export function withOwnLook(all: Record<string, Look>, path: string, patch: Look, dflt: { style: string; accent: string }) {
+  const next = { ...all[path], ...patch };
+  if (next.style === dflt.style) delete next.style;
+  if (next.accent === dflt.accent) delete next.accent;
+  const out = { ...all };
+  if (next.style || next.accent) out[path] = next;
+  else delete out[path];
+  return out;
+}
+
+/** How the note at `path` looks: its own theme and colour where it has them, else the defaults. */
+export function lookOf(s: Settings, path: string) {
+  const dflt = docDefaults(s);
+  const own = s.docLooks?.[path];
+  return {
+    style: known(DOC_STYLES, own?.style, dflt.style),
+    accent: known(DOC_ACCENTS, own?.accent, dflt.accent),
+    own: !!(own?.style || own?.accent),
+  };
+}
+
 /** The defaults from Settings › Notes. */
 export function useDocDefaults() {
-  const s = useStore(settings);
-  return { style: known(DOC_STYLES, s.docStyle, "brainstead"), accent: known(DOC_ACCENTS, s.docAccent, "brainstead") };
+  return docDefaults(useStore(settings));
 }
 
 /** How the document at `path` looks: its own choice where it has one, else the defaults. */
@@ -67,17 +98,7 @@ export function useDocLook(path: string) {
   const systemDark = useSystemDark();
   const appDark = s.theme === "dark" || (s.theme === "system" && systemDark);
   const own = s.docLooks?.[path];
-  const setOwn = (patch: { style?: string; accent?: string }) => {
-    const cur = settings.get().docLooks ?? {};
-    const next = { ...cur[path], ...patch };
-    // A choice that matches the default isn't kept.
-    if (next.style === dflt.style) delete next.style;
-    if (next.accent === dflt.accent) delete next.accent;
-    const all = { ...cur };
-    if (next.style || next.accent) all[path] = next;
-    else delete all[path];
-    settings.update({ docLooks: all });
-  };
+  const setOwn = (patch: Look) => settings.update({ docLooks: withOwnLook(settings.get().docLooks ?? {}, path, patch, dflt) });
   const theme = (s.docTheme ?? (appDark ? "dark" : "light")) as "light" | "dark";
   return {
     /** Light or dark unlike the app, so the document needs its own background. */

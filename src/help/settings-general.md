@@ -30,7 +30,7 @@ The rest you tick yourself: the other app's summaries switched off, its browser 
 What the two together do is in [The menu bar](help:menubar).
 
 ## Change the quick capture shortcut
-The shortcut for [Quick capture](help:capture) is `⌃⌥Space` unless you change it. Click the shortcut button, then press the new keys; it needs at least one modifier key. Press `Esc` or click elsewhere to keep the old one. **Reset to ⌃⌥Space** puts it back. If macOS won't take the shortcut, a message under it says why.
+The shortcut for [Quick capture](help:capture) is `⌃⌥Space` unless you change it. Click the shortcut button, then press the new keys; it needs at least one modifier key. Press `Esc` or click elsewhere to keep the old one. **Reset to ⌃⌥Space** puts it back. If macOS won't take the shortcut, a message under it says why. An assistant can change it too, when you ask: it checks the keys the same way and tells you if macOS wouldn't take them.
 
 ## Set your name
 Type your first name under **Your name**, as Teams writes it. Today greets you by it. In meeting notes made from transcripts it tells Brainstead which speaker is you, so your actions become tasks and a meeting with one other person counts as a 1-1.

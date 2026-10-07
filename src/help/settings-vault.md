@@ -10,7 +10,7 @@ The vault is the folder of markdown notes Brainstead reads. Brainstead keeps its
 ## Choose the vault folder
 Under **Vault folder**, click **Choose…** and pick the folder. Every `.md` and `.txt` file in it is indexed, except in system and excluded folders. **Show in Finder** opens it.
 
-The card below says how many files are indexed, with counts of notes, wiki pages, sources, templates, open tasks and unresolved links, and when the index was last updated. **Rebuild index** reads every file again and rebuilds the index from scratch; the files aren't changed.
+The card below says how many files are indexed, with counts of notes, wiki pages, sources, templates, open tasks and unresolved links, and when the index was last updated. **Rebuild index** reads every file again and rebuilds the index from scratch; the files aren't changed. An assistant sees the same counts, or why the index failed.
 
 ## Make the vault editable
 A folder you choose opens with **Read-only** on: Brainstead never changes anything in it. A new vault made on the first screen opens with it off. Turn **Read-only** off to tick tasks, set their dates, capture, save chats and let the daily and weekly summaries write. While it's on, captures from the browser extensions are refused, a saved Ask chat's new turns wait in the app data folder until it's off, and a **Read-only** pill shows in the sidebar's status line and the menu-bar window; click it to come here.

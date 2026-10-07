@@ -546,6 +546,16 @@ describe("MCP actions", () => {
       expect(sent[1]).toMatch(/^Contradictions - \d{4}-\d\d-\d\d-2\.md$/);
     });
 
+    it("prepares the paused review's week, as the screen's Prepare does", async () => {
+      answers.weekly_state_read = () => ({ week: "2099-W01", step: 2, done: [0, 1], log: [], notes: "", startedAt: 1 });
+      expect(await run("run.start", { run: "weekly_prep" })).toMatch(/^Preparing the review of 2099-W01 \(the paused review's week\)/);
+      expect(calls.find(([c]) => c === "weekprep_run")![1]).toEqual({ week: "2099-W01" });
+      answers.weekly_state_read = () => ({ week: "2001-W01", step: 2, done: [], log: [], notes: "", startedAt: 1 });
+      await run("run.start", { run: "weekly_prep" });
+      expect(calls.filter(([c]) => c === "weekprep_run").at(-1)![1]!.week).toMatch(/^20\d\d-W\d\d$/);
+      expect(calls.filter(([c]) => c === "weekprep_run").at(-1)![1]!.week).not.toBe("2001-W01");
+    });
+
     it("goes through the weekly review: start, done, notes and finish", async () => {
       let saved: unknown = null;
       answers.weekly_state_read = () => saved;
@@ -614,6 +624,41 @@ describe("MCP actions", () => {
       await expect(run("settings", { action: "set", key: "readOnly", value: false })).rejects.toThrow(/the user's/);
       await expect(run("settings", { action: "set", key: "dailyCheckTime", value: "25:00" })).rejects.toThrow(/HH:MM/);
       await expect(run("settings", { action: "set", key: "spellCheck", value: "maybe" })).rejects.toThrow(/true or false/);
+    });
+
+    it("reads and sets a note's own look, kept in settings by path, and Use the defaults for all", async () => {
+      answers.settings_write = (a) => a!.settings;
+      answers.links_resolve = () => ["Idea. Orbit App.md"];
+      settings.update({ docStyle: "business", docAccent: undefined, docLooks: {} });
+      expect(await run("note_look")).toBe(
+        "No note has its own look. The defaults (Settings › Notes › Document look): Business, Brainstead blue.",
+      );
+      expect(await run("note_look", { action: "set", page: "Orbit App", theme: "Editorial", colour: "green" })).toMatch(
+        /^Idea\. Orbit App now looks Editorial, Green\./,
+      );
+      expect(settings.get().docLooks).toEqual({ "Idea. Orbit App.md": { style: "editorial", accent: "green" } });
+      // A choice that matches the default isn't kept, as the Look button's.
+      await run("note_look", { action: "set", page: "Orbit App", theme: "business" });
+      expect(settings.get().docLooks).toEqual({ "Idea. Orbit App.md": { accent: "green" } });
+      expect(await run("note_look", { page: "Orbit App" })).toMatch(/^Idea\. Orbit App looks Business, Green: its own look\./);
+      expect(await run("note_look")).toContain("1 note with its own look:\n- Idea. Orbit App.md · Business, Green");
+      expect(((await data("note_look")).items as Record<string, unknown>[])[0]).toEqual({
+        path: "Idea. Orbit App.md",
+        theme: "business",
+        colour: "green",
+      });
+      await expect(run("note_look", { action: "set", page: "Orbit App", colour: "purple" })).rejects.toThrow(
+        /colour is one of: brainstead \(Brainstead blue\)/,
+      );
+      await expect(run("note_look", { action: "set", page: "Orbit App" })).rejects.toThrow(/Give theme or colour/);
+      await run("note_look", { action: "use_defaults", page: "Orbit App" });
+      expect(settings.get().docLooks).toEqual({});
+      settings.update({ docLooks: { "a.md": { style: "modern" }, "b.md": { accent: "red" } } });
+      expect(await run("note_look", { action: "use_defaults_for_all" })).toBe(
+        "2 notes use the defaults again, as Use the defaults for all does.",
+      );
+      expect(settings.get().docLooks).toEqual({});
+      settings.update({ docStyle: undefined });
     });
 
     it("opens the window on a screen or a note", async () => {
@@ -708,10 +753,39 @@ describe("MCP actions", () => {
       await run("task_lists", { action: "remove", name: "Anything" });
     });
 
+    it("gives a task's tags, priority, status and created date, and Today's bands", async () => {
+      const today = new Date().toLocaleDateString("en-CA");
+      answers.tasks_all = () => [
+        row({
+          lineText: "- [/] Call Sam about the launch ⏫ #budget #context/calls ➕ 2026-10-01",
+          status: "/",
+          tags: ["budget", "context/calls"],
+          contexts: ["calls"],
+          created: "2026-10-01",
+          due: "2000-01-01",
+        }),
+        row({
+          line: 3,
+          text: "Hear back from Lena",
+          lineText: "- [ ] Hear back from Lena #waiting-for",
+          tags: ["waiting-for"],
+          due: today,
+        }),
+      ];
+      answers.inbox_list = () => [];
+      const items = (await data("tasks.list", { view: "today" })).items as Record<string, unknown>[];
+      expect(items[0]).toMatchObject({ tags: ["budget"], priority: "high", status: "in_progress", created: "2026-10-01", band: "Overdue" });
+      expect(items.map((t) => t.band)).toEqual(["Overdue", "Due today", "Waiting for"]);
+      const out = (await run("tasks.list", { view: "today" })) as string;
+      expect(out).toContain("Overdue:\n- [/] Call Sam about the launch · due 2000-01-01 · @calls · priority high · #budget");
+      expect(out).toMatch(/Due today:\n- \[ \] Hear back from Lena .*\nWaiting for:\n- \[ \] Hear back from Lena/);
+      expect(((await data("tasks.list", { view: "today", group: "project" })).items as Record<string, unknown>[])[0].band).toBeUndefined();
+    });
+
     it("lists meeting notes being written apart from ingests, each with its id", async () => {
       answers.ingest_runs = () => [
-        { id: "r1", kind: "ingest", source: "sources/Plan.pdf", status: "running", proposals: [], error: null },
-        { id: "r2", kind: "meeting", source: "sources/Standup transcript.vtt", status: "running", proposals: [], error: null },
+        { id: "r1", kind: "ingest", source: "sources/Plan.pdf", status: "running", proposals: [], error: null, dropped: [] },
+        { id: "r2", kind: "meeting", source: "sources/Standup transcript.vtt", status: "running", proposals: [], error: null, dropped: [] },
       ];
       answers.daily_check_status = () => ({ running: false, progress: 0 });
       answers.reviews_status = () => ({ running: [], next: {} });
@@ -721,6 +795,59 @@ describe("MCP actions", () => {
       expect(out).toContain("Meeting notes being written: sources/Standup transcript.vtt (running, id r2)");
       expect(out).not.toMatch(/Ingest running:.*Standup/);
       expect(out).toMatch(/Recent ingests: sources\/Plan\.pdf — running, 0 changes \(id r1\)$/m);
+    });
+
+    it("gives finished and failed meeting notes, what the checks left out, and the runs' chats", async () => {
+      const run_ = (over: Record<string, unknown>) => ({ proposals: [], error: null, dropped: [], note: null, ...over });
+      answers.ingest_runs = () => [
+        run_({
+          id: "r1",
+          kind: "ingest",
+          source: "sources/Plan.pdf",
+          status: "done",
+          proposals: ["c1"],
+          dropped: [{ page: "wiki/entities/Maya.md", reason: "a quote isn't in the source" }],
+        }),
+        run_({
+          id: "m1",
+          kind: "meeting",
+          source: "sources/Standup.vtt",
+          status: "done",
+          note: { type: "Meeting", name: "Standup", date: "2026-10-06" },
+        }),
+        run_({ id: "m2", kind: "meeting", source: "sources/Offsite.vtt", status: "failed", error: "No assistant answered." }),
+      ];
+      answers.daily_check_status = () => ({ running: false, progress: 0 });
+      answers.reviews_status = () => ({
+        running: [],
+        next: {},
+        runs: [
+          {
+            id: "summary-1",
+            kind: "daily",
+            target: "2026-10-06",
+            trigger: "manual",
+            startedAt: "2026-10-07T08:00:00",
+            status: "done",
+            file: "Me. Summaries.md",
+            chat: "local:summary-1.json",
+          },
+        ],
+      });
+      answers.weekprep_job = () => ({
+        running: null,
+        last: { startedAt: "2026-10-06 09:00", week: "2026-W41", status: "done", count: 4, chat: "local:prep-1.json" },
+        next: null,
+      });
+      const out = (await run("run.status")) as string;
+      expect(out).toContain(
+        "Recent ingests: sources/Plan.pdf — done, 1 change; left out by the checks: wiki/entities/Maya.md (a quote isn't in the source) (id r1)",
+      );
+      expect(out).toContain(
+        "Recent meeting notes: sources/Standup.vtt — done, Meeting. Standup - 2026-10-06.md (id m1); sources/Offsite.vtt — failed (No assistant answered.) (id m2)",
+      );
+      expect(out).toMatch(/Weekly review preparation: last 2026-10-06 09:00 for 2026-W41 \(4 suggestions\), chat local:prep-1\.json/);
+      expect(out).toMatch(/Daily summary 2026-10-06 · run now · .* · chat local:summary-1\.json$/m);
     });
 
     it("says where each setting is, as the screen does", async () => {
@@ -739,10 +866,13 @@ describe("MCP actions", () => {
       expect(await run("bookmarks")).toBe("2 bookmarks:\n- Plan (a.md) · untouched 20 days\n- Fresh (b.md)");
       expect(((await data("bookmarks")).items as Record<string, unknown>[])[0]).toMatchObject({ days: 20, stale: true });
       answers.smart_lists = () => [
-        { name: "Launch", query: "soft launch +Orbit" },
-        { name: "Budget", query: "budget" },
+        { name: "Launch", query: "soft launch +Orbit", layers: [] },
+        { name: "Budget", query: "budget", layers: [] },
       ];
       expect(await run("saved_searches", { query: "orbit" })).toBe("1 saved search matching “orbit”, of 2:\n- Launch: soft launch +Orbit");
+      // Each with its layers, in search's names, so running it matches the screen.
+      answers.smart_lists = () => [{ name: "Launch", query: "launch", layers: ["note", "wiki", "source"] }];
+      expect(await run("saved_searches")).toBe("1 saved search:\n- Launch: launch · layers notes, wiki, sources");
     });
 
     it("deletes a saved search", async () => {
@@ -859,8 +989,15 @@ describe("MCP actions", () => {
       ];
       await run("run.stop", { run: "meeting_note" });
       expect(calls.filter(([c]) => c === "ingest_stop").at(-1)![1]).toEqual({ id: "m1" });
+      // With none running, the next waiting one, as the screen's Stop on its row.
+      answers.ingest_runs = () => [
+        { id: "m2", kind: "meeting", status: "done", source: "a.vtt" },
+        { id: "i2", kind: "ingest", status: "queued", source: "sources/Plan.pdf" },
+      ];
+      expect(await run("run.stop", { run: "ingest" })).toBe("Stopping the waiting ingest of sources/Plan.pdf (run i2); it won't start.");
+      expect(calls.filter(([c]) => c === "ingest_stop").at(-1)![1]).toEqual({ id: "i2" });
       answers.ingest_runs = () => [];
-      expect(await run("run.stop", { run: "meeting_note" })).toBe("No meeting note is being written.");
+      expect(await run("run.stop", { run: "meeting_note" })).toBe("No meeting note is being written or waiting.");
     });
 
     it("filters tasks by effort and groups them, as the Tasks screen does", async () => {
@@ -1017,6 +1154,30 @@ describe("MCP actions", () => {
       expect(req()).toMatchObject({ skipSubstitution: true, note: "" });
     });
 
+    it("previews a name fix as the screen lists it, counting only what will change", async () => {
+      const r = (file: string, action: string, inFilename = false) => ({ file, layer: "note", inFilename, count: 2, lines: [], action });
+      answers.fixname_plan = () => ({
+        rows: [
+          r("Idea. A.md", "rewrite", true),
+          r("wiki/people/Lena.md", "alias"),
+          r("sources/Call.vtt", "leave"),
+          r("Lenna Park.md", "guarded"),
+        ],
+        rightPage: "wiki/people/Lena.md",
+      });
+      const out = (await run("fix_name", { written_as: "Lenna", correct_spelling: "Lena" })) as string;
+      expect(out).toMatch(/would change 2 of the 4 files it's in \(Lena has a wiki page/);
+      expect(out).toContain("- Idea. A.md: 2 lines · Rewrite · In the file name: rename it separately");
+      expect(out).toContain("- wiki/people/Lena.md: 2 lines · Add as alias");
+      expect(out).toContain("- sources/Call.vtt: 2 lines · Left alone");
+      expect(out).toContain("- Lenna Park.md: 2 lines · Guarded: someone else");
+      answers.fixname_plan = () => ({ rows: [r("sources/Call.vtt", "leave")], rightPage: null });
+      expect(await run("fix_name", { written_as: "Lenna", correct_spelling: "Lena" })).toMatch(
+        /would change 0 of the 1 file.*\nNone of them would change/s,
+      );
+      expect(calls.some(([c]) => c === "fixname_apply")).toBe(false);
+    });
+
     it("opens Meeting notes, Draft a reply and Doc check on their file", async () => {
       answers.meeting_transcripts = () => [{ path: "sources/Standup transcript.vtt", done: false, inferred: {} }];
       expect(await run("open", { screen: "meeting", transcript: "sources/Standup transcript.vtt" })).toBe(
@@ -1088,7 +1249,7 @@ describe("MCP actions", () => {
         "jobModels.summaries · Settings › AI assistants › Models by job › Daily and weekly summaries: null (As new chats)",
       );
       expect(all).toContain(
-        "spellLanguage · Settings › Notes › Spelling language: null (As macOS) (one of: en_GB, en_US; null for As macOS)",
+        "spellLanguage · Settings › Notes › Spelling language: null (As macOS) (one of: en_GB (British English), en_US (American English); null for As macOS)",
       );
       expect(all).toContain("docTheme · Settings › Notes › Light or dark › Documents: null (As the app)");
       await run("settings", { action: "set", key: "openAtLogin", value: true });
@@ -1100,7 +1261,8 @@ describe("MCP actions", () => {
       );
       await run("settings", { action: "set", key: "jobModels.summaries", value: null });
       expect(settings.get().jobModels).toEqual({});
-      await run("settings", { action: "set", key: "spellLanguage", value: "en_US" });
+      // By name, as its menu lists them.
+      expect(await run("settings", { action: "set", key: "spellLanguage", value: "American English" })).toMatch(/is now "en_US"/);
       await run("settings", { action: "set", key: "speechVoice", value: "zoe" });
       expect(await run("settings", { action: "set", key: "speechRate", value: 1.27 })).toMatch(/Speed \(0\.5 to 2\) is now 1\.25/);
       await expect(run("settings", { action: "set", key: "speechRate", value: 3 })).rejects.toThrow(/0\.5 to 2/);
@@ -1120,6 +1282,61 @@ describe("MCP actions", () => {
       answers.login_item = () => null;
       expect(await run("settings")).not.toContain("openAtLogin");
       await expect(run("settings", { action: "set", key: "openAtLogin", value: true })).rejects.toThrow(/can't be changed for this copy/);
+    });
+
+    it("gives the index, Full Disk Access, the version, the contradictions banners and a cut graph, as the screens do", async () => {
+      answers.settings_read = () => ({ vaultPath: "/vault", readOnly: false });
+      const stats = { files: 120, notes: 80, wiki: 30, sources: 8, templates: 2, openTasks: 14, unresolvedLinks: 3, updatedAt: 0 };
+      answers.vault_status = () => ({ state: "ready", stats });
+      answers.permissions = () => ({ fullDiskAccess: false, applies: true });
+      answers.app_info = () => ({ version: "1.0.2", build: "abc123", dataDir: "/data/Brainstead", exe: "/x" });
+      const out = (await run("status")) as string;
+      expect(out).toContain("Index: 120 files indexed: 80 notes, 30 wiki, 8 sources, 2 templates, 14 open tasks, 3 unresolved links;");
+      expect(out).toContain("Full Disk Access: not granted");
+      expect(out).toContain("Brainstead 1.0.2 (abc123); its app data folder: /data/Brainstead");
+      answers.vault_status = () => ({ state: "error", error: "The index file is damaged.", stats });
+      expect(await run("status")).toContain("Index: Index failed: The index file is damaged.");
+      answers.contradictions_report = () => ({
+        last: {
+          finished: "2026-10-06T09:00:00",
+          pages: 3,
+          claims: 9,
+          clashes: 1,
+          contradictions: 1,
+          error: "The model stopped part way.",
+          failed: 2,
+          failures: ["Maya's role", "Orbit App's date"],
+        },
+        items: [],
+      });
+      const c = (await run("contradictions")) as string;
+      expect(c).toContain(" It failed: The model stopped part way.");
+      expect(c).toContain(" 2 fixes not made: Maya's role; Orbit App's date.");
+      answers.graph = () => ({ nodes: [{ id: "a", title: "A" }], edges: [], truncated: true });
+      expect(await run("graph")).toMatch(/^1 pages \(the nearest 400: there are more\);/);
+    });
+
+    it("sets a note's Text size, and checks and registers the capture shortcut", async () => {
+      answers.settings_write = (a) => a!.settings;
+      expect(await run("settings")).toContain("readSize · A note's Text size (12 to 24, px): 15");
+      expect(await run("settings", { action: "set", key: "readSize", value: 18 })).toBe("A note's Text size (12 to 24, px) is now 18.");
+      expect(settings.get().readSize).toBe(18);
+      await expect(run("settings", { action: "set", key: "readSize", value: 30 })).rejects.toThrow(/12 to 24/);
+      answers.capture_shortcut_status = () => ["Control+Shift+K", null];
+      expect(await run("settings", { action: "set", key: "captureShortcut", value: "shift+control+k" })).toMatch(
+        /is now "Control\+Shift\+K", registered with the system/,
+      );
+      expect(settings.get().captureShortcut).toBe("Control+Shift+K");
+      await expect(run("settings", { action: "set", key: "captureShortcut", value: "K" })).rejects.toThrow(/one or more of Control/);
+      await expect(run("settings", { action: "set", key: "captureShortcut", value: "Cmd+K" })).rejects.toThrow(/one or more of Control/);
+      answers.capture_shortcut_status = () => [
+        "Control+Shift+K",
+        "The system wouldn't give Brainstead Super+Space; another app may use it.",
+      ];
+      expect(await run("settings", { action: "set", key: "captureShortcut", value: "Super+Space" })).toMatch(
+        /set to "Super\+Space", but it isn't working: The system wouldn't give/,
+      );
+      settings.update({ readSize: undefined, captureShortcut: undefined });
     });
   });
 
@@ -1173,16 +1390,40 @@ describe("MCP actions", () => {
 
     it("saves a doc check as a note and starts the register, through Changes", async () => {
       answers.changes_submit_many = outcomes(true);
-      const result = { verdict: "Mostly aligned", summary: "Two gaps.", findings: [], against: null, excluded: [] };
+      const entry = (version: string, status: string) => ({
+        key: "pricing",
+        title: "Pricing policy",
+        version,
+        status,
+        path: `Pricing ${version}.md`,
+        exists: true,
+        aliases: [],
+      });
+      const result = {
+        verdict: "Mostly aligned",
+        summary: "Two gaps.",
+        findings: [{ kind: "diverges", title: "Discount cap", where: "p. 2", candidate: "20%", canonical: "15%", material: true }],
+        against: entry("v3", "canonical"),
+        excluded: [entry("v2", "superseded")],
+      };
       answers.doc_check = () => result;
-      const out = (await raw("doccheck.run", { document: "sources/Orbit plan.pdf", save: true })) as { saved: { path: string } };
-      expect(out.saved.path).toMatch(/^Doc check\. Orbit plan - \d{4}-\d{2}-\d{2}\.md$/);
-      expect(submitted()[0]).toMatchObject({ kind: "new", page: out.saved.path, instruction: { op: "page" } });
+      const out = (await run("doccheck.run", { document: "sources/Orbit plan.pdf", save: true })) as string;
+      // In the screen's words, not the internal ones.
+      expect(out).toContain("Checked against Pricing policy v3 (in force).\nNot used: Pricing policy v2 (Superseded).");
+      expect(out).toContain("## Conflict (material): Discount cap");
+      expect(out).not.toMatch(/diverges|canonical"/);
+      const path = /Saved as (.*\.md):/.exec(out)![1];
+      expect(path).toMatch(/^Doc check\. Orbit plan - \d{4}-\d{2}-\d{2}\.md$/);
+      expect(submitted()[0]).toMatchObject({ kind: "new", page: path, instruction: { op: "page" } });
       expect((submitted()[0].instruction as { content: string }).content).toMatch(/^# Doc check: Orbit plan\.pdf/);
       // Without save, nothing is written.
       calls.length = 0;
       await raw("doccheck.run", { document: "sources/Orbit plan.pdf" });
       expect(submitted()).toEqual([]);
+      answers.canonical_register = () => ({ exists: true, problems: [], entries: [entry("v3", "canonical"), entry("v4", "draft")] });
+      expect(await run("doccheck.register")).toBe(
+        "The canonical docs register (Me. Canonical Docs.md); governing_document takes a key:\n- pricing · Pricing policy v3 · In force · Pricing v3.md\n- pricing · Pricing policy v4 · Draft · Pricing v4.md",
+      );
       answers.files_list = () => [];
       expect(await run("doccheck.register", { start_register: true })).toMatch(/Add a row for each version/);
       expect(submitted()[0]).toMatchObject({ page: "Me. Canonical Docs.md", kind: "new" });
@@ -1306,6 +1547,7 @@ describe("MCP actions", () => {
         { path: "sources/Teams. Transcript. A.vtt", done: null, inferred: { type: "Meeting", name: "A", date: "2026-10-06" } },
         { path: "sources/Teams. Transcript. B.vtt", done: "linked", inferred: {} },
       ];
+      answers.ingest_runs = () => [];
       expect(await run("meeting.transcripts")).toMatch(
         /^1 transcript to write up:\n- sources\/Teams\. Transcript\. A\.vtt · looks like Meeting A/,
       );
@@ -1315,6 +1557,57 @@ describe("MCP actions", () => {
         "linked",
       ]);
       await expect(run("meeting.transcripts", { show: "done" })).rejects.toThrow(/show is to_do or all/);
+    });
+
+    it("refuses a meeting note that exists or is being drafted, and lists both as the screen marks them", async () => {
+      const t = {
+        path: "sources/Teams. Transcript. Offsite.vtt",
+        done: null,
+        inferred: { type: "Meeting", name: "Offsite", date: "2026-10-06", exists: true, ask: ["Was this the Orbit App offsite?"] },
+      };
+      answers.meeting_transcripts = () => [t];
+      answers.ingest_runs = () => [];
+      const start = { run: "meeting_note", transcript: t.path };
+      await expect(run("run.start", start)).rejects.toThrow(/Meeting\. Offsite - 2026-10-06\.md exists already/);
+      expect(await run("meeting.transcripts")).toBe(
+        "1 transcript to write up:\n- sources/Teams. Transcript. Offsite.vtt · looks like Meeting Offsite 2026-10-06 · note exists: Meeting. Offsite - 2026-10-06.md\n  - Was this the Orbit App offsite?",
+      );
+      answers.ingest_runs = () => [{ id: "m1", kind: "meeting", status: "queued", source: t.path }];
+      await expect(run("run.start", { ...start, date: "2026-10-07" })).rejects.toThrow(/being drafted from .* already/);
+      expect(((await data("meeting.transcripts")).items as Record<string, unknown>[])[0]).toMatchObject({
+        exists: "Meeting. Offsite - 2026-10-06.md",
+        ask: ["Was this the Orbit App offsite?"],
+        drafted: "drafting",
+      });
+      answers.ingest_runs = () => [{ id: "m1", kind: "meeting", status: "done", source: t.path }];
+      expect(await run("meeting.transcripts")).toContain(" · a note was drafted (see Changes)");
+      expect(calls.some(([c]) => c === "ingest_queue" || c === "meeting_draft")).toBe(false);
+    });
+
+    it("makes a template's other notes beside it, and takes several choices for one question", async () => {
+      answers.files_list = () => [{ path: "Templates/Trip.md" }];
+      answers.doc_read = () => ({
+        content:
+          '<%* const who = await tp.system.multi_suggester(["Maya", "Lena", "Sam"], ["Maya", "Lena", "Sam"], false, "Who is going?"); await tp.file.create_new("Packing for " + who.join(" and "), "Packing. Offsite"); tR += "Going: " + who.join(", "); %>',
+      });
+      answers.user_scripts = () => [];
+      answers.changes_submit_many = outcomes(true);
+      const out = (await run("note.from_template", {
+        template: "Trip",
+        type: "Trip",
+        title: "Offsite",
+        answers: [["Maya", "Lena"]],
+      })) as string;
+      const sent = calls.find(([c]) => c === "changes_submit_many")![1]!.changes as { page: string; instruction: { content: string } }[];
+      expect(sent.map((c) => [c.page, c.instruction.content])).toEqual([
+        ["Trip. Offsite.md", "Going: Maya, Lena"],
+        ["Packing. Offsite.md", "Packing for Maya and Lena"],
+      ]);
+      expect(out).toMatch(/with Packing\. Offsite\.md, which the template makes too\..*“Who is going\?” → Maya, Lena/);
+      expect(calls.some(([c]) => c === "doc_create")).toBe(false);
+      await expect(run("note.from_template", { template: "Trip", title: "Offsite", answers: [["Maya", "Nobody"]] })).rejects.toThrow(
+        /“Nobody” isn't one of the choices for “Who is going\?”: Maya, Lena, Sam/,
+      );
     });
 
     it("names the read-aloud highlight as Settings does", async () => {

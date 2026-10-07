@@ -27,7 +27,7 @@ Inside a tag the editor completes the script as you type (keywords, your own nam
 Hover over a name in a tag, or put the caret on it, to see what it is: a keyword such as `await`, a `tp` function, `tR`, `moment`, a JavaScript name such as `Math.floor`, or one your template declares. With the caret on it the list opens with that name chosen. In View, hovering a name explains it the same way; move onto the box to click its **Docs ↗** link.
 
 ## Test a template
-On an open template, click **Test run**. It runs the template as New note would, asking its questions, and shows the note it would make, its name, where the caret would go and any other notes it would create. Nothing is written to the vault. An assistant making a note from a template can test-run it the same way first.
+On an open template, click **Test run**. It runs the template as New note would, asking its questions, and shows the note it would make, its name, where the caret would go and any other notes it would create. Nothing is written to the vault. An assistant making a note from a template can test-run it the same way first. It answers the questions as you would, several choices where a question takes them, and the other notes a template makes are new notes too, listed in [Changes](app:review) beside the note.
 
 In the list, a template that doesn't compile is marked **Doesn't run**; hover the mark for the error. New note shows the same mark, with the reason, and won't run it.
 

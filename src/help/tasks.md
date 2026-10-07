@@ -63,4 +63,4 @@ A recurring task carries a rule such as `🔁 every week`. When you tick it, the
 
 Tasks inside quotes and callouts (`> - [ ] Call Maya`) are listed and edited like any other.
 
-An assistant can change a task's words as clicking them does, its dates and tags kept, and make it a follow-up or not; a task it adds in Follow-ups, Waiting for or Someday / maybe gets that list's tag, as **New task** there does. Each change is listed in [Changes](app:review), with Revert.
+An assistant can change a task's words as clicking them does, its dates and tags kept, and make it a follow-up or not; a task it adds in Follow-ups, Waiting for or Someday / maybe gets that list's tag, as **New task** there does, and one with no project goes to the To Do list's Other section, where it waits in the [Inbox](app:inbox) to be clarified. Each change is listed in [Changes](app:review), with Revert.

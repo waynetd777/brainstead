@@ -36,10 +36,11 @@ import {
   TaskDateKind,
   TaskLineEdit,
   TaskRow,
+  Transcript,
   WeeklyState,
   WeekPrepSuggestion,
 } from "./api";
-import { chosenRows } from "./FixName";
+import { ACTION as FIX_ACTION, chosenRows } from "./FixName";
 import { contextName, projectFlag, projectName } from "./gtd";
 import { captureStamp, prepareCapture } from "./Capture";
 import { taskLine, unclarified } from "./Inbox";
@@ -49,10 +50,10 @@ import { localToday } from "./md/taskQuery";
 import { composeFilename } from "./notes/filename";
 import { Ask, Env, freeName, runTemplate, StopRun } from "./notes/templater";
 import { vaultEnv } from "./notes/TemplateRun";
-import { retitled, todayRows, toggleTaskEdit, undoAction, viewRows, VIEWS } from "./taskModel";
+import { deferredPast, retitled, todayRows, toggleTaskEdit, undoAction, viewRows, VIEWS } from "./taskModel";
 import { taskLabel } from "./md/TaskBlock";
 import { cancelled, completion, inQuote, LineChange, reopened, started, tagToggled, waitingToggled, withPriority } from "./tasksq/edits";
-import type { PriorityName } from "./tasksq/fields";
+import { parseTask, statusOf, type PriorityName } from "./tasksq/fields";
 import { toast } from "./Toast";
 import { fmtBytes, fmtCount } from "./ui";
 import { fresh, keepsPaused, reviewBody, reviewWeek, scheduleLabel, STEPS } from "./Weekly";
@@ -69,18 +70,19 @@ import {
   renameSaved,
   trashSaved,
 } from "./askState";
-import { DOC_ACCENTS, DOC_STYLES } from "./docLook";
+import { DOC_ACCENTS, DOC_STYLES, docDefaults, lookOf, withOwnLook } from "./docLook";
 import { loadVoices, speechSettingsChanged, voiceLabel, voices } from "./speech/player";
-import { applyTheme, settings } from "./store";
+import { applyReadSize, applyTheme, READ_SIZE, settings } from "./store";
 import { nav, Screen, SettingsPane } from "./nav";
 import { DEFAULT_SCHEDULE, DEFAULT_WEEKLY_REVIEW } from "./Jobs";
+import { languageName } from "./Settings";
 import { choice, prepStep, WEEKLY_STATE_CHANGED } from "./weeklyPrep";
-import { draftNotes, followThrough, isTranscriptPath } from "./meetingFlow";
-import { DONE as MEETING_DONE, TYPES as MEETING_TYPES } from "./Meeting";
+import { draftNotes, followThrough, isTranscriptPath, noteFile, specOf } from "./meetingFlow";
+import { DONE as MEETING_DONE, noteExists, TYPES as MEETING_TYPES } from "./Meeting";
 import { reportMarkdown } from "./Contradictions";
 import { checklist, isDone, isRetired, STOP_FIRST } from "./Switchover";
 import { ingestable } from "./Lists";
-import { findingsMarkdown, findingsNote, REGISTER, REGISTER_STUB } from "./skills/DocCheck";
+import { findingsMarkdown, findingsNote, REGISTER, REGISTER_STUB, STATUS as REGISTER_STATUS } from "./skills/DocCheck";
 import { LABEL as TRIAGE } from "./skills/Triage";
 import { actionLabel, actionsIn, filterLog, rankLog } from "./activityModel";
 import { EFFORT_LIMITS, GroupBy, groupTasks, withinEffort } from "./taskGroups";
@@ -215,12 +217,25 @@ export function findTask(all: TaskRow[], id: string, text?: string): TaskRow {
 
 const taskId = (t: TaskRow) => `${t.path}:${t.line + 1}`;
 
-/** A task's text as a list shows it: its tags, dates and effort come after it as fields. */
+/** A task's text as a list shows it: its tags, dates, priority and effort come after it as fields. */
 const shownText = (text: string) =>
   text
-    .replace(/#[^\s#]+|[📅⏳🛫➕✅❌]\uFE0F?\s*\d{4}-\d{2}-\d{2}|[[(]effort::[^\])]*[\])]|\^[\w-]+/gu, "")
+    .replace(/#[^\s#]+|[📅⏳🛫➕✅❌]\uFE0F?\s*\d{4}-\d{2}-\d{2}|[🔺⏫🔼🔽⏬]\uFE0F?|[[(]effort::[^\])]*[\])]|\^[\w-]+/gu, "")
     .replace(/\s+/g, " ")
     .trim();
+
+/** A task's #tags but its contexts (#context/…), without the #. */
+const otherTags = (t: TaskRow) => t.tags.map((x) => x.replace(/^#/, "")).filter((g) => !/^context\//.test(g));
+/** Its priority as the task menu names it (edit_task's), or null for none. */
+const priorityOf = (t: TaskRow) => {
+  const p = parseTask(t.lineText)?.priority;
+  return p && p !== "none" ? p : null;
+};
+/** Its status in edit_task's words, done added: open, in_progress, done or cancelled. */
+const statusName = (t: TaskRow) => {
+  const type = statusOf(t.status ?? (t.done ? "x" : " ")).type;
+  return type === "IN_PROGRESS" ? "in_progress" : type === "DONE" ? "done" : type === "CANCELLED" ? "cancelled" : "open";
+};
 
 /** One line per task: its words, then its dates and chips, and its id to act on it by. */
 export function taskLineOut(t: TaskRow, detail = false): string {
@@ -230,7 +245,10 @@ export function taskLineOut(t: TaskRow, detail = false): string {
   if (t.start) bits.push(`starts ${t.start}`);
   for (const c of t.contexts ?? []) bits.push(`@${c}`);
   if (t.effort) bits.push(`effort ${t.effort}`);
-  for (const g of t.tags.map((x) => x.replace(/^#/, ""))) if (["waiting-for", "followup", "someday-maybe"].includes(g)) bits.push(`#${g}`);
+  const p = priorityOf(t);
+  if (p) bits.push(`priority ${p}`);
+  // Its #tags, the lists' among them; contexts are the @ chips above.
+  for (const g of otherTags(t)) bits.push(`#${g}`);
   if (t.project) bits.push(`project ${projectName(t.project)}`);
   if (detail) {
     if (t.heading) bits.push(`under “${t.heading}”`);
@@ -257,9 +275,26 @@ async function listTasks(a: Args): Promise<Listing> {
   const asked = str(a, "view") ?? "next";
   const view = asked === "deferred" ? "scheduled" : asked;
   let rows: TaskRow[];
+  // Today's bands, as the Today screen draws them: each task under its band's label.
+  const band = new Map<TaskRow, string>();
   if (view === "today") {
     const r = todayRows(all, today);
-    rows = [...r.overdue, ...r.due, ...r.scheduled];
+    // A waiting task due today shows in both bands there, so it's a row of its own here too.
+    const waiting = viewRows(
+      all,
+      VIEWS.find((v) => v.id === "waiting")!,
+      today,
+    )
+      .filter((t) => !deferredPast(t, today))
+      .map((t) => ({ ...t }));
+    const bands: [string, TaskRow[]][] = [
+      ["Overdue", r.overdue],
+      ["Due today", r.due],
+      ["Deferred until now", r.scheduled],
+      ["Waiting for", waiting],
+    ];
+    for (const [label, rs] of bands) for (const t of rs) band.set(t, label);
+    rows = bands.flatMap(([, rs]) => rs);
   } else if (view === "all") {
     rows = all.filter((t) => !t.done);
   } else {
@@ -284,20 +319,28 @@ async function listTasks(a: Args): Promise<Listing> {
     rows = groups.flatMap((g) => g.rows);
     for (const g of groups) for (const t of g.rows) under.set(t, g.label);
   }
+  // Today's bands head the rows unless Group by asks for other headings.
+  const banded = group === "none" && band.size > 0;
   // A page at a time, query's words all in the task's line, as every listing tool pages.
   const shown = viewName(view);
   const out = listed(a, rows, {
     text: (t) => t.text,
     noun: [`task in ${shown}`, `tasks in ${shown}`],
     line: (t) => taskLineOut(t, a.detail === true),
-    item: (t) => (group === "none" ? taskItem(t) : { ...taskItem(t), group: under.get(t) ?? null }),
+    item: (t) =>
+      banded
+        ? { ...taskItem(t), band: band.get(t) ?? null }
+        : group === "none"
+          ? taskItem(t)
+          : { ...taskItem(t), group: under.get(t) ?? null },
     empty: `No tasks in ${shown}${project || context || effort ? " with those filters" : ""}.`,
   });
-  if (group === "none") return out;
-  // A heading line where each group starts on the page.
+  if (group === "none" && !banded) return out;
+  // A heading line where each group or band starts on the page.
   const [head, ...lines] = out.text.split("\n");
-  const items = out.structured.items as { group: string | null }[];
-  const text = [head, ...lines.flatMap((l, i) => (i === 0 || items[i].group !== items[i - 1].group ? [`${items[i].group}:`, l] : [l]))];
+  const items = out.structured.items as { group?: string | null; band?: string | null }[];
+  const label = (i: number) => (banded ? items[i].band : items[i].group);
+  const text = [head, ...lines.flatMap((l, i) => (i === 0 || label(i) !== label(i - 1) ? [`${label(i)}:`, l] : [l]))];
   return { ...out, text: text.join("\n") };
 }
 
@@ -314,6 +357,10 @@ const taskItem = (t: TaskRow) => ({
   doneOn: t.doneOn,
   project: t.project ? projectName(t.project) : null,
   contexts: t.contexts ?? [],
+  tags: otherTags(t),
+  priority: priorityOf(t),
+  status: statusName(t),
+  created: t.created,
   effort: t.effort ?? null,
   heading: t.heading,
 });
@@ -839,7 +886,9 @@ async function noteFromTemplate(a: Args, chat: string | null): Promise<string> {
           .join(", ") || "none"
       }.`,
     );
-  const answers = (Array.isArray(a.answers) ? a.answers : []).map(String);
+  // An answer is text, or for a question with several choices (tp.system.multi_suggester) a list
+  // of them, as ticking several on the screen does.
+  const answers = (Array.isArray(a.answers) ? a.answers : []).map((x) => (Array.isArray(x) ? x.map(String) : String(x)));
   let n = 0;
   const asked: string[] = [];
   // Past the answers given, a question about the type, name or date takes the note's own.
@@ -854,23 +903,27 @@ async function noteFromTemplate(a: Args, chat: string | null): Promise<string> {
   const ask = async (q: Ask): Promise<string | number[] | null> => {
     const ans = answers[n++] ?? guess(q.text);
     if (q.kind === "prompt") {
+      if (Array.isArray(ans)) throw new Error(`“${q.text}” asks for text, not a list of choices.`);
       const v = ans ?? q.value;
       asked.push(`“${q.text}” → ${v || "(nothing)"}`);
       return v;
     }
-    asked.push(`“${q.text}” → ${ans ?? "(no choice)"}`);
+    const picks = ans === undefined ? [] : Array.isArray(ans) ? ans : [ans];
+    if (q.kind === "suggest" && picks.length > 1) throw new Error(`“${q.text}” takes one choice, not ${picks.length}.`);
+    asked.push(`“${q.text}” → ${picks.length ? picks.join(", ") : "(no choice)"}`);
     if (ans === undefined) return null;
-    const at = q.labels.findIndex((l) => l.toLowerCase() === ans.toLowerCase());
-    return [at >= 0 ? at : Number(ans)];
+    return picks.map((p) => {
+      const at = q.labels.findIndex((l) => l.toLowerCase() === p.toLowerCase());
+      if (at >= 0) return at;
+      if (/^\d+$/.test(p) && Number(p) < q.labels.length) return Number(p);
+      throw new Error(`“${p}” isn't one of the choices for “${q.text}”: ${q.labels.join(", ")}.`);
+    });
   };
-  // Test run, as the template editor's: the note it would make, written nowhere; the other notes
-  // it would make (tp.file.create_new) only listed.
+  // The other notes it makes (tp.file.create_new), as New note makes them, but as changes beside
+  // the note's own; a test run, as the template editor's, only lists them.
   const testRun = a.test_run === true;
-  const others: string[] = [];
-  const env = await vaultEnv(tpath, ask as Env["ask"], async (p) => {
-    if (testRun) return void others.push(p);
-    throw new Error("This template makes other notes too; run it from New note in the app.");
-  });
+  const others: [path: string, content: string][] = [];
+  const env = await vaultEnv(tpath, ask as Env["ask"], async (p, c) => void others.push([p, c]));
   let r;
   try {
     r = await runTemplate((await api.docRead(tpath)).content, env);
@@ -883,15 +936,35 @@ async function noteFromTemplate(a: Args, chat: string | null): Promise<string> {
   const taken = new Set(files.map((p) => p.toLowerCase()));
   const path = r.named ? r.path : named ? (folder ? `${folder}/${named}` : named) : freeName(r.path, (p) => taken.has(p.toLowerCase()));
   if (testRun) {
-    const also = others.length ? `\nIt would also make: ${others.join(", ")}.` : "";
+    const also = others.length ? `\nIt would also make: ${others.map(([p]) => p).join(", ")}.` : "";
     const qa = asked.length ? `\nThe template asked: ${asked.join("; ")}.` : "";
     return `Test run of ${tpath}, nothing written: it would make ${path}${taken.has(path.toLowerCase()) ? " (which exists already)" : ""}.${qa}${also}\n\n${r.content}`;
   }
   if (taken.has(path.toLowerCase())) throw new Error(`${path} exists already. To change it, use edit_page.`);
-  const o = await makePage(path, r.content, `New note ${path.replace(/\.md$/, "")}`, origin);
-  told(o.applied ? `made the note ${path.replace(/\.md$/, "")}` : `held the note ${path.replace(/\.md$/, "")} for you in Changes`);
   const qa = asked.length ? ` The template asked: ${asked.join("; ")}.` : "";
-  return `${o.message} It was made from ${tpath}.${qa}`;
+  if (!others.length) {
+    const o = await makePage(path, r.content, `New note ${path.replace(/\.md$/, "")}`, origin);
+    told(o.applied ? `made the note ${path.replace(/\.md$/, "")}` : `held the note ${path.replace(/\.md$/, "")} for you in Changes`);
+    return `${o.message} It was made from ${tpath}.${qa}`;
+  }
+  // The note and the others it made, made or held together.
+  const all: [string, string][] = [[path, r.content], ...others];
+  const outs = await api.changesSubmitMany(
+    all.map(([p, content]) => ({
+      page: p,
+      kind: "new",
+      title: `New note ${p.replace(/\.md$/, "")}`,
+      instruction: { op: "page", content },
+      origin,
+    })),
+  );
+  const made = outs.every((o) => o.applied);
+  told(
+    made
+      ? `made the note ${path.replace(/\.md$/, "")} and ${others.length} more`
+      : `held the note ${path.replace(/\.md$/, "")} and ${others.length} more for you in Changes`,
+  );
+  return `${outs.map((o) => o.message).join(" ")} It was made from ${tpath}, with ${others.map(([p]) => p).join(", ")}, which the template makes too.${qa}`;
 }
 
 // ---- agent changes
@@ -1082,10 +1155,13 @@ async function startRun(a: Args): Promise<string> {
       await api.findRun();
       noted("started looking for tasks and projects in the notes");
       return "Reading the user's notes from the last 90 days for tasks and projects; the suggestions show at the top of Tasks and Projects, and nothing changes until the user accepts one. list_suggestions lists them; run_status shows how it's going.";
-    case "weekly_prep":
-      await api.weekprepRun();
-      noted("started preparing the weekly review");
-      return "Preparing this week's review has started; its suggestions show in the Weekly review when it finishes, and nothing changes until the user accepts one. run_status shows how it's going.";
+    case "weekly_prep": {
+      // The review's week, as the screen's Prepare is: a paused review keeps its own.
+      const { week, st } = await weeklyNow();
+      await api.weekprepRun(week);
+      noted(`started preparing the weekly review of ${week}`);
+      return `Preparing the review of ${week}${st ? " (the paused review's week)" : ""} has started; its suggestions show in the Weekly review when it finishes, and nothing changes until the user accepts one. run_status shows how it's going.`;
+    }
     case "contradictions":
       if (!(await api.contradictionsRun(unattended))) return "A contradictions check is running already.";
       noted("started a contradictions check");
@@ -1115,6 +1191,17 @@ async function startRun(a: Args): Promise<string> {
         date: str(a, "date") ?? t.inferred.date ?? localToday(),
       };
       if (!spec.name) throw new Error("Give name: who the 1-1 was with, or the meeting's name.");
+      // As the screen's Draft the note waits: not while one is being drafted, nor over a note there already.
+      if (
+        (await api.ingestRuns()).some(
+          (r) => r.kind === "meeting" && r.source === t.path && (r.status === "running" || r.status === "queued"),
+        )
+      )
+        throw new Error(`A note is being drafted from ${t.path} already; run_status shows how it's going.`);
+      if (noteExists(t, spec))
+        throw new Error(
+          `${noteFile(spec)} exists already: the user can open it to fill it in, or give another name or date for a new note.`,
+        );
       await draftNotes([[t.path, spec]], unattended);
       noted(`started a meeting note from ${t.path}`);
       const f = followThrough();
@@ -1160,7 +1247,8 @@ export function summaryRunLine(r: ReviewRun, changes: ChangeRow[]): string {
       : c.status === "held"
         ? ` · change ${c.id} (held for the user)`
         : ` · change ${c.id} (${c.status})`;
-  return `- ${name} · ${how} · ${when} · ${state}${change}`;
+  // Its chat with the model, as Recent runs' Open opens it.
+  return `- ${name} · ${how} · ${when} · ${state}${change}${r.chat ? ` · chat ${r.chat}` : ""}`;
 }
 
 async function runStatus(): Promise<string> {
@@ -1185,18 +1273,31 @@ async function runStatus(): Promise<string> {
   const active = ingests.filter(going);
   const writing = meetings.filter(going);
   const recent = ingests.slice(0, 5);
+  // Finished and failed meeting notes, as the runs pane lists them.
+  const written = meetings.filter((r) => !going(r)).slice(0, 5);
+  // What the checks left out of a run, as the runs pane's "left out by the checks" lists it.
+  const left = (r: (typeof runs)[number]) =>
+    r.dropped.length ? `; left out by the checks: ${r.dropped.map((d) => `${d.page} (${d.reason})`).join(", ")}` : "";
   return [
     active.length ? `Ingest running: ${active.map((r) => `${r.source} (${r.status}, id ${r.id})`).join("; ")}` : "No ingest running.",
-    `Recent ingests: ${recent.map((r) => `${r.source} — ${r.status}${r.error ? ` (${r.error})` : ""}, ${r.proposals.length} change${r.proposals.length === 1 ? "" : "s"} (id ${r.id})`).join("; ") || "none"}`,
+    `Recent ingests: ${recent.map((r) => `${r.source} — ${r.status}${r.error ? ` (${r.error})` : ""}, ${r.proposals.length} change${r.proposals.length === 1 ? "" : "s"}${left(r)} (id ${r.id})`).join("; ") || "none"}`,
     writing.length
       ? `Meeting notes being written: ${writing.map((r) => `${r.source} (${r.status}, id ${r.id})`).join("; ")}`
       : "No meeting note being written.",
+    `Recent meeting notes: ${
+      written
+        .map(
+          (r) =>
+            `${r.source} — ${r.status}${r.error ? ` (${r.error})` : ""}${r.note && r.status === "done" ? `, ${noteFile(r.note)}` : ""}${left(r)} (id ${r.id})`,
+        )
+        .join("; ") || "none"
+    }`,
     `Daily check: ${check.running ? `running (${check.doing}, ${Math.round(check.progress * 100)}%)` : `last ${check.lastRun ?? "never"}, next ${check.next ?? "not scheduled"}`}${check.summary ? ` — ${check.summary}` : ""}`,
     `Daily and weekly summaries: ${reviews.running.length ? `running the ${reviews.running.join(" and ")} summary; ` : ""}next daily ${reviews.next.daily ?? "not scheduled"}, next weekly ${reviews.next.weekly ?? "not scheduled"}`,
     `Weekly review preparation: ${
       prep.running
         ? `preparing ${prep.running}`
-        : `last ${prep.last ? `${prep.last.startedAt} for ${prep.last.week} (${prep.last.status === "done" ? `${prep.last.count} suggestions` : `${prep.last.status}${prep.last.error ? `: ${prep.last.error}` : ""}`})` : "never"}, next ${prep.next ?? "not scheduled"}`
+        : `last ${prep.last ? `${prep.last.startedAt} for ${prep.last.week} (${prep.last.status === "done" ? `${prep.last.count} suggestions` : `${prep.last.status}${prep.last.error ? `: ${prep.last.error}` : ""}`})${prep.last.chat ? `, chat ${prep.last.chat}` : ""}` : "never"}, next ${prep.next ?? "not scheduled"}`
     }`,
     `Find tasks and projects: ${
       !f
@@ -1231,10 +1332,18 @@ async function stopRun(a: Args): Promise<string> {
   }
   if (run === "ingest" || run === "meeting_note") {
     // A meeting note is a run in the ingest queue, of its own kind.
+    // Without an id, the one running, else the next waiting, as the screen's Stop on that row does.
     const meeting = run === "meeting_note";
-    const id = str(a, "id") ?? (await api.ingestRuns()).find((r) => r.status === "running" && (r.kind === "meeting") === meeting)?.id;
-    if (!id) return meeting ? "No meeting note is being written." : "No ingest is running.";
+    const given = str(a, "id");
+    const mine = given ? [] : (await api.ingestRuns()).filter((r) => (r.kind === "meeting") === meeting);
+    const r = mine.find((x) => x.status === "running") ?? mine.find((x) => x.status === "queued");
+    const id = given ?? r?.id;
+    if (!id) return meeting ? "No meeting note is being written or waiting." : "No ingest is running or waiting.";
     await api.ingestStop(id);
+    if (r?.status === "queued") {
+      noted(`stopped a waiting ${meeting ? "meeting note" : "ingest"} of ${r.source}`);
+      return `Stopping the waiting ${meeting ? "meeting note" : "ingest"} of ${r.source} (run ${r.id}); it won't start.`;
+    }
   } else if (run === "daily_check") await api.dailyCheckStop();
   else if (run === "weekly_prep") await api.weekprepStop();
   else if (run === "contradictions") await api.contradictionsStop();
@@ -1497,13 +1606,18 @@ async function fixName(a: Args): Promise<string> {
     skipSubstitution: !remember,
   };
   const plan = await api.fixnamePlan(req);
-  const rows = plan.rows.filter((r) => r.action !== "skip");
   if (!a.apply) {
-    if (!rows.length) return `“${wrong}” isn't written anywhere it would be changed.`;
+    // As the screen lists it: every file the name is in, with what happens to it; only the
+    // rewrites and the alias change.
+    if (!plan.rows.length) return `“${wrong}” isn't in any note.`;
+    const change = chosenRows(plan.rows, new Set()).length;
+    const row = (r: (typeof plan.rows)[number]) =>
+      `- ${r.file}: ${r.count} line${r.count === 1 ? "" : "s"} · ${FIX_ACTION[r.action] ?? r.action}${r.inFilename ? " · In the file name: rename it separately" : ""}`;
     return [
-      `Fixing “${wrong}” → “${right}” would change ${rows.length} file${rows.length === 1 ? "" : "s"}:`,
-      ...rows.slice(0, 40).map((r) => `- ${r.file}: ${r.count} × (${r.action})`),
-      "Call again with apply true to make the change, and files to make it only in those.",
+      `Fixing “${wrong}” → “${right}” would change ${change} of the ${plan.rows.length} file${plan.rows.length === 1 ? "" : "s"} it's in${plan.rightPage ? ` (${right} has a wiki page, which gets “${wrong}” as an alias)` : ""}:`,
+      ...plan.rows.slice(0, 40).map(row),
+      ...(plan.rows.length > 40 ? [`…and ${plan.rows.length - 40} more.`] : []),
+      change ? "Call again with apply true to make the change, and files to make it only in those." : "None of them would change.",
     ].join("\n");
   }
   // files: the ticked files, as Fix name's ticks are; the rest stay as they are.
@@ -1588,10 +1702,12 @@ async function savedSearches(a: Args): Promise<string> {
   }
   if (!name || !query) {
     const rows = await api.smartLists();
+    // Its layers in search's names (notes, wiki, sources, templates), so running it matches the screen.
+    const named = (l: string) => (l === "wiki" ? l : `${l}s`);
     return rows.length
       ? paged(
           a,
-          rows.map((s) => `- ${s.name}: ${s.query}`),
+          rows.map((s) => `- ${s.name}: ${s.query}${s.layers.length ? ` · layers ${s.layers.map(named).join(", ")}` : ""}`),
           ["saved search", "saved searches"],
         )
       : "No saved searches.";
@@ -1649,7 +1765,8 @@ async function graph(a: Args): Promise<string> {
   const g = await api.graph(str(a, "page") ?? null, Math.min(Math.max(Number(a.depth) || 1, 1), 3));
   const name = new Map(g.nodes.map((n) => [n.id, n.title ?? n.id]));
   const lines = g.edges.map(([s, t]) => `- ${name.get(s)} → ${name.get(t)}`);
-  const links = `${g.nodes.length} pages; ${paged(a, lines, ["link", "links"], 200)}`;
+  // Cut to the nearest 400 pages, as the screen says under it.
+  const links = `${g.nodes.length} pages${g.truncated ? " (the nearest 400: there are more)" : ""}; ${paged(a, lines, ["link", "links"], 200)}`;
   if (a.detail !== true) return links;
   // detail: the pages too, nearest first, each with its type, steps from the page and links.
   const pages = [...g.nodes]
@@ -1659,16 +1776,33 @@ async function graph(a: Args): Promise<string> {
 }
 
 async function status(): Promise<string> {
-  const [s, v, u, sw] = await Promise.all([
+  const [s, v, u, sw, perm, info] = await Promise.all([
     api.settingsRead(),
     api.vaultStatus(),
     api.undoPeek(),
     api.switchoverStatus().catch(() => null),
+    api.permissions().catch(() => null),
+    api.appInfo().catch(() => null),
   ]);
   const old = sw && (sw.skills || sw.scripts);
+  const n = v.stats;
+  // As Settings › Vault shows the index, its counts or why it failed.
+  const index =
+    v.state === "ready"
+      ? `${fmtCount(n.files)} files indexed: ${fmtCount(n.notes)} notes, ${fmtCount(n.wiki)} wiki, ${fmtCount(n.sources)} sources, ${fmtCount(n.templates)} templates, ${fmtCount(n.openTasks)} open tasks, ${fmtCount(n.unresolvedLinks)} unresolved links; updated ${new Date(n.updatedAt).toLocaleString("en-GB")}`
+      : v.state === "indexing"
+        ? "Indexing…"
+        : v.state === "error"
+          ? `Index failed: ${v.error ?? "no reason given"} (rebuild_index tries again)`
+          : "No vault";
   return [
     `Vault: ${s.vaultPath ?? "none chosen"}${s.readOnly ? " (read-only: Brainstead won't change it until Settings › Vault › Read-only is off)" : ""}`,
-    `Index: ${v.state === "ready" ? `${v.stats.files} files, ${v.stats.openTasks} open tasks` : v.state}`,
+    `Index: ${index}`,
+    // Settings › Permissions' Full Disk Access, where macOS asks for it.
+    perm?.applies
+      ? `Full Disk Access: ${perm.fullDiskAccess === true ? "granted" : perm.fullDiskAccess === false ? "not granted (Settings › Permissions says how to give it)" : "macOS can't say"}`
+      : "",
+    info ? `Brainstead ${info.version} (${info.build}); its app data folder: ${info.dataDir}` : "",
     `Brainstead runs the daily and weekly summaries (Settings › Jobs & schedule): ${s.summariesHere ? "on" : "off"}`,
     u ? `⌘Z would undo: ${u.label}` : "Nothing to undo.",
     old
@@ -1793,7 +1927,19 @@ async function suggestions(a: Args): Promise<string> {
 
 /** Doc check's register; with start_register, its Start the register, a new note through Changes. */
 async function docCheckRegister(a: Args, r: McpRequest): Promise<unknown> {
-  if (a.start_register !== true) return api.canonicalRegister();
+  if (a.start_register !== true) {
+    // The register as the screen lists it, each version's status in its words (In force, Draft, Superseded).
+    const reg = await api.canonicalRegister();
+    if (!reg.exists) return `There's no register yet (${REGISTER}): start_register starts it, as Start the register does.`;
+    return [
+      reg.entries.length ? `The canonical docs register (${REGISTER}); governing_document takes a key:` : `${REGISTER} has no rows yet.`,
+      ...reg.entries.map(
+        (e) =>
+          `- ${e.key} · ${e.title} ${e.version} · ${REGISTER_STATUS[e.status]?.[0] ?? e.status} · ${e.path}${e.exists ? "" : " (not found)"}${e.aliases.length ? ` · also ${e.aliases.join(", ")}` : ""}`,
+      ),
+      ...(reg.problems.length ? ["Problems in the register:", ...reg.problems.map((p) => `- ${p}`)] : []),
+    ].join("\n");
+  }
   const there = (await api.filesList(null)).some((f) => f.path === REGISTER);
   if (there) throw new Error(`${REGISTER} is there already: doc_check without document reads it, and edit_page adds its rows.`);
   const o = await submitAll([sub(a, r, REGISTER, "new", "Start the canonical docs register", { op: "page", content: REGISTER_STUB })]);
@@ -1805,12 +1951,14 @@ async function docCheckRegister(a: Args, r: McpRequest): Promise<unknown> {
 async function docCheck(a: Args, r: McpRequest): Promise<unknown> {
   const document = str(a, "document") ?? "";
   const result = await api.docCheck(document, str(a, "governing_document") ?? "", a.mode === "earlier_feedback" ? "callouts" : "standard");
-  if (a.save !== true) return result;
+  // In the screen's words (Conflict, Not covered, In force…), as Copy findings gives them.
   const name = document.split("/").pop() ?? document;
+  const found = findingsMarkdown(name, result);
+  if (a.save !== true) return found;
   const path = findingsNote(name);
-  const o = await submitAll([sub(a, r, path, "new", `Doc check of ${name}`, { op: "page", content: findingsMarkdown(name, result) })]);
+  const o = await submitAll([sub(a, r, path, "new", `Doc check of ${name}`, { op: "page", content: found })]);
   told(o.applied ? `saved the doc check of ${name} as a note` : `held the doc check of ${name} for you in Changes`);
-  return { ...result, saved: { path, message: o.message } };
+  return `${found}\nSaved as ${path}: ${o.message}`;
 }
 
 /** save_chat: Ask's Save for an open chat, or History's Save for a closed one; the open one in Ask
@@ -1934,15 +2082,23 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
   "weekly.suggestion": weeklySuggestion,
   "weekly.start_over": weeklyStartOver,
   moving_over: movingOver,
+  note_look: noteLook,
   "chat.save": saveChat,
   "meeting.transcripts": async (a) => {
     // The screen's Show: To do (not yet ingested or linked from a note), or All.
     const show = str(a, "show") ?? "to_do";
     if (show !== "to_do" && show !== "all") throw new Error("show is to_do or all, as the screen's Show is (to_do when left out).");
-    const all = await api.meetingTranscripts();
+    const [all, ran] = await Promise.all([api.meetingTranscripts(), api.ingestRuns()]);
     const rows = show === "all" ? all : all.filter((t) => !t.done);
-    const line = (t: (typeof rows)[number]) =>
-      `- ${t.path} · ${t.done ? `done: ${MEETING_DONE[t.done]}` : `looks like ${t.inferred.type ?? "a meeting"} ${t.inferred.name ?? t.inferred.topic ?? ""} ${t.inferred.date ?? ""}${t.inferred.dateCheck ? " (the capture day: check the meeting date)" : ""}`}`;
+    // As the screen marks them: a note there already, one being drafted or drafted, and its questions.
+    const meetings = ran.filter((r) => r.kind === "meeting");
+    const drafting = (t: Transcript) => meetings.some((r) => r.source === t.path && (r.status === "running" || r.status === "queued"));
+    const drafted = (t: Transcript) => meetings.some((r) => r.source === t.path && r.status === "done");
+    const exists = (t: Transcript) => (t.inferred.exists ? noteFile(specOf(t)) : null);
+    const line = (t: Transcript) =>
+      `- ${t.path} · ${t.done ? `done: ${MEETING_DONE[t.done]}` : `looks like ${t.inferred.type ?? "a meeting"} ${t.inferred.name ?? t.inferred.topic ?? ""} ${t.inferred.date ?? ""}${t.inferred.dateCheck ? " (the capture day: check the meeting date)" : ""}`}${
+        exists(t) ? ` · note exists: ${exists(t)}` : ""
+      }${drafting(t) ? " · being drafted" : drafted(t) ? " · a note was drafted (see Changes)" : ""}${(t.inferred.ask ?? []).map((q) => `\n  - ${q}`).join("")}`;
     return listed(a, rows, {
       text: line,
       noun: show === "all" ? ["transcript", "transcripts"] : ["transcript to write up", "transcripts to write up"],
@@ -1954,6 +2110,9 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
         date: t.inferred.date ?? null,
         dateCheck: !!t.inferred.dateCheck,
         done: t.done ?? null,
+        exists: exists(t),
+        ask: t.inferred.ask ?? [],
+        drafted: drafting(t) ? "drafting" : drafted(t) ? "drafted" : null,
       }),
       empty: show === "all" ? "No transcripts in Sources." : "No transcripts still to write up.",
     });
@@ -2090,6 +2249,9 @@ async function contradictionsTool(a: Args, r: McpRequest): Promise<string> {
         ? `A check is running: ${l.doing || "checking"}.`
         : "Not checked yet: start_run contradictions runs the check.",
   ];
+  // The screen's banners: why the last check failed, and the fixes it couldn't make.
+  if (l.error) head.push(` It failed: ${l.error}`);
+  if (l.failed) head.push(` ${l.failed === 1 ? "1 fix" : `${l.failed} fixes`} not made: ${l.failures.join("; ")}.`);
   // The ones to decide: a real contradiction or an unclear one, not yet resolved or ignored.
   const settled = new Set(["compatible", "evolution", "resolved", "ignored"]);
   const shown = a.all === true ? rep.items : rep.items.filter((i) => !i.verdict || !settled.has(i.verdict.verdict));
@@ -2286,13 +2448,13 @@ async function taskLists(a: Args): Promise<string> {
 
 // ---- Settings
 
-type SettingKind = "bool" | "time" | "text" | "number" | "day" | "theme" | "choice" | "model" | "speed";
+type SettingKind = "bool" | "time" | "text" | "number" | "day" | "theme" | "choice" | "model" | "speed" | "size" | "shortcut";
 /** A choice setting's choices, as its menu offers them: each value and how the screen names it. */
 type Choices = () => Promise<[string, string][]> | [string, string][];
 /** What the settings tool can change, by key: its pane, label, kind and default, a choice's
  *  choices, and the name of its default choice when it has one (set by null: As macOS…). The vault,
- *  Read-only and the excluded folders stay the user's (D-20261006-20); a note's own look stays with
- *  the note (look: in it). */
+ *  Read-only and the excluded folders stay the user's (D-20261006-20); a note's own look is
+ *  note_look's (settings.docLooks, by path). */
 type SettingRow = [key: string, pane: string, label: string, kind: SettingKind, def: unknown, choices?: Choices, none?: string];
 
 /** The models the assistants found offer, as Ask's model menu lists them. */
@@ -2309,7 +2471,7 @@ const SETTINGS: SettingRow[] = [
   ["openAtLogin", "General", "Open at login", "bool", false],
   ["menuBar", "General", "Show in the menu bar", "bool", true],
   ["menuBarOnly", "General", "Only in the menu bar when the window is closed", "bool", false],
-  ["captureShortcut", "General", "Quick capture shortcut", "text", "Control+Alt+Space"],
+  ["captureShortcut", "General", "Quick capture shortcut (as Control+Alt+Space)", "shortcut", "Control+Alt+Space"],
   ["spellCheck", "Notes", "Check spelling", "bool", true],
   ["grammarCheck", "Notes", "Check grammar", "bool", true],
   [
@@ -2318,7 +2480,8 @@ const SETTINGS: SettingRow[] = [
     "Spelling language",
     "choice",
     null,
-    async () => (await api.spellLanguages())[0].map((l) => [l, l]),
+    // By name, as its menu lists them (English (South Africa)), the code (en_ZA) taken too.
+    async () => (await api.spellLanguages())[0].map((l) => [l, languageName(l)]),
     "As macOS",
   ],
   [
@@ -2334,6 +2497,8 @@ const SETTINGS: SettingRow[] = [
     "System voice",
   ],
   ["speechRate", "Notes", "Read aloud › Speed (0.5 to 2)", "speed", 1],
+  // Not in Settings: a note's top bar has it, for every note.
+  ["readSize", "", "A note's Text size (12 to 24, px)", "size", READ_SIZE.default],
   ["speechHighlight", "Notes", "Read aloud › Highlight each word", "bool", true],
   ["docStyle", "Notes", "Document look › Theme", "choice", "brainstead", () => DOC_STYLES.map(([id, name]) => [id, name])],
   ["docAccent", "Notes", "Document look › Colour", "choice", "brainstead", () => DOC_ACCENTS.map(([id, name]) => [id, name])],
@@ -2381,6 +2546,28 @@ const SETTINGS: SettingRow[] = [
 ];
 const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
+/** The keys a shortcut can end with, as a key press gives them (Settings' shortcutFromEvent). */
+const SHORTCUT_KEY =
+  /^([A-Z0-9]|F([1-9]|1\d|2[0-4])|Space|Enter|Tab|Backspace|Delete|Escape|Home|End|PageUp|PageDown|Insert|Arrow(Up|Down|Left|Right)|Minus|Equal|BracketLeft|BracketRight|Backslash|Semicolon|Quote|Backquote|Comma|Period|Slash)$/;
+const SHORTCUT_MODS = ["Control", "Alt", "Shift", "Super"];
+
+/** A shortcut as the screen records one: one or more of Control, Alt, Shift and Super, in that
+ *  order, then a key ("Control+Alt+Space"). */
+function shortcutSpec(spec: string): string {
+  const parts = spec
+    .split("+")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const key = parts.pop() ?? "";
+  const mods = parts.map((p) => SHORTCUT_MODS.find((m) => m.toLowerCase() === p.toLowerCase()) ?? p);
+  const k = key.length === 1 ? key.toUpperCase() : key;
+  if (!mods.length || mods.some((m) => !SHORTCUT_MODS.includes(m)) || new Set(mods).size < mods.length || !SHORTCUT_KEY.test(k))
+    throw new Error(
+      "captureShortcut is one or more of Control, Alt, Shift and Super, then a key, joined by +: Control+Alt+Space, Super+Shift+K, Control+F5.",
+    );
+  return [...SHORTCUT_MODS.filter((m) => mods.includes(m)), k].join("+");
+}
+
 async function settingsTool(a: Args): Promise<string> {
   const s = settings.get();
   /** The settings kept as objects, with their defaults filled in. */
@@ -2400,6 +2587,7 @@ async function settingsTool(a: Args): Promise<string> {
     return v ?? def;
   };
   const shown = (v: unknown, none?: string) => (v == null && none ? `null (${none})` : JSON.stringify(v));
+  const where = (pane: string, label: string) => (pane ? `Settings › ${pane} › ${label}` : label);
   const action = str(a, "action") ?? "get";
   if (action === "get") {
     // A choice's choices once: the models only under New chats use, which every job's model takes.
@@ -2412,7 +2600,7 @@ async function settingsTool(a: Args): Promise<string> {
           const list = cs.map(([v, l]) => (v === l ? v : `${v} (${l})`)).join(", ");
           extra = ` (one of: ${list || "none here"}${none ? `; null for ${none}` : ""})`;
         }
-        return `- ${k} · Settings › ${pane} › ${label}: ${shown(valueOf(k, def), none)}${extra}`;
+        return `- ${k} · ${where(pane, label)}: ${shown(valueOf(k, def), none)}${extra}`;
       }),
     );
     return paged(a, lines, ["setting", "settings"], 100);
@@ -2451,6 +2639,12 @@ async function settingsTool(a: Args): Promise<string> {
     if (!Number.isFinite(v) || (v as number) < 0.5 || (v as number) > 2) throw new Error(`${key} is a number from 0.5 to 2.`);
     // The slider's steps.
     v = Math.round((v as number) * 20) / 20;
+  } else if (kind === "size") {
+    v = Number(v);
+    if (!Number.isInteger(v) || (v as number) < READ_SIZE.min || (v as number) > READ_SIZE.max)
+      throw new Error(`${key} is a whole number from ${READ_SIZE.min} to ${READ_SIZE.max} (px).`);
+  } else if (kind === "shortcut") {
+    v = shortcutSpec(String(v ?? ""));
   } else if (kind === "choice" || kind === "model") {
     const cs = await Promise.resolve(choices!());
     const want = String(v).trim().toLowerCase();
@@ -2471,12 +2665,94 @@ async function settingsTool(a: Args): Promise<string> {
   } else if (kind === "theme") {
     settings.update({ theme: v as Settings["theme"], docTheme: undefined });
     applyTheme(v as Settings["theme"]);
+  } else if (kind === "size") {
+    settings.update({ readSize: applyReadSize(v as number) });
   } else settings.update({ [key!]: v } as Partial<Settings>);
   await settings.flush();
   if (key === "speechVoice" || key === "speechRate") speechSettingsChanged();
   const said = v === undefined ? (none ?? "its default") : JSON.stringify(v);
+  // The shortcut is registered as the settings are saved: say if the system wouldn't give it, as
+  // the screen does under it.
+  if (kind === "shortcut") {
+    const [, error] = await api.captureShortcutStatus();
+    if (error)
+      return `${where(pane, label)} is set to ${said}, but it isn't working: ${error} The shortcut that was registered before still works.`;
+    noted(`set ${label} to ${said}`);
+    return `${where(pane, label)} is now ${said}, registered with the system.`;
+  }
   noted(`set ${label} to ${said}`);
-  return `Settings › ${pane} › ${label} is now ${said}.`;
+  return `${where(pane, label)} is now ${said}.`;
+}
+
+// ---- a note's own look
+
+/** A theme or colour by its id or the name the Look menu gives it. */
+function lookChoice(list: [string, string, ...unknown[]][], v: unknown, what: string): string {
+  const want = String(v).trim().toLowerCase();
+  const hit = list.find(([id, name]) => id === want || name.toLowerCase() === want);
+  if (!hit) throw new Error(`${what} is one of: ${list.map(([id, name]) => `${id} (${name})`).join(", ")}.`);
+  return hit[0];
+}
+
+/** A note's own look, as the note's Look button sets it: kept in settings by path (docLooks),
+ *  never in the note (src/docLook.ts). Read one note's or all those with their own, set its theme
+ *  or colour, Use the defaults on one, or Settings › Notes' Use the defaults for all. */
+async function noteLook(a: Args): Promise<string | Listing> {
+  const s = settings.get();
+  const action = str(a, "action") ?? "list";
+  const styleName = (id: string) => DOC_STYLES.find(([x]) => x === id)?.[1] ?? id;
+  const accentName = (id: string) => DOC_ACCENTS.find(([x]) => x === id)?.[1] ?? id;
+  const page = str(a, "page");
+  let path: string | null = null;
+  if (page) {
+    [path] = await api.linksResolve([page.replace(/^\[\[|\]\]$/g, "")]);
+    if (!path) throw new Error(`There's no page called ${page}.`);
+  }
+  if (action === "list") {
+    const d = docDefaults(s);
+    const defaults = `The defaults (Settings › Notes › Document look): ${styleName(d.style)}, ${accentName(d.accent)}.`;
+    if (path) {
+      const l = lookOf(s, path);
+      return `${pageName(path)} looks ${styleName(l.style)}, ${accentName(l.accent)}: ${l.own ? "its own look" : "the defaults"}. ${defaults}`;
+    }
+    const rows = Object.keys(s.docLooks ?? {}).sort();
+    const line = (p: string) => {
+      const l = lookOf(s, p);
+      return `- ${p} · ${styleName(l.style)}, ${accentName(l.accent)}`;
+    };
+    return listed(a, rows, {
+      text: line,
+      noun: ["note with its own look", "notes with their own look"],
+      line,
+      item: (p) => ({ path: p, theme: lookOf(s, p).style, colour: lookOf(s, p).accent }),
+      empty: `No note has its own look. ${defaults}`,
+      before: rows.length ? [defaults] : [],
+    });
+  }
+  if (action === "use_defaults_for_all") {
+    const n = Object.keys(s.docLooks ?? {}).length;
+    if (!n) return "No note has its own look: they all use the defaults already.";
+    settings.update({ docLooks: {} });
+    await settings.flush();
+    noted("set every note to the default look");
+    return `${fmtCount(n)} ${n === 1 ? "note uses" : "notes use"} the defaults again, as Use the defaults for all does.`;
+  }
+  if (action !== "set" && action !== "use_defaults") throw new Error("action is list, set, use_defaults or use_defaults_for_all.");
+  if (!path) throw new Error("Give page: the note whose look to change.");
+  const d = docDefaults(s);
+  const patch =
+    action === "use_defaults"
+      ? { style: d.style, accent: d.accent }
+      : {
+          ...(has(a, "theme") ? { style: lookChoice(DOC_STYLES, a.theme, "theme") } : {}),
+          ...(has(a, "colour") ? { accent: lookChoice(DOC_ACCENTS, a.colour, "colour") } : {}),
+        };
+  if (!Object.keys(patch).length) throw new Error("Give theme or colour, or both.");
+  settings.update({ docLooks: withOwnLook(s.docLooks ?? {}, path, patch, d) });
+  await settings.flush();
+  const l = lookOf(settings.get(), path);
+  noted(`set the look of ${pageName(path)}`);
+  return `${pageName(path)} now looks ${styleName(l.style)}, ${accentName(l.accent)}${l.own ? "" : " (the defaults)"}. ⌘Z doesn't undo it; use_defaults puts it back.`;
 }
 
 // ---- Sources' Import

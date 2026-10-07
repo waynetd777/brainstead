@@ -364,6 +364,10 @@ fn create_task_sends_a_line() {
     assert!(refused(&f.ctx, "create_task", json!({"text": "x", "view": "today"})).contains("view is followups"));
     assert!(refused(&f.ctx, "create_task", json!({"text": "x", "project": "Nowhere"})).contains("no project"));
     assert!(refused(&f.ctx, "create_task", json!({"text": "x", "effort": "lots"})).contains("Not an effort"));
+    // Its description says where a task with no project lands: the Inbox, to clarify.
+    let list = tools();
+    let d = list.iter().find(|t| t["name"] == "create_task").unwrap()["description"].as_str().unwrap().to_string();
+    assert!(d.contains("which is the Inbox"), "{d}");
 }
 
 #[test]
@@ -489,6 +493,14 @@ fn renames_trash_and_deletes_are_sent() {
         );
         assert_eq!(c["instruction"]["to"].as_str(), Some("sources/Steerco pack - 2026-09-28.pdf"), "{title}");
     }
+    // preview lists the links it would rewrite, as the Rename box does, and renames nothing.
+    let t = ok(
+        &f.ctx,
+        "rename_note",
+        json!({"page": "Project. Orbit App launch", "type": "Project", "title": "Orbit App rollout", "preview": true}),
+    );
+    assert!(t.contains("will be updated:") && t.contains("→ ") && t.contains("[[Project. Orbit App rollout"), "{t}");
+    assert!(f.ctx.vault.join("Project. Orbit App launch.md").exists());
     let (_, c) = submitted(&f, "trash_note", json!({"page": "Idea. Accents", "reason": "Old"}));
     assert_eq!((c["kind"].as_str(), c["instruction"]["op"].as_str()), (Some("trash"), Some("trash")));
     // A task's line taken out, found by its text even when the line number is off.
@@ -825,4 +837,25 @@ fn the_re_audits_tools_and_arguments_go_to_the_app() {
     }
     assert_eq!(props("draft_reply")["tone"]["enum"], json!(["brief", "warm", "formal"]));
     assert_eq!(props("start_run")["type"]["enum"], json!(["Meeting", "1-1", "Workshop", "Interview"]));
+}
+
+#[test]
+fn a_notes_own_look_goes_to_the_app_with_its_action() {
+    let f = fixture();
+    for (tool_name, args, action) in [
+        ("list_note_looks", json!({"page": "Orbit App", "theme": "modern"}), "list"),
+        ("note_look", json!({"action": "set", "page": "Orbit App", "theme": "modern", "colour": "green"}), "set"),
+        ("note_look", json!({"action": "use_defaults_for_all"}), "use_defaults_for_all"),
+    ] {
+        let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
+        ok(&f.ctx, tool_name, args);
+        let req = app.join().unwrap();
+        assert_eq!((req.action.as_str(), req.args["action"].as_str()), ("note_look", Some(action)), "{tool_name}");
+        // The read tool never passes on what only the change tool takes.
+        if tool_name == "list_note_looks" {
+            assert!(req.args.get("theme").is_none());
+        }
+    }
+    assert!(refused(&f.ctx, "list_note_looks", json!({"action": "set"})).contains("list_note_looks does list"));
+    assert!(refused(&f.ctx, "note_look", json!({"page": "Orbit App"})).contains("Give action"));
 }
