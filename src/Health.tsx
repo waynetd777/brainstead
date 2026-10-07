@@ -26,7 +26,9 @@ import {
   reloadHealth,
   safeFixes,
   startKnowledge,
+  trendLabels,
   trendPoints,
+  trendShown,
 } from "./knowledge";
 import { nav, openDoc, useViewState } from "./nav";
 import { reportEditError, undoLast } from "./taskModel";
@@ -137,6 +139,7 @@ export function HealthScreen() {
   const ours = r?.checks.filter((c) => !c.classic) ?? [];
   const history = h?.history ?? [];
   const pts = trendPoints(history, 280, 52);
+  const labels = trendShown(history) ? trendLabels(history) : { from: "", to: "", tip: "" };
 
   return (
     <main className="main">
@@ -185,19 +188,19 @@ export function HealthScreen() {
               <b>{r ? need : "…"}</b>
               <span className="faint small">{fixes.length ? `${fixes.length} more are safe to fix` : "nothing safe to fix"}</span>
             </div>
-            {pts ? (
-              <svg
-                width="280"
-                height="52"
-                viewBox="0 0 280 52"
-                role="img"
-                aria-label={`Issues needing a decision, the last ${history.length} days`}
-              >
-                <polyline points={pts} className="trend" />
-              </svg>
-            ) : (
+            {trendShown(history) ? (
+              <div className="htrend" title={labels.tip}>
+                <svg width="280" height="52" viewBox="0 0 280 52" role="img" aria-label={labels.tip}>
+                  <polyline points={pts} className="trend" />
+                </svg>
+                <div className="htrend-ends faint small">
+                  <span>{labels.from}</span>
+                  <span>{labels.to}</span>
+                </div>
+              </div>
+            ) : history.length < 2 ? (
               <span className="faint small">The trend shows after a second day.</span>
-            )}
+            ) : null}
           </div>
           {r && <Group title="Wiki checks" checks={classic} open={open} setOpen={setOpen} on={{ setTrash, setLinking, setReshaping }} />}
           {r && <Group title="More checks" checks={ours} open={open} setOpen={setOpen} on={{ setTrash, setLinking, setReshaping }} />}

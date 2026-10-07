@@ -61,7 +61,7 @@ Tasks (⌥⌘3) has the GTD lists: **Next actions**, **Follow-ups**, **Waiting f
 
 <a href="images/index.md#tasks-and-gtd"><picture><source media="(prefers-color-scheme: dark)" srcset="images/projects-dark.png"><img alt="Projects: active projects by area with their next actions and waiting-fors, one open on the right" src="images/projects-light.png"></picture></a>
 
-A project is a note named `Project. <name>.md`, with its status, area and outcome as properties. Its tasks are the ones written in it plus any that link it. Projects (⌥⌘4) lists them by status and area. An active project is flagged **Stuck** (red) when it has no next action, and **Quiet** (amber) when nothing has moved for two weeks. There you can add next actions, edit the outcome and area, change the status, and draft nudges for what you're waiting for. **New project** writes the note with its headings.
+A project is a note named `Project. <name>.md`, with its status, area and outcome as properties. Its tasks are the ones written in it plus any that link it. Projects (⌥⌘4) lists them by status and area. An active project is flagged **Stuck** (red) when it has no next action, and **Quiet** (amber) when nothing has moved for two weeks. There you can add next actions, edit the outcome and area, change the status, and draft nudges for what you're waiting for. **New project** writes the note with its headings. The area also decides where the daily and weekly summaries put a project's work: area Personal under **Personal**, any other area under **Work done** ([Day to day](day-to-day.md)).
 
 ## The weekly review
 

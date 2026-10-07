@@ -5,7 +5,19 @@
 import { describe, expect, it } from "vitest";
 import type { ChangeRow, LintReport } from "./api";
 import { filedPage } from "./Ask";
-import { byRun, decisions, fixWithAskPrompt, held, originLabel, pageName, runLabel, safeFixes, trendPoints } from "./knowledge";
+import {
+  byRun,
+  decisions,
+  fixWithAskPrompt,
+  held,
+  originLabel,
+  pageName,
+  runLabel,
+  safeFixes,
+  trendLabels,
+  trendPoints,
+  trendShown,
+} from "./knowledge";
 
 const row = (p: Partial<ChangeRow>): ChangeRow => ({
   id: "1",
@@ -107,6 +119,25 @@ describe("knowledge health", () => {
       40,
     ).split(" ");
     expect(pts).toEqual(["0.0,4.0", "100.0,36.0"]);
+  });
+
+  it("shows the trend only when a day needed a decision, with labelled ends", () => {
+    const flat: [string, { decisions: number }][] = [
+      ["2026-10-01", { decisions: 0 }],
+      ["2026-10-02", { decisions: 0 }],
+    ];
+    expect(trendShown(flat)).toBe(false);
+    const h: [string, { decisions: number }][] = [
+      ["2026-10-01", { decisions: 4 }],
+      ["2026-10-02", { decisions: 6 }],
+      ["2026-10-03", { decisions: 1 }],
+    ];
+    expect(trendShown(h)).toBe(true);
+    expect(trendLabels(h)).toEqual({
+      from: "1 Oct: 4",
+      to: "3 Oct: 1",
+      tip: "Issues needing a decision each day, 1 Oct to 3 Oct. Highest: 6.",
+    });
   });
 
   it("files an answer as a page with properties and its current state", () => {

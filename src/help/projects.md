@@ -5,7 +5,7 @@ screens: [projects]
 order: 4
 summary: Every project note by status and area, with its next actions, waiting-fors and a flag when one is stuck.
 ---
-A project is a note named `Project. <name>.md`. Its properties hold its status, area and outcome, and its tasks are those written in it plus any task elsewhere that links it.
+A project is a note named `Project. <name>.md`. Its properties hold its status, area and outcome, and its tasks are those written in it plus any task elsewhere that links it. The area also decides where the daily and weekly summaries put the project's work: area Personal under **Personal**, any other area under **Work done**, done projects included.
 
 ## Find a project
 **Active**, **On hold**, **Someday** and **Completed** in the top bar switch between projects by status, each with its count, even 0. The table groups projects by area (projects with no area last) and shows for each: **Next** (open next actions), **Waiting**, and **Last change** (when its note or any of its tasks last changed). With no active projects, the tab says a project is a note named “Project. …”.

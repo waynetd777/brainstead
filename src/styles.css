@@ -6503,6 +6503,15 @@ select.sel {
   font: 600 34px/1 var(--sans);
   letter-spacing: -0.03em;
 }
+.htrend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.htrend-ends {
+  display: flex;
+  justify-content: space-between;
+}
 .trend {
   fill: none;
   stroke: var(--accent);

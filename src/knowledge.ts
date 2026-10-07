@@ -110,6 +110,28 @@ export function trendPoints(history: [string, { decisions: number }][], w: numbe
     .join(" ");
 }
 
+/** Whether the trend says anything: two days or more, and a day that needed a decision. */
+export function trendShown(history: [string, { decisions: number }][]): boolean {
+  return history.length >= 2 && history.some(([, d]) => d.decisions > 0);
+}
+
+const dayLabel = (day: string) => {
+  const d = new Date(`${day}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? day : d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+};
+
+/** The trend's end labels and its tooltip. */
+export function trendLabels(history: [string, { decisions: number }][]): { from: string; to: string; tip: string } {
+  const [first, d0] = history[0];
+  const [last, d1] = history[history.length - 1];
+  const max = Math.max(...history.map(([, d]) => d.decisions));
+  return {
+    from: `${dayLabel(first)}: ${d0.decisions}`,
+    to: `${dayLabel(last)}: ${d1.decisions}`,
+    tip: `Issues needing a decision each day, ${dayLabel(first)} to ${dayLabel(last)}. Highest: ${max}.`,
+  };
+}
+
 /** What Ask is asked to do about the issues that need judgement. */
 export function fixWithAskPrompt(r: LintReport): string {
   const lines: string[] = [];

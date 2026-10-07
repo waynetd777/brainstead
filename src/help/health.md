@@ -5,7 +5,7 @@ screens: [health]
 order: 15
 summary: Checks the wiki for missing pages, broken links, stale dates and other problems, and fixes the safe ones for you.
 ---
-Knowledge health checks the wiki and its sources whenever the vault changes. The number under **Need a decision** is the issues only you can settle; the sidebar and Today's **Wiki issues to decide** show the same count. The sparkline beside it shows the trend from the second day on.
+Knowledge health checks the wiki and its sources whenever the vault changes. The number under **Need a decision** is the issues only you can settle; the sidebar and Today's **Wiki issues to decide** show the same count. The sparkline beside it shows the trend from the second day on, once a day has needed a decision: its ends give the first and latest day's count, and hovering it gives the highest.
 
 ## Read the checks
 The checks come in two groups.

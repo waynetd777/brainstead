@@ -58,7 +58,7 @@ The Wiki (⌥⌘9) lists the pages by type and tag with their health: **Held**, 
 
 <a href="images/index.md#the-wiki-and-sources"><picture><source media="(prefers-color-scheme: dark)" srcset="images/health-dark.png"><img alt="Knowledge health: the checks, the issues needing a decision, and the side cards" src="images/health-light.png"></picture></a>
 
-Knowledge health checks the wiki whenever the vault changes: missing pages and links, broken or changed sources, duplicates, stale pages and claims with no citation, among others.
+Knowledge health checks the wiki whenever the vault changes: missing pages and links, broken or changed sources, duplicates, stale pages and claims with no citation, among others. Beside **Need a decision**, a line shows the count day by day once a day has needed one, its ends labelled with the first and latest day's count; hovering it gives the highest.
 
 - Pie charts on the right show the wiki's pages by type and by tag; a slice opens the Wiki filtered to it.
 - **Fix safe issues** fixes the ones with one right answer (a missing link, a date, a `log.md` line, a system note's lost header), undoably.

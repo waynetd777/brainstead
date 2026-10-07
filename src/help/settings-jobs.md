@@ -40,6 +40,8 @@ To have it also ingest again the sources that changed, and to ingest new sources
 **Recent runs** lists the last eight daily and weekly summary runs, scheduled or run now. **Open** shows the run's chat in Ask, **Show** opens the note it wrote, and **Undo** puts the note back as it was, as long as it hasn't been edited since (the line in `log.md` stays, as a record).
 
 ## Keep your tools' sessions out of the summaries
+The summaries put each project's work under **Work done** or **Personal** by the project's area: a project with the area Personal is personal, one with any other area is work, done projects included. A session counts for a project when its folder is named after it (`orbit-app` for Orbit App) or its messages are plainly about it. To move a project's work across, change its area on [Projects](app:projects).
+
 The daily summary writes up your Claude Code sessions as your work. A tool of yours that starts Claude Code sessions itself (a script, another app) would show there too. List it under **Your tools that start Claude Code sessions**, and its sessions are counted as automated instead.
 
 Each tool has a **Name** and what its sessions have in common. **Folder contains** matches a session whose working folder's path contains it. **First message starts with** matches a session whose first message opens with those words, ignoring case. Give one or both: with both, a session must match both. A row is saved once it has a name and one of the two; the **×** takes a tool off. If your saved tools couldn't be loaded, it says so with **Retry**, and nothing can be changed until they load, so the saved list isn't overwritten.

@@ -146,7 +146,40 @@ pub struct ReviewInputs {
     pub sessions: Vec<Session>,
     /// App-generated sessions counted by what they were.
     pub automated: BTreeMap<String, usize>,
+    /// Every project note, done ones too, with its area: what decides Work or Personal.
+    pub projects: Vec<ProjectArea>,
     pub weekly: Option<WeeklyInputs>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ProjectArea {
+    pub name: String,
+    pub area: Option<String>,
+}
+
+impl ProjectArea {
+    /// `Personal` for an area named Personal, `Work` for any other area, none without one.
+    pub fn domain(&self) -> Option<&'static str> {
+        let a = self.area.as_deref()?.trim();
+        if a.is_empty() {
+            None
+        } else if a.eq_ignore_ascii_case("personal") {
+            Some("Personal")
+        } else {
+            Some("Work")
+        }
+    }
+}
+
+/// The project a session's folder is named after (`~/Projects/orbit-app` for `Orbit App`),
+/// comparing letters and digits only.
+pub fn project_of<'a>(cwd: &str, projects: &'a [ProjectArea]) -> Option<&'a ProjectArea> {
+    let key = |s: &str| s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect::<String>();
+    let dir = key(cwd.trim_end_matches('/').rsplit('/').next().unwrap_or(""));
+    if dir.is_empty() {
+        return None;
+    }
+    projects.iter().find(|p| key(&p.name) == dir)
 }
 
 impl ReviewInputs {
@@ -334,6 +367,7 @@ fn vault_in(root: &Path, index: &Index, w: &Window, now: NaiveDateTime, zone: Zo
         scratchpad,
         sessions: Vec::new(),
         automated: BTreeMap::new(),
+        projects: index.projects()?.into_iter().map(|p| ProjectArea { name: p.name, area: p.area }).collect(),
         weekly,
     })
 }
@@ -521,6 +555,19 @@ pub fn render(i: &ReviewInputs) -> String {
     }
 
     line("");
+    line("## Projects and their areas");
+    line("A session or note that serves one of these projects takes its domain: area Personal is Personal, any other area is Work. Label it with the project's name.");
+    if i.projects.is_empty() {
+        line("None.");
+    }
+    for p in &i.projects {
+        match (p.area.as_deref(), p.domain()) {
+            (Some(a), Some(d)) => line(&format!("- {}: area {a} ({d})", p.name)),
+            _ => line(&format!("- {}: no area", p.name)),
+        }
+    }
+
+    line("");
     let automated: usize = i.automated.values().sum();
     line(&format!("## Claude Code sessions: {} with real activity, {automated} of them automated", i.sessions.len()));
     // App-generated runs are only counted, below.
@@ -542,6 +589,9 @@ pub fn render(i: &ReviewInputs) -> String {
             ));
         }
         line(&format!("- cwd: {}", s.cwd));
+        if let Some(d) = project_of(&s.cwd, &i.projects).and_then(|p| p.domain().map(|d| (p, d))) {
+            line(&format!("- Project: {} ({})", d.0.name, d.1));
+        }
         line(&format!("- Log: {}", s.path));
         for m in s.messages.iter().take(MESSAGES) {
             let m: String = m.chars().take(MESSAGE_CHARS).collect();
@@ -793,6 +843,32 @@ mod tests {
         assert!(text.contains("- sources/Roadmap Update 2026-09-18.md (imported 2026-09-30, ingested)"));
         assert!(!text.contains("## Open tasks"));
         assert!(text.contains("- Full span: 09-29 22:00 -> 10-01 00:00 (session spans days: continued, not started)"));
+    }
+
+    #[test]
+    fn a_projects_area_decides_its_domain() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (root, ix) = setup(tmp.path());
+        let w = window(Target::parse("2026-09-30").unwrap());
+        let mut got = gather_vault(&root, &ix, &w, now()).unwrap();
+        let garden = got.projects.iter().find(|p| p.name == "Garden").unwrap();
+        assert_eq!(garden.domain(), Some("Personal"));
+        assert_eq!(project_of("/home/me/Projects/orbit-app-launch/", &got.projects).unwrap().domain(), Some("Work"));
+        assert_eq!(project_of("/home/me/Projects/garden", &got.projects).unwrap().name, "Garden");
+        assert!(project_of("/home/me/Projects", &got.projects).is_none());
+        let text = render(&got);
+        assert!(text.contains("- Garden: area Personal (Personal)"), "{text}");
+        assert!(text.contains("- Orbit App launch: area Work (Work)"), "{text}");
+        got.projects.push(ProjectArea { name: "Alpha".into(), area: Some("Personal".into()) });
+        let sessions = sessions_in(
+            &fixture::projects(tmp.path()),
+            session_bounds(&w).0,
+            session_bounds(&w).1,
+            fixture::zone(),
+            &fixture::automations(),
+        );
+        got.set_sessions(sessions);
+        assert!(render(&got).contains("- cwd: /home/me/Projects/alpha\n- Project: Alpha (Personal)\n"));
     }
 
     #[test]
