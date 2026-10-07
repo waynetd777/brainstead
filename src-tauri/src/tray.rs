@@ -141,12 +141,15 @@ fn toggle(app: &AppHandle, rect: tauri::Rect) {
     let monitors = app.available_monitors().unwrap_or_default();
     let icon = rect.position.to_physical::<f64>(1.0);
     let icon_size = rect.size.to_physical::<f64>(1.0);
+    // The icon can be reported a few points above its screen's top edge (seen: 5 on a screen
+    // placed higher than the built-in one), so it counts as on the screen when it's within an
+    // icon's height of its top; across, it must be inside.
     let in_points = |m: &tauri::Monitor| {
         let k = m.scale_factor();
         let (p, sz) = (m.position(), m.size());
         let (left, top) = (p.x as f64 / k, p.y as f64 / k);
-        let (x, y) = (icon.x / k, icon.y / k);
-        let inside = x >= left && x < left + sz.width as f64 / k && y >= top && y < top + sz.height as f64 / k;
+        let (x, y, slack) = (icon.x / k, icon.y / k, icon_size.height / k);
+        let inside = x >= left && x < left + sz.width as f64 / k && y >= top - slack && y < top + sz.height as f64 / k;
         inside.then_some((k, left, left + sz.width as f64 / k))
     };
     let screen = monitors.iter().find_map(in_points);
