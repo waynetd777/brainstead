@@ -32,6 +32,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 
 import { LinkGhost } from "./Health";
+import { health } from "./knowledge";
 
 afterEach(cleanup);
 
@@ -54,6 +55,11 @@ describe("Link to…", () => {
     expect((box as HTMLInputElement).value).toBe("Soft Launch");
     expect(screen.queryByRole("listbox")).toBeNull();
     fireEvent.keyDown(box, { key: "Enter" });
+    // Busy, with its spinner, until the checks report again.
+    await waitFor(() => expect(calls.some(([c]) => c === "health_link_ghost")).toBe(true));
+    expect(screen.getByRole("button", { name: "Link them" }).querySelector(".spin")).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+    health.set({} as never);
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(calls.find(([c]) => c === "health_link_ghost")?.[1]).toMatchObject({ to: "wiki/concepts/Soft Launch.md" });
   });

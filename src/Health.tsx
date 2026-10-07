@@ -737,7 +737,10 @@ export function LinkGhost({ item, onClose }: { item: LintItem; onClose: () => vo
     try {
       const [to] = picked ? [picked.path] : await api.linksResolve([name.trim()]);
       if (!to) return toast(`There's no page called ${name.trim()}.`, undefined, "bad");
+      // The button stays busy until the checks have run again, as the other fixes' do.
+      const report = nextReport();
       const n = await api.healthLinkGhost(item.name!, to, item.pages ?? []);
+      if (n) await report;
       onClose();
       toast(`Linked on ${n} page${n === 1 ? "" : "s"}`, { label: "Changes", run: () => nav.go("review") }, "ok");
     } catch (e) {

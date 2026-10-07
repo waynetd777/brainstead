@@ -497,6 +497,10 @@ fn health_link_ghost_now(app: AppHandle, target: String, to: String, pages: Vec<
         crate::changes::submit(&app, s)?;
         n += 1;
     }
+    // As every fix does, so the missing page leaves the list once the links point elsewhere.
+    if n > 0 {
+        relint(&app);
+    }
     Ok(n)
 }
 
