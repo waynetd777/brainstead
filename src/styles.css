@@ -5495,6 +5495,12 @@ code.noscript {
   background: var(--accent);
   flex: none;
 }
+
+/* On an accent button the usual colours vanish into it: drawn in the button's text colour. */
+.btn.pri .spin {
+  border-color: color-mix(in srgb, var(--on-accent) 35%, transparent);
+  border-top-color: var(--on-accent);
+}
 .spin {
   width: 12px;
   height: 12px;

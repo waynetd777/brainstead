@@ -390,7 +390,14 @@ pub async fn page_facts(app: AppHandle, path: String) -> Res<Vec<brainstead_core
 /// Whether a page is part of an open contradiction, for Changes' checks. One whose fix has been
 /// applied isn't, though clashes.json keeps it until the next run reads the page again.
 pub fn open_contradiction(path: &str) -> bool {
-    !c::open_on(path, &clashes(), &state().verdicts(), &fixed()).is_empty()
+    let all = clashes();
+    let v = state().verdicts();
+    // Only a page in a contradiction needs the changes that fixed one, and reading those means
+    // reading every change: a change to any other page (each one a link fix makes) skips it.
+    if c::open_on(path, &all, &v, &Default::default()).is_empty() {
+        return false;
+    }
+    !c::open_on(path, &all, &v, &fixed()).is_empty()
 }
 
 /// Knowledge health's "Claims with no citation", from the cached claims.
