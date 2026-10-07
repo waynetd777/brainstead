@@ -11,11 +11,11 @@ import { fixNameOpen } from "./FixName";
 import { shortcutsOpen } from "./Shortcuts";
 import { helpOpen, HelpView } from "./help/HelpDrawer";
 import { readingScene } from "./speech/player";
-import type { Theme } from "./api";
+import type { Theme, WeekPrepStatus } from "./api";
 import { ask, blankChat } from "./askState";
 import { nav, Screen, SettingsPane } from "./nav";
 import { noteDialog } from "./notes/dialogs";
-import { applyTheme, settings } from "./store";
+import { applyTheme, settings, Store } from "./store";
 
 export interface Scene {
   name?: string;
@@ -54,6 +54,8 @@ export interface Scene {
   view?: Record<string, unknown>;
   /** For "ask": show a sample chat. */
   chat?: boolean;
+  /** For "weekly": sample suggestions for the week, instead of preparing them. */
+  weekprep?: boolean;
   /** A task's menu open, by its `path:line` (the task list's key). */
   taskMenu?: string;
   /** A toast to show, with an Undo button. */
@@ -91,6 +93,48 @@ function sampleChat() {
   };
 }
 
+/** The weekly review's scene suggestions are on (`weekprep`). */
+export const scenePrep = new Store(false);
+
+/** The weekly scene's suggestions: prompts from the fixture vault's Steerco note. */
+export function samplePrep(week: string): WeekPrepStatus {
+  const steerco = "Meeting. Orbit App Steerco - 2026-09-30.md";
+  const prompt = (id: string, step: "loose" | "creative", text: string, quote: string) => ({
+    id,
+    step,
+    text,
+    source: { path: steerco, quote },
+    action: null,
+  });
+  return {
+    running: false,
+    error: null,
+    prep: {
+      week,
+      preparedAt: `${new Date().toISOString().slice(0, 10)}T07:30:00`,
+      model: "claude:sonnet",
+      stamp: "scene",
+      dropped: 0,
+      suggestions: [
+        prompt("s1", "loose", "Has the launch date been confirmed with Sam? It was due on 3 Oct.", "Confirm the launch date with Sam"),
+        prompt(
+          "s2",
+          "loose",
+          "Is Zara still to sign off the operating model, or has that happened?",
+          "Zara to sign off the operating model",
+        ),
+        prompt(
+          "s3",
+          "loose",
+          "Role-level layering for the tables was a follow-up: does it need a next action?",
+          "Role-level layering for the tables",
+        ),
+        prompt("s4", "creative", "The learning budget has sat in Someday for a while: is now the time?", "Learning budget"),
+      ],
+    },
+  };
+}
+
 export function parseScene(json: string | null): Scene | null {
   if (!json) return null;
   try {
@@ -122,6 +166,7 @@ export function applyScene(sc: Scene) {
   // Fix name: `q` the name as written, `title` the right one.
   if (sc.dialog === "shortcuts") shortcutsOpen.set(true);
   if (sc.dialog === "fix-name") fixNameOpen.set({ wrong: sc.q, right: sc.title });
+  if (sc.weekprep) scenePrep.set(true);
   if (sc.chat) ask.set({ chats: [sampleChat()], active: "scene" });
   if (sc.help) helpOpen.set(sc.help);
   if (sc.reading) readingScene.set(sc.reading);

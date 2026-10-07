@@ -17,6 +17,7 @@ import { Icon } from "./icons";
 import { Markdown } from "./md/Markdown";
 import { localToday } from "./md/taskQuery";
 import { nav, openDoc, useViewState } from "./nav";
+import { samplePrep, scenePrep } from "./scene";
 import { settings, useStore } from "./store";
 import { TaskList, TasksFailed } from "./TaskList";
 import { reportEditError, tasksFailed, useAllTasks, viewRows, VIEWS } from "./taskModel";
@@ -182,6 +183,11 @@ export function WeeklyScreen() {
   // only shows how they stand.
   useEffect(() => {
     if (!week) return;
+    // Screenshot mode: the scene's sample suggestions, nothing prepared.
+    if (scenePrep.get()) {
+      setPrep(samplePrep(week));
+      return;
+    }
     const load = () =>
       void api
         .weekprepStatus(week)

@@ -267,11 +267,13 @@
     "view": {
       "weekly:begun": true
     },
+    "weekprep": true,
     "docs": true
   },
   {
     "name": "weekly-start",
-    "screen": "weekly"
+    "screen": "weekly",
+    "weekprep": true
   },
   {
     "name": "review",

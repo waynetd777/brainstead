@@ -238,6 +238,10 @@ pub fn weekprep_run(app: AppHandle, week: Option<String>) -> Result<String, Stri
 #[tauri::command]
 pub async fn weekprep_ensure(app: AppHandle, week: String) -> Result<bool, String> {
     prep::week_window(&week)?;
+    // Screenshot mode runs no assistant.
+    if crate::scene().is_some() {
+        return Ok(false);
+    }
     tauri::async_runtime::spawn_blocking(move || ensure(&app, &week, "start")).await.map_err(|e| e.to_string())?
 }
 
