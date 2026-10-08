@@ -93,7 +93,7 @@ import { IMAGE_EXT } from "./md/wikilinks";
 import { nav, place, Screen, SettingsPane } from "./nav";
 import { focusMode } from "./focus";
 import { DEFAULT_SCHEDULE, DEFAULT_WEEKLY_REVIEW } from "./Jobs";
-import { foundDetail, handedOver, INSTALL, languageName, SCREEN_NAME, scriptsFolder, terminalCommands } from "./Settings";
+import { foundDetail, handedOver, INSTALL, languageName, SCREEN_NAME, scriptsFolder, terminalCommands, WEBSITE } from "./Settings";
 import { choice, prepStep, WEEKLY_STATE_CHANGED } from "./weeklyPrep";
 import { draftNotes, followThrough, isTranscriptPath, noteFile, specOf, specOk } from "./meetingFlow";
 import { DONE as MEETING_DONE, needsDate, noteExists, TYPES as MEETING_TYPES } from "./Meeting";
@@ -2067,7 +2067,7 @@ async function status(): Promise<string> {
     perm?.applies
       ? `Full Disk Access: ${perm.fullDiskAccess === true ? "granted" : perm.fullDiskAccess === false ? "not granted (Settings › Permissions says how to give it)" : "macOS can't say"}`
       : "",
-    info ? `Brainstead ${info.version} (${info.build}); its app data folder: ${info.dataDir}` : "",
+    info ? `Brainstead ${info.version} (${info.build}); its app data folder: ${info.dataDir}; its website: ${WEBSITE}` : "",
     `Brainstead runs the daily and weekly summaries (Settings › Jobs & schedule): ${s.summariesHere ? "on" : "off"}`,
     u ? `⌘Z would undo: ${u.label}` : "Nothing to undo.",
     old

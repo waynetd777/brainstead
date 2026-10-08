@@ -802,6 +802,9 @@ export function scriptsFolder(typed: string): string | undefined {
 }
 
 /** Where to read how to install each assistant (How to install). */
+/** Brainstead's product page (site/), linked from About and in app_status. */
+export const WEBSITE = "https://waynetd777.github.io/brainstead/";
+
 export const INSTALL: Record<string, string> = {
   claude: "https://docs.claude.com/en/docs/claude-code/setup",
   codex: "https://developers.openai.com/codex/cli",
@@ -1321,6 +1324,9 @@ function About() {
           <h2 className="h3">Brainstead</h2>
           <p className="muted">A home for everything on your mind.</p>
         </div>
+        <button type="button" className="btn sm" title="Open Brainstead's website in the browser" onClick={() => void openUrl(WEBSITE)}>
+          Website
+        </button>
       </div>
       {info && (
         <dl className="kv">

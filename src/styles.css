@@ -6870,6 +6870,9 @@ select.sel {
 .abouthead img {
   flex: none;
 }
+.abouthead .btn {
+  margin-left: auto;
+}
 
 /* The app icon in the theme's version: the white tile when light, the charcoal one when dark. */
 .abouthead .ondark,

@@ -1552,7 +1552,9 @@ describe("MCP actions", () => {
       const out = (await run("status")) as string;
       expect(out).toContain("Index: 120 files indexed: 80 notes, 30 wiki, 8 sources, 2 templates, 14 open tasks, 3 unresolved links;");
       expect(out).toContain("Full Disk Access: not granted");
-      expect(out).toContain("Brainstead 1.0.2 (abc123); its app data folder: /data/Brainstead");
+      expect(out).toContain(
+        "Brainstead 1.0.2 (abc123); its app data folder: /data/Brainstead; its website: https://waynetd777.github.io/brainstead/",
+      );
       answers.vault_status = () => ({ state: "error", error: "The index file is damaged.", stats });
       expect(await run("status")).toContain("Index: Index failed: The index file is damaged.");
       answers.contradictions_report = () => ({
