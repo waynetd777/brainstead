@@ -803,7 +803,7 @@ export function scriptsFolder(typed: string): string | undefined {
 
 /** Where to read how to install each assistant (How to install). */
 /** Brainstead's product page (site/), linked from About and in app_status. */
-export const WEBSITE = "https://waynetd777.github.io/brainstead/";
+export const WEBSITE = "https://brainstead.davies.co.za/";
 
 export const INSTALL: Record<string, string> = {
   claude: "https://docs.claude.com/en/docs/claude-code/setup",

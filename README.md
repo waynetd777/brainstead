@@ -4,7 +4,7 @@ A home for everything on your mind: tasks, notes and a wiki that writes itself, 
 
 Brainstead is a Mac app for [Getting Things Done](https://gettingthingsdone.com), notes and a wiki, all in one folder of markdown files (your vault) that other markdown editors can open too. Your tasks are `- [ ]` lines in your notes, gathered into GTD lists. AI assistants you already have on your Mac (Claude Code, Codex, Copilot, Antigravity) answer from the vault, build wiki pages from your sources with every claim quoted, and make changes for you, each listed with Revert.
 
-See it on the [Brainstead website](https://waynetd777.github.io/brainstead/).
+See it on the [Brainstead website](https://brainstead.davies.co.za/).
 
 ## Download
 

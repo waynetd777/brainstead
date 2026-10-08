@@ -137,7 +137,7 @@ A new vault's example notes are in `src-tauri/starter-vault/`, embedded the same
 
 ## The product page
 
-`site/` is the product page at https://waynetd777.github.io/brainstead/: plain HTML, CSS and JS with no build step, light only. `.github/workflows/pages.yml` publishes it to GitHub Pages when `site/` changes on main.
+`site/` is the product page at https://brainstead.davies.co.za/: plain HTML, CSS and JS with no build step, light only. `.github/workflows/pages.yml` publishes it to GitHub Pages when `site/` changes on main.
 
 - Preview it with `python3 -m http.server -d site 8765` and open http://localhost:8765/.
 - Its screenshots are WebP copies of the light ones in `docs/images/`: after `make screenshots`, refresh them with `cwebp -q 80 docs/images/<name>-light.png -o site/img/<name>-light.webp`.
