@@ -898,6 +898,7 @@ pub fn run() {
             gtd::project_add_task,
             gtd::task_add,
             gtd::project_set,
+            gtd::projects_set_area,
             gtd::inbox_remove_thought,
             gtd::inbox_move_task,
             weekly::clarify_suggest,

@@ -70,6 +70,9 @@ A project is a note named `Project. <name>.md`, with its status, area and outcom
 
 An active project is **Stuck** (red) with no next action, and **Quiet** (amber) when nothing has moved for two weeks. Add next actions, edit the outcome, area and status, and draft nudges for waiting-fors. **New project** writes the note with its headings.
 
+- Click an area to fold its projects away; what's folded is remembered. Its pencil renames the area on every project under it.
+- The pencil on a project's row, or **Edit** on its page, opens the project note in Edit.
+
 In the daily and weekly summaries, area Personal goes under **Personal** and any other area under **Work done** ([Day to day](day-to-day.md)).
 
 ## The weekly review

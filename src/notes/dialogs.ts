@@ -24,3 +24,8 @@ export function takeNewNoteCursor(path: string): number | null {
   cursors.delete(path);
   return at ?? null;
 }
+
+/** Notes asked to open in Edit rather than View (a project's Edit), read once by the editor. */
+const editing = new Set<string>();
+export const askEdit = (path: string) => editing.add(path);
+export const takeEditAsked = (path: string) => editing.delete(path);

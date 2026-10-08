@@ -30,7 +30,7 @@ import { SpeechBlock, speechBlocks, spokenIntro } from "./speech/blocks";
 import { player, readingScene, skipReading, startReading, stillReading, stopReading, toggleReading, voices } from "./speech/player";
 import { PlayerBar, ReadAloudButton, SpeakLayer } from "./speech/ReadAloud";
 import { FileAction, fileAction, toggleBookmark, useBookmarked } from "./notes/actions";
-import { takeNewNoteCursor } from "./notes/dialogs";
+import { takeEditAsked, takeNewNoteCursor } from "./notes/dialogs";
 import { checkTemplate } from "./notes/templater";
 import { templaterSyntax } from "./notes/templaterSyntax";
 import { templaterAssist } from "./editor/templaterAssist";
@@ -125,6 +125,8 @@ export function DocScreen() {
   const docPath = doc?.meta.summary.path ?? null;
   const canEdit = !!doc && editable(doc.meta.summary) && !doc.readOnly;
   useEffect(() => {
+    // A note that can't be edited opens in View, and isn't left to open in Edit later.
+    if (doc && !canEdit) takeEditAsked(doc.meta.summary.path);
     if (!doc || !canEdit) return setSession(null);
     const s = new EditSession(
       doc.meta.summary.path,
@@ -136,10 +138,11 @@ export function DocScreen() {
     setLiveText(null);
     void s.checkDraft();
     // Each note opens in View; one just made from a template opens in Edit, the caret where
-    // tp.file.cursor() was.
+    // tp.file.cursor() was, and so does one opened to edit (a project's Edit).
     const at = takeNewNoteCursor(s.path);
+    const edit = takeEditAsked(s.path);
     setCaret(at);
-    setMode(at !== null ? "live" : openingMode());
+    setMode(at !== null || edit ? "live" : openingMode());
     return () => s.close();
   }, [docPath, canEdit]); // eslint-disable-line react-hooks/exhaustive-deps
   // Later reads of the same file: an outside change, or our own save coming back.

@@ -119,6 +119,10 @@ function useLoaded<T>(load: () => Promise<T>): T | null {
 /** Every project, reloaded when the vault changes. */
 export const useProjects = () => useLoaded<ProjectRow[]>(() => api.projectsList());
 
+/** The projects under an area, whatever their status: what renaming the area changes, on the
+ *  Projects screen and in rename_area. Areas match as the screen groups them, exactly. */
+export const areaProjects = (projects: ProjectRow[], area: string) => projects.filter((p) => (p.area ?? "") === area && area !== "");
+
 /** The Inbox: Scratchpad blocks and the To Do list's `#### Other` tasks. */
 export const useInbox = () => useLoaded<InboxItem[]>(() => api.inboxList());
 

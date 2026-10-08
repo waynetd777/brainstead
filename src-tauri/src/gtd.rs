@@ -282,6 +282,48 @@ pub async fn project_set(app: AppHandle, path: String, key: String, value: Optio
     .await
 }
 
+/// Renames an area: sets `area` on each project note in `paths` (the area's projects, as the
+/// screen lists them), all undone together. Returns the toast's undo label.
+#[tauri::command]
+pub async fn projects_set_area(app: AppHandle, paths: Vec<String>, from: String, to: String) -> Res<String> {
+    writing(move || {
+        writable(&app.state::<AppState>())?;
+        let svc = app.state::<VaultService>();
+        let to = to.trim().to_string();
+        if to.is_empty() {
+            return Err(invalid("Give the area a name.".into()));
+        }
+        if to.contains('\n') {
+            return Err(invalid("An area's name is one line.".into()));
+        }
+        let root = root(&svc)?;
+        let abs = paths.iter().map(|p| project_of(&svc, p)).collect::<Res<Vec<_>>>()?;
+        let mut changes = Vec::new();
+        let mut failed = None;
+        for a in &abs {
+            match write::set_property(a, "area", Some(&to)) {
+                Ok(ch) => changes.push(ch),
+                Err(e) => {
+                    failed = Some(e);
+                    break;
+                }
+            }
+        }
+        // What was written stays undoable even when a later note refused.
+        let undo = if changes.is_empty() {
+            String::new()
+        } else {
+            push_files(&app, &root, format!("Renamed the area “{from}” to “{to}”"), &changes)
+        };
+        written(&app, &changes.iter().map(|c| c.path.clone()).collect::<Vec<_>>());
+        match failed {
+            Some(e) => Err(e.into()),
+            None => Ok(undo),
+        }
+    })
+    .await
+}
+
 /// Removes a thought from the Scratchpad: `line` is its heading's line and `text` its whole block
 /// (`InboxItem.block`), refused as stale if it's changed. Returns the toast's undo label.
 #[tauri::command]

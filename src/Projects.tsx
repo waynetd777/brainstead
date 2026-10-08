@@ -11,9 +11,9 @@ import { useEffect, useMemo, useState } from "react";
 import { api, ProjectRow, TaskRow } from "./api";
 import { askAboutNote } from "./Ask";
 import { prepareCapture } from "./Capture";
-import { projectFlag, projectTasks, ProjectStatus, STATUS_LABEL, useProjects } from "./gtd";
+import { areaProjects, projectFlag, projectTasks, ProjectStatus, STATUS_LABEL, useProjects } from "./gtd";
 import { Icon } from "./icons";
-import { nav, openDoc, place, useViewState } from "./nav";
+import { editDoc, nav, openDoc, place, useViewState } from "./nav";
 import { Store, useStore } from "./store";
 import { trashFile } from "./notes/actions";
 import { DraftNudge, GtdChips, TaskList } from "./TaskList";
@@ -21,7 +21,7 @@ import { useVaultVersion } from "./state";
 import { reportEditError, undoLast, useAllTasks } from "./taskModel";
 import { toast } from "./Toast";
 import { askLink, askQuote, TopBar } from "./TopBar";
-import { ago, Dialog, Seg, TableBand } from "./ui";
+import { ago, Dialog, fmtCount, Seg } from "./ui";
 
 /** ⌘K's New project: the Projects screen opens with New project showing. */
 export const newProjectAsked = new Store<boolean>(false);
@@ -37,6 +37,10 @@ export function ProjectsScreen() {
   const all = useAllTasks();
   const here = useStore(place).place;
   const [tab, setTab] = useViewState<ProjectStatus>("projects:tab", "active");
+  // The areas folded shut, by name ("" is No area); kept across visits and restarts.
+  const [folded, setFolded] = useViewState<string[]>("projects:folded", []);
+  const fold = (area: string) => setFolded((f) => (f.includes(area) ? f.filter((a) => a !== area) : [...f, area]));
+  const renamed = (from: string, to: string) => setFolded((f) => (f.includes(from) ? [...f.filter((a) => a !== from && a !== to), to] : f));
   const asked = useStore(newProjectAsked);
   const [creating, setCreatingState] = useState(false);
   const setCreating = (v: boolean) => {
@@ -114,52 +118,71 @@ export function ProjectsScreen() {
               </div>
               {areas.map(([area, ps]) => (
                 <div key={area} className="tb-group" role="rowgroup">
-                  <TableBand
-                    icon="folder"
-                    label={area || "No area"}
-                    none={!area}
+                  <AreaBand
+                    area={area}
                     n={ps.length}
-                    tip={`${ps.length} ${ps.length === 1 ? "project" : "projects"} in this area`}
+                    folded={folded.includes(area)}
+                    onFold={() => fold(area)}
+                    paths={areaProjects(projects ?? [], area).map((p) => p.path)}
+                    onRenamed={(to) => renamed(area, to)}
                   />
-                  {ps
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((p) => {
-                      const flag = projectFlag(p);
-                      return (
-                        <button
-                          key={p.path}
-                          type="button"
-                          role="row"
-                          className={`prow tb-row ${p.path === sel ? "sel" : ""}`}
-                          title={`Show ${p.name}: its tasks, notes and activity`}
-                          onClick={() => pick(p)}
-                        >
-                          <span className="nm" role="cell">
-                            <span className="flag">
-                              {flag && <Icon name="alert" size={13} style={{ color: flag === "none" ? "var(--red)" : "var(--amber)" }} />}
-                            </span>
-                            <span className="ell">{p.name}</span>
-                            {flag && (
-                              <span
-                                className={`pflag ${flag === "none" ? "red" : "amber"}`}
-                                title={flag === "none" ? "Stuck: it has no next action" : "Quiet: nothing has happened for two weeks"}
-                              >
-                                {flag === "none" ? "Stuck" : "Quiet"}
+                  {!folded.includes(area) &&
+                    ps
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((p) => {
+                        const flag = projectFlag(p);
+                        return (
+                          <div
+                            key={p.path}
+                            role="row"
+                            tabIndex={0}
+                            className={`prow tb-row ${p.path === sel ? "sel" : ""}`}
+                            title={`Show ${p.name}: its tasks, notes and activity`}
+                            onClick={() => pick(p)}
+                            onKeyDown={(e) => {
+                              if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+                              e.preventDefault();
+                              pick(p);
+                            }}
+                          >
+                            <span className="nm" role="cell">
+                              <span className="flag">
+                                {flag && <Icon name="alert" size={13} style={{ color: flag === "none" ? "var(--red)" : "var(--amber)" }} />}
                               </span>
-                            )}
-                          </span>
-                          <span role="cell" className={`m ${p.status === "active" && !p.next ? "red" : ""}`}>
-                            {p.next || (p.status === "active" ? "None" : "–")}
-                          </span>
-                          <span role="cell" className="m">
-                            {p.waiting || "–"}
-                          </span>
-                          <span role="cell" className={`m ${flag === "quiet" ? "amber" : ""}`}>
-                            {ago(p.lastTouched)}
-                          </span>
-                        </button>
-                      );
-                    })}
+                              <span className="ell">{p.name}</span>
+                              {flag && (
+                                <span
+                                  className={`pflag ${flag === "none" ? "red" : "amber"}`}
+                                  title={flag === "none" ? "Stuck: it has no next action" : "Quiet: nothing has happened for two weeks"}
+                                >
+                                  {flag === "none" ? "Stuck" : "Quiet"}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                className="ibtn sm pedit"
+                                title={`Edit ${p.name}: open its note in Edit`}
+                                aria-label={`Edit ${p.name}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  editDoc(p.path);
+                                }}
+                              >
+                                <Icon name="pencil" size={13} />
+                              </button>
+                            </span>
+                            <span role="cell" className={`m ${p.status === "active" && !p.next ? "red" : ""}`}>
+                              {p.next || (p.status === "active" ? "None" : "–")}
+                            </span>
+                            <span role="cell" className="m">
+                              {p.waiting || "–"}
+                            </span>
+                            <span role="cell" className={`m ${flag === "quiet" ? "amber" : ""}`}>
+                              {ago(p.lastTouched)}
+                            </span>
+                          </div>
+                        );
+                      })}
                 </div>
               ))}
             </div>
@@ -175,6 +198,88 @@ export function ProjectsScreen() {
       </div>
       {showNew && <NewProject onClose={() => setCreating(false)} onMade={(path) => nav.replace({ screen: "projects", path })} />}
     </main>
+  );
+}
+
+/** An area's band in the list: folds its projects away, and renames the area on every project in
+ *  it, whatever their status (`areaProjects`). */
+function AreaBand({
+  area,
+  n,
+  folded,
+  onFold,
+  paths,
+  onRenamed,
+}: {
+  area: string;
+  n: number;
+  folded: boolean;
+  onFold: () => void;
+  paths: string[];
+  onRenamed: (to: string) => void;
+}) {
+  const [renaming, setRenaming] = useState(false);
+  const label = area || "No area";
+  const rename = (to: string) => {
+    setRenaming(false);
+    if (!to || to === area) return;
+    api
+      .projectsSetArea(paths, area, to)
+      .then((undo) => {
+        onRenamed(to);
+        toast(undo, undefined, "ok");
+      })
+      .catch(reportEditError);
+  };
+  return (
+    <div className={`tb-band pband ${area ? "" : "none"}`} role="row">
+      <span role="rowheader">
+        {renaming ? (
+          <input
+            className="pin"
+            autoFocus
+            defaultValue={area}
+            aria-label={`Rename the area ${area}`}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") rename(e.currentTarget.value.trim());
+              else if (e.key === "Escape") {
+                e.stopPropagation();
+                setRenaming(false);
+              }
+            }}
+            onBlur={() => setRenaming(false)}
+          />
+        ) : (
+          <>
+            <button
+              type="button"
+              className="pfold"
+              aria-expanded={!folded}
+              title={folded ? `Show the projects in ${label}` : `Fold ${label} away`}
+              onClick={onFold}
+            >
+              <Icon name={folded ? "chevright" : "chevdown"} size={13} />
+              <Icon name="folder" size={13} />
+              <span className="ell">{label}</span>
+            </button>
+            {area && (
+              <button
+                type="button"
+                className="ibtn sm pedit"
+                title={`Rename ${label} on its ${paths.length === 1 ? "project" : `${paths.length} projects`}`}
+                aria-label={`Rename ${label}`}
+                onClick={() => setRenaming(true)}
+              >
+                <Icon name="pencil" size={12} />
+              </button>
+            )}
+          </>
+        )}
+      </span>
+      <span className="n" title={`${n} ${n === 1 ? "project" : "projects"} in this area`}>
+        {fmtCount(n)}
+      </span>
+    </div>
   );
 }
 
@@ -324,6 +429,15 @@ function ProjectDetail({ p, all }: { p: ProjectRow; all: ReturnType<typeof useAl
             </button>
           )}
           <span className="grow" />
+          <button
+            type="button"
+            className="btn ghost"
+            title="Open the project note in Edit, to change any of it"
+            onClick={() => editDoc(p.path)}
+          >
+            <Icon name="pencil" size={14} />
+            Edit
+          </button>
           <button
             type="button"
             className="btn ghost"

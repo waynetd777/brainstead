@@ -401,6 +401,12 @@ pub fn tools() -> Vec<Value> {
                 "area": {"type": ["string", "null"], "description": "The area of responsibility; null clears it."},
                 "done_looks_like": {"type": ["string", "null"], "description": "What done looks like, one sentence; null clears it."}
             }), &["project"])),
+        tool("rename_area", "Rename an area", Change,
+            "Renames an area of responsibility on every project under it, whatever its status (needs the app), as the pencil on the area's band on the Projects screen does; the projects' notes are changed together. Giving an area that exists merges the two. To move one project to another area, use update_project. Recorded in Changes, where the user can revert it.",
+            schema(json!({
+                "area": {"type": "string", "description": "The area as it is now, as list_projects' detail gives it."},
+                "to": {"type": "string", "description": "Its new name."}
+            }), &["area", "to"])),
         // Notes and pages.
         tool("edit_page", "Change a page", Change, EDIT_PAGE, edit_schema),
         tool("create_note", "Make a new note", Change,
@@ -690,7 +696,7 @@ pub fn tools() -> Vec<Value> {
                 "reason": reason
             }), &["name", "content"])),
         tool("open", "Open Brainstead", Read,
-            "Opens Brainstead (starting it when it isn't running) and brings its window to the front, on a screen, a Settings pane, a note or a search when given; it changes nothing. meeting (Meeting note from a transcript) opens on transcript when given, reply (Draft a reply) on thread, doc_check (Check a document) on document, ready for the user to go on there; graph with page opens Graph around that page; focus opens the page (or the one showing) in focus mode, as ⌘. does; image shows an image full size over the window, as a click on one in a note does. Only when the user asks to see something.",
+            "Opens Brainstead (starting it when it isn't running) and brings its window to the front, on a screen, a Settings pane, a note or a search when given; it changes nothing. meeting (Meeting note from a transcript) opens on transcript when given, reply (Draft a reply) on thread, doc_check (Check a document) on document, ready for the user to go on there; edit opens the page in Edit; graph with page opens Graph around that page; focus opens the page (or the one showing) in focus mode, as ⌘. does; image shows an image full size over the window, as a click on one in a note does. Only when the user asks to see something.",
             schema(json!({
                 "screen": {"type": "string", "enum": ["today", "inbox", "tasks", "projects", "weekly_review", "changes", "ask", "search", "notes", "wiki", "sources", "templates", "graph", "knowledge_health", "contradictions", "activity", "triage", "meeting", "reply", "doc_check", "trash", "settings"], "description": "The screen, as the sidebar or the command palette names it; the one showing when left out."},
                 "pane": {"type": "string", "enum": ["general", "notes", "vault", "assistants", "jobs", "capture", "permissions", "about"], "description": "With screen settings: the pane."},
@@ -700,6 +706,7 @@ pub fn tools() -> Vec<Value> {
                 "transcript": {"type": "string", "description": "With screen meeting: the transcript's path (list_transcripts)."},
                 "thread": {"type": "string", "description": "With screen reply: the email thread's path in sources/, as draft_reply takes it."},
                 "document": {"type": "string", "description": "With screen doc_check: the document to check, by path, as doc_check takes it."},
+                "edit": {"type": "boolean", "description": "With page: opens it in Edit rather than View, as a project's Edit button does (a source, or any page while the vault is read-only, opens in View)."},
                 "focus": {"type": "boolean", "description": "With page, or a note, wiki page or source showing: focus mode (⌘.), just the text across the window with Read aloud, Text size and Exit focus above it; false leaves it."},
                 "image": {"type": "string", "description": "An image in the vault, by its name (diagram.png) or path (images/diagram.png): shown full size over the window, as a click on it in a note shows it. Escape closes it. Not with the others."}
             }), &[])),
@@ -976,6 +983,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         "capture",
         "create_project",
         "update_project",
+        "rename_area",
         "doc_check",
         "restore_from_trash",
         "contradictions",
@@ -1022,6 +1030,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         "list_projects" => act("projects.list", obj),
         "create_project" => act("project.create", obj),
         "update_project" => act("project.update", obj),
+        "rename_area" => act("project.rename_area", obj),
         // The read tools and the change tools beside them share the app's action, each held to its
         // own actions, so a read tool never changes anything.
         "list_trash" => act("trash", acting(obj, name, &["list"], "list", &[])?),

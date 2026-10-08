@@ -6023,6 +6023,46 @@ select.sel {
   justify-content: center;
   width: 18px;
 }
+
+/* An area's band folds its projects away; its pencil renames the area. */
+.pband .pfold {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.pband .pfold:hover {
+  color: var(--ink);
+}
+.pband .pin {
+  height: 24px;
+  font-size: 12px;
+}
+
+/* The pencils (rename an area, edit a project) show on hover, on the selected row and on focus. */
+.ptable .pedit {
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  color: var(--ink3);
+  opacity: 0;
+}
+.pband:hover .pedit,
+.prow:hover .pedit,
+.prow.sel .pedit,
+.ptable .pedit:focus-visible {
+  opacity: 1;
+}
+.ptable .pedit:hover {
+  color: var(--ink);
+}
 .prow .m,
 .prow.tb-head span + span {
   font-size: 12px;

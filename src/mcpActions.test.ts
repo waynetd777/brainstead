@@ -283,6 +283,21 @@ describe("MCP actions", () => {
     await expect(run("project.update", { project: "Orbit App launch", status: "done" })).rejects.toThrow(/completed/);
   });
 
+  it("renames an area on every project under it, as the area's pencil does", async () => {
+    answers.projects_list = () => [
+      { name: "Orbit App launch", path: "Project. Orbit App launch.md", status: "active", area: "Work" },
+      { name: "Orbit App beta", path: "Project. Orbit App beta.md", status: "done", area: "Work" },
+      { name: "Garden", path: "Project. Garden.md", status: "active", area: "Personal" },
+    ];
+    answers.changes_submit_many = outcomes(true);
+    await run("project.rename_area", { area: "Work", to: "Acme" });
+    // Whatever their status, and one change each, made together.
+    expect(submitted().map((c) => c.page)).toEqual(["Project. Orbit App launch.md", "Project. Orbit App beta.md"]);
+    expect(submitted()[0].instruction).toEqual({ op: "properties", set: [["area", "Acme"]] });
+    expect(calls.some(([c]) => c === "projects_set_area")).toBe(false);
+    await expect(run("project.rename_area", { area: "Hobbies", to: "Acme" })).rejects.toThrow(/Personal, Work/);
+  });
+
   it("makes an assistant's change, and accepts, rejects and reverts held ones", async () => {
     answers.change_submit = () => ({
       id: "c1",

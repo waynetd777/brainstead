@@ -1186,6 +1186,8 @@ export const api = {
   taskAdd: (text: string) => invoke<Edited>("task_add", { text }),
   projectSet: (path: string, key: "status" | "area" | "outcome", value: string | null) =>
     invoke<string | null>("project_set", { path, key, value }),
+  /** Renames an area on each of its projects (`areaProjects`), undone together. */
+  projectsSetArea: (paths: string[], from: string, to: string) => invoke<string>("projects_set_area", { paths, from, to }),
   /** `block` is the item's block, checked before it's removed. */
   inboxRemoveThought: (line: number, text: string) => invoke<string | null>("inbox_remove_thought", { line, text }),
   inboxMoveTask: (line: number, lineText: string, toPath: string, heading: string, newLine: string) =>

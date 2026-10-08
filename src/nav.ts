@@ -5,6 +5,7 @@
 // Where the user is, and back/forward through where they've been (⌘[ and ⌘]), as in a sibling
 // app's place history. The history is kept in settings, so a restart opens where the user was.
 
+import { askEdit } from "./notes/dialogs";
 import { settings, Store, useStore } from "./store";
 
 export type Screen =
@@ -56,6 +57,12 @@ export const samePlace = (a: Place, b: Place) =>
   (a.q ?? null) === (b.q ?? null) &&
   (a.anchor ?? null) === (b.anchor ?? null) &&
   (a.lines ?? []).join("\n") === (b.lines ?? []).join("\n");
+
+/** Opens a vault file in Edit (a project's Edit button); one that can't be edited opens in View. */
+export const editDoc = (path: string) => {
+  askEdit(path);
+  openDoc(path);
+};
 
 /** Opens a vault file. */
 export const openDoc = (path: string, extra: { q?: string; anchor?: string; lines?: string[] } = {}) =>

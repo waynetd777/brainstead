@@ -42,7 +42,8 @@ import {
   WeekPrepSuggestion,
 } from "./api";
 import { ACTION as FIX_ACTION, chosenRows, startUnticked } from "./FixName";
-import { contextName, projectFlag, projectName, ProjectStatus, projectTasks, STATUS_LABEL } from "./gtd";
+import { areaProjects, contextName, projectFlag, projectName, ProjectStatus, projectTasks, STATUS_LABEL } from "./gtd";
+import { askEdit } from "./notes/dialogs";
 import { captureStamp, prepareCapture } from "./Capture";
 import { bandOf, inboxRows, taskLine, unclarified } from "./Inbox";
 import { appendAsReference, newReferenceNote, settleInboxItem } from "./inboxActions";
@@ -975,6 +976,26 @@ async function updateProject(a: Args, r: McpRequest): Promise<string> {
   const o = await submitAll([sub(a, r, path, "edit", `Set ${said.join(", ")} for ${name}`, { op: "properties", set })]);
   told(o.applied ? `${said.join(", ")} for ${name}` : `held a change to ${name} for you in Changes`);
   return o.applied ? `Set ${said.join(", ")} for ${name}. ${o.message}` : o.message;
+}
+
+/** rename_area: the area's pencil on the Projects screen, over the same projects (`areaProjects`). */
+async function renameArea(a: Args, r: McpRequest): Promise<string> {
+  const area = str(a, "area")?.trim() ?? "";
+  const to = str(a, "to")?.trim() ?? "";
+  if (!area || !to) throw new Error("Give the area as it is now and its new name.");
+  if (to.includes("\n")) throw new Error("An area's name is one line.");
+  const all = await api.projectsList();
+  const ps = areaProjects(all, area);
+  if (!ps.length) {
+    const areas = [...new Set(all.map((p) => p.area).filter(Boolean))].sort();
+    throw new Error(`No project is under the area ${area}. The areas are: ${areas.join(", ") || "none"}.`);
+  }
+  if (to === area) return `${area} is already called that.`;
+  const title = `Renamed the area ${area} to ${to}`;
+  const o = await submitAll(ps.map((p) => sub(a, r, p.path, "edit", title, { op: "properties", set: [["area", to]] })));
+  const n = `${ps.length} ${ps.length === 1 ? "project" : "projects"}`;
+  told(o.applied ? `renamed the area ${area} to ${to}` : `held renaming the area ${area} for you in Changes`);
+  return o.applied ? `Renamed the area ${area} to ${to} on ${n}. ${o.message}` : o.message;
 }
 
 async function createProject(a: Args, r: McpRequest): Promise<string> {
@@ -2376,6 +2397,7 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
     }),
   "project.create": createProject,
   "project.update": updateProject,
+  "project.rename_area": renameArea,
   "note.from_template": (a, r) => noteFromTemplate(a, r.chat ?? null),
   "change.submit": submitChange,
   changes: changesTool,
@@ -3190,15 +3212,18 @@ async function openApp(a: Args): Promise<string> {
   const lines = (Array.isArray(a.lines) ? a.lines : []).map((l) => String(l).trim()).filter(Boolean);
   // Graph with a page opens around it, as a note's Graph button (openGraph) does.
   if (path && screen === "graph") nav.go({ screen, path });
-  else if (path) nav.go({ screen: "doc", path, ...(lines.length ? { lines } : {}) });
-  else if (screen === "settings") nav.go({ screen, pane: (str(a, "pane") as SettingsPane | undefined) ?? "general" });
+  else if (path) {
+    // edit opens it in Edit, as a project's Edit button (editDoc) does.
+    if (a.edit === true) askEdit(path);
+    nav.go({ screen: "doc", path, ...(lines.length ? { lines } : {}) });
+  } else if (screen === "settings") nav.go({ screen, pane: (str(a, "pane") as SettingsPane | undefined) ?? "general" });
   else if (screen === "search") nav.go({ screen, q: str(a, "query") ?? "" });
   else if (screen && file) nav.go({ screen, path: file });
   else if (screen) nav.go(screen);
   if (focus !== undefined) focusMode.set(focus);
   const how = focus ? " in focus mode" : "";
   if (path && screen === "graph") return `Brainstead is open on Graph, around ${pageName(path)}.`;
-  if (path) return `Brainstead is open on ${pageName(path)}${how}.`;
+  if (path) return `Brainstead is open on ${pageName(path)}${a.edit === true ? " in Edit" : ""}${how}.`;
   if (focus !== undefined)
     return focus ? `Brainstead shows ${pageName(place.get().place.path ?? "")} in focus mode.` : "Focus mode is off.";
   return `Brainstead is open${name ? ` on ${name.replace(/_/g, " ")}` : ""}${file ? ` with ${file}` : ""}.`;
