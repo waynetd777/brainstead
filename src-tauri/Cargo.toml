@@ -74,6 +74,9 @@ strip = true
 # the link time and nobody steps through them in a debugger here.
 [profile.dev]
 debug = "line-tables-only"
+# Packed into a .dSYM at link: unpacked (macOS's default) leaves every object file in target/debug/deps,
+# tens of thousands per build of the core, and target grew to 25 GB.
+split-debuginfo = "packed"
 
 [profile.dev.package."*"]
 debug = false
