@@ -4,10 +4,33 @@
 
 # macOS runs everything (make check). Windows and Linux only compile, so macOS-only code can't
 # creep in outside src-tauri/src/platform (the archived build plan, §2, Cross-platform).
+# It runs only when a push changes the app, not for docs, the product page or sift's records alone
+# (D-20261008-03), and can be started by hand from the Actions tab.
 name: CI
 on:
   push:
+    paths-ignore:
+      - "docs/**"
+      - "site/**"
+      - "_sift/**"
+      - "archive/**"
+      - "README.md"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "LICENSE"
+      - ".github/workflows/pages.yml"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "site/**"
+      - "_sift/**"
+      - "archive/**"
+      - "README.md"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "LICENSE"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
 
 jobs:
   macos:

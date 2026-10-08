@@ -143,3 +143,5 @@ A new vault's example notes are in `src-tauri/starter-vault/`, embedded the same
 - Its screenshots are WebP copies of the light ones in `docs/images/`: after `make screenshots`, refresh them with `cwebp -q 80 docs/images/<name>-light.png -o site/img/<name>-light.webp`.
 - `img/og.png` is the 1200×630 card shown when the link is shared. The canonical URL, the Open Graph tags, the structured data and `sitemap.xml` all name the address above, so change them together if it moves.
 - Like the app, it never names the other markdown editors, and uses invented names only.
+
+CI (`.github/workflows/ci.yml`) runs `make check` on macOS and compiles on Windows and Linux, for pushes that change the app. A push that only touches `docs/`, `site/`, `_sift/`, `archive/` or the top-level markdown is skipped, so run `make check` before committing. Start it by hand from the Actions tab when you want it anyway.
