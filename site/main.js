@@ -7,6 +7,17 @@
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 
+  // A screenshot's frame shimmers until its image has loaded.
+  document.querySelectorAll(".window img").forEach((img) => {
+    const frame = img.closest(".window");
+    const done = () => frame.classList.add("loaded");
+    if (img.complete && img.naturalWidth) done();
+    else {
+      img.addEventListener("load", done, { once: true });
+      img.addEventListener("error", done, { once: true });
+    }
+  });
+
   // Fade things in as they scroll into view.
   const reveals = new IntersectionObserver(
     (entries) => {

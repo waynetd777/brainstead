@@ -3,6 +3,19 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 /* Brainstead's product page. Colours are the app's tokens (src/styles.css). */
+/* Geist and Geist Mono, served from here (fonts/OFL.txt), so the first paint waits on no other site. */
+@font-face {
+  font-family: "Geist";
+  src: url("fonts/geist.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("fonts/geist-mono.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
 :root {
   --ground: #fff;
   --surface: #fff;
@@ -197,6 +210,16 @@ h2 {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+/* A soft shimmer where a screenshot will be, until it has loaded (main.js marks it). */
+.window:not(.loaded) {
+  background: linear-gradient(100deg, var(--sunk) 30%, color-mix(in srgb, var(--sunk) 40%, #fff) 50%, var(--sunk) 70%) 0 0 / 300% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+@keyframes shimmer {
+  to {
+    background-position: -150% 0;
+  }
 }
 
 /* Crossfading stack of screenshots */
@@ -405,10 +428,10 @@ h2 {
   right: 0;
   bottom: 0;
 }
-.layer-front.reveal {
+.js .layer-front.reveal {
   transform: translate3d(8%, 12%, 0) scale(0.96);
 }
-.layer-front.reveal.in {
+.js .layer-front.reveal.in {
   transform: none;
   transition-delay: 0.25s;
 }
@@ -584,26 +607,40 @@ h2 {
   border-top: 1px solid var(--line);
 }
 
-/* Scroll reveal */
-.reveal {
+/* The hero rises in by itself, without waiting for the script. */
+.rise {
+  animation: rise 0.8s var(--ease) both;
+}
+.hero .rise:nth-child(2) {
+  animation-delay: 0.06s;
+}
+.hero .rise:nth-child(3) {
+  animation-delay: 0.12s;
+}
+.hero .rise:nth-child(4) {
+  animation-delay: 0.18s;
+}
+.hero .rise:nth-child(5) {
+  animation-delay: 0.26s;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 20px, 0);
+  }
+}
+
+/* Scroll reveal: only hidden while the script is there to show it again. */
+.js .reveal {
   opacity: 0;
   transform: translate3d(0, 28px, 0);
   transition:
     opacity 0.9s var(--ease),
     transform 0.9s var(--ease);
 }
-.reveal.in {
+.js .reveal.in {
   opacity: 1;
   transform: none;
-}
-.hero .reveal:nth-child(2) {
-  transition-delay: 0.08s;
-}
-.hero .reveal:nth-child(3) {
-  transition-delay: 0.16s;
-}
-.hero .reveal:nth-child(4) {
-  transition-delay: 0.24s;
 }
 
 /* Narrow screens */
@@ -999,8 +1036,8 @@ h2 {
   html {
     scroll-behavior: auto;
   }
-  .reveal,
-  .layer-front.reveal {
+  .js .reveal,
+  .js .layer-front.reveal {
     opacity: 1;
     transform: none;
   }

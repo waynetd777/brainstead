@@ -47,9 +47,8 @@
   }
   </script>
   <link rel="icon" href="img/mark.svg" type="image/svg+xml">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500&display=swap" rel="stylesheet">
+  <link rel="preload" href="fonts/geist.woff2" as="font" type="font/woff2" crossorigin>
+  <script>document.documentElement.classList.add("js");</script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -72,14 +71,14 @@
 
   <!-- Hero -->
   <section class="hero">
-    <p class="eyebrow reveal">Brainstead for Mac</p>
+    <p class="eyebrow rise">Brainstead for Mac</p>
     <h1 class="reveal">Everything on your mind.<br><span class="grad">In one place.</span></h1>
-    <p class="lede reveal">Tasks, notes and a wiki that writes itself, all in one folder of plain markdown.</p>
-    <div class="cta reveal">
+    <p class="lede rise">Tasks, notes and a wiki that writes itself, all in one folder of plain markdown.</p>
+    <div class="cta rise">
       <a class="btn" href="#download">Download for Mac</a>
       <a class="link" href="#gtd">See how it works <span aria-hidden="true">›</span></a>
     </div>
-    <div class="hero-stage">
+    <div class="hero-stage rise">
       <div class="glow" aria-hidden="true"></div>
       <figure class="window hero-window" data-scale>
         <picture>
