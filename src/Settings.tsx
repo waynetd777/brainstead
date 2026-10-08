@@ -1325,6 +1325,7 @@ function About() {
           <p className="muted">A home for everything on your mind.</p>
         </div>
         <button type="button" className="btn sm" title="Open Brainstead's website in the browser" onClick={() => void openUrl(WEBSITE)}>
+          <Icon name="globe" size={14} />
           Website
         </button>
       </div>
