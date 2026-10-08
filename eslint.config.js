@@ -25,4 +25,6 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
   },
+  // The product page's script runs in the browser.
+  { files: ["site/**/*.js"], languageOptions: { globals: globals.browser } },
 );

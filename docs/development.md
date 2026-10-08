@@ -134,3 +134,12 @@ A new vault's example notes are in `src-tauri/starter-vault/`, embedded the same
 - The script redraws the window buttons and rounded corners, and keeps a shot only when it matches the saved image or a second capture a few seconds later; otherwise it retakes it.
 - `"docs": true` scenes go to `docs/images/` (committed); others to `tools/screenshots/out/` (not). `"width"` keeps a scene's size (the menu-bar window is 720, its natural 2×).
 - Docs show each screenshot in the reader's theme via `<picture>`, linked to `docs/images/index.md`, which lists them all. A new docs screenshot needs `"docs": true` and a line there.
+
+## The product page
+
+`site/` is the product page at https://waynetd777.github.io/brainstead/: plain HTML, CSS and JS with no build step, light only. `.github/workflows/pages.yml` publishes it to GitHub Pages when `site/` changes on main.
+
+- Preview it with `python3 -m http.server -d site 8765` and open http://localhost:8765/.
+- Its screenshots are WebP copies of the light ones in `docs/images/`: after `make screenshots`, refresh them with `cwebp -q 80 docs/images/<name>-light.png -o site/img/<name>-light.webp`.
+- `img/og.png` is the 1200×630 card shown when the link is shared. The canonical URL, the Open Graph tags, the structured data and `sitemap.xml` all name the address above, so change them together if it moves.
+- Like the app, it never names the other markdown editors, and uses invented names only.

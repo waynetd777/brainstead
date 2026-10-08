@@ -1,0 +1,360 @@
+<!doctype html>
+<!-- Copyright © 2026 Wayne Davies. Free software under the GNU General Public License, version 3 or later. -->
+<!-- See LICENSE for the full text. -->
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brainstead: GTD, notes and an AI wiki for Mac</title>
+  <meta name="description" content="Brainstead is a free Mac app for Getting Things Done, notes and a wiki your AI assistant writes from your sources, all in one folder of plain markdown.">
+  <link rel="canonical" href="https://waynetd777.github.io/brainstead/">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#ffffff">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Brainstead">
+  <meta property="og:url" content="https://waynetd777.github.io/brainstead/">
+  <meta property="og:title" content="Brainstead: everything on your mind, in one place">
+  <meta property="og:description" content="Tasks, notes and a wiki that writes itself, all in one folder of plain markdown. Free for Mac.">
+  <meta property="og:image" content="https://waynetd777.github.io/brainstead/img/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Brainstead's Today screen under the headline Everything on your mind. In one place.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Brainstead: everything on your mind, in one place">
+  <meta name="twitter:description" content="Tasks, notes and a wiki that writes itself, all in one folder of plain markdown. Free for Mac.">
+  <meta name="twitter:image" content="https://waynetd777.github.io/brainstead/img/og.png">
+  <link rel="apple-touch-icon" href="img/icon-180.png">
+  <link rel="preload" as="image" href="img/today-light.webp" fetchpriority="high">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Brainstead",
+    "url": "https://waynetd777.github.io/brainstead/",
+    "description": "A Mac app for Getting Things Done, notes and a wiki written from your sources, over a folder of plain markdown.",
+    "applicationCategory": "ProductivityApplication",
+    "operatingSystem": "macOS 14 or later (Apple silicon)",
+    "downloadUrl": "https://github.com/waynetd777/brainstead/releases/latest/download/Brainstead.dmg",
+    "image": "https://waynetd777.github.io/brainstead/img/og.png",
+    "screenshot": "https://waynetd777.github.io/brainstead/img/today-light.webp",
+    "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+    "isAccessibleForFree": true,
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "codeRepository": "https://github.com/waynetd777/brainstead"
+  }
+  </script>
+  <link rel="icon" href="img/mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-in">
+    <a class="brand" href="#top"><img src="img/mark.svg" alt="" width="22" height="22">Brainstead</a>
+    <nav class="nav-links">
+      <a href="#gtd">Tasks</a>
+      <a href="#notes">Notes</a>
+      <a href="#wiki">Wiki</a>
+      <a href="#ask">Ask</a>
+      <a href="#more">More</a>
+    </nav>
+    <a class="btn btn-sm" href="#download">Download</a>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- Hero -->
+  <section class="hero">
+    <p class="eyebrow reveal">Brainstead for Mac</p>
+    <h1 class="reveal">Everything on your mind.<br><span class="grad">In one place.</span></h1>
+    <p class="lede reveal">Tasks, notes and a wiki that writes itself, all in one folder of plain markdown.</p>
+    <div class="cta reveal">
+      <a class="btn" href="#download">Download for Mac</a>
+      <a class="link" href="#gtd">See how it works <span aria-hidden="true">›</span></a>
+    </div>
+    <div class="hero-stage">
+      <div class="glow" aria-hidden="true"></div>
+      <figure class="window hero-window" data-scale>
+        <picture>
+          
+          <img src="img/today-light.webp" fetchpriority="high" alt="Brainstead's Today screen: overdue, due, deferred and waiting tasks, a capture box and where you left off" width="1400" height="875">
+        </picture>
+      </figure>
+    </div>
+  </section>
+
+  <!-- Statement -->
+  <section class="statement">
+    <p class="reveal words">Your tasks live in your notes. Your notes build your wiki. <span class="dim">And your assistant knows all of it.</span></p>
+  </section>
+
+  <!-- GTD scrollytelling -->
+  <section id="gtd" class="story">
+    <div class="story-head">
+      <p class="eyebrow reveal">Getting Things Done</p>
+      <h2 class="reveal">A calm system<br>for a busy mind.</h2>
+    </div>
+    <div class="story-grid">
+      <div class="story-steps">
+        <article class="step" data-step="0">
+          <h3>Start with today.</h3>
+          <p>What's overdue, what's due and who you're waiting on, on one screen. Every task is a <code>- [ ]</code> line in a note you already have.</p>
+        </article>
+        <article class="step" data-step="1">
+          <h3>Clear your Inbox.</h3>
+          <p>Everything you capture lands in one place, emails and chats too. Turn each one into a task, a note or nothing, in a click.</p>
+        </article>
+        <article class="step" data-step="2">
+          <h3>See every project.</h3>
+          <p>Projects gather their tasks, notes and next actions, grouped by area of your life.</p>
+        </article>
+        <article class="step" data-step="3">
+          <h3>Review the week.</h3>
+          <p>A guided weekly review walks you through it, step by step, so nothing slips.</p>
+        </article>
+      </div>
+      <div class="story-sticky">
+        <figure class="window stack">
+          <picture class="on"><img src="img/today-light.webp" alt="Today" width="1400" height="875" loading="lazy"></picture>
+          <picture><img src="img/inbox-light.webp" alt="The Inbox with a captured email open" width="1400" height="875" loading="lazy"></picture>
+          <picture><img src="img/projects-light.webp" alt="Projects grouped by area" width="1400" height="875" loading="lazy"></picture>
+          <picture><img src="img/weekly-light.webp" alt="The weekly review" width="1400" height="875" loading="lazy"></picture>
+        </figure>
+        <div class="dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Notes -->
+  <section id="notes" class="feature center">
+    <p class="eyebrow reveal">Notes</p>
+    <h2 class="reveal">Write the way<br>you already do.</h2>
+    <p class="lede reveal">Read in View, write in Edit, and move between them in a click.</p>
+    <div class="seg reveal" role="tablist" aria-label="Note modes">
+      <button role="tab" aria-selected="true" data-mode="0" title="Show the note in View">View</button>
+      <button role="tab" aria-selected="false" data-mode="1" title="Show the note in Edit">Edit</button>
+      <span class="seg-thumb" aria-hidden="true"></span>
+    </div>
+    <figure class="window stack modes reveal">
+      <picture class="on"><img src="img/note-light.webp" alt="A meeting note in View" width="1400" height="875" loading="lazy"></picture>
+      <picture><img src="img/editor-light.webp" alt="The same note in Edit" width="1400" height="875" loading="lazy"></picture>
+    </figure>
+  </section>
+
+  <!-- Wiki -->
+  <section id="wiki" class="feature tint">
+    <div class="center">
+      <p class="eyebrow reveal">The wiki</p>
+      <h2 class="reveal">A wiki that writes itself.<br><span class="grad">And shows its work.</span></h2>
+      <p class="lede reveal">Bring in what you've collected, and your assistant turns it into wiki pages you can trust.</p>
+    </div>
+    <ul class="formats reveal" aria-label="What you can bring in">
+      <li>Emails</li><li>Teams chats</li><li>Meeting transcripts</li><li>PDFs</li><li>Word, Excel and PowerPoint</li><li>Images</li>
+    </ul>
+    <div class="layers">
+      <figure class="window layer-back reveal"><img src="img/wiki-page-light.webp" alt="A wiki page about Orbit App, with the pages that link to it" width="1400" height="875" loading="lazy"></figure>
+      <figure class="window layer-front reveal"><img src="img/source-provenance-light.webp" alt="A claim traced back to the quote in its source" width="1400" height="875" loading="lazy"></figure>
+    </div>
+    <div class="facts">
+      <div class="fact reveal"><b>Every claim</b><span>quoted from its source</span></div>
+      <div class="fact reveal"><b>Every quote</b><span>checked against the original</span></div>
+      <div class="fact reveal"><b>Every source</b><span>a dated entry on each page it touches</span></div>
+    </div>
+  </section>
+
+  <!-- Knowledge health -->
+  <section id="health" class="feature split flip">
+    <figure class="window split-shot reveal">
+      <img src="img/health-light.webp" alt="Knowledge health: the checks, the issues needing a decision, and pages by type and tag" width="1400" height="875" loading="lazy">
+    </figure>
+    <div class="split-copy">
+      <p class="eyebrow reveal">Knowledge health</p>
+      <h2 class="reveal">A wiki that keeps itself honest.</h2>
+      <p class="reveal">Every time the vault changes, Brainstead checks the wiki: missing pages, broken links, stale facts, duplicates and claims with no source. Each day it looks for pages that contradict each other.</p>
+      <p class="reveal">The fixes with one right answer take one click. The rest you can hand to your assistant.</p>
+    </div>
+  </section>
+
+  <!-- Graph (full bleed) -->
+  <section class="graph">
+    <figure class="graph-frame" data-zoom>
+      <img src="img/graph-light.webp" alt="The graph of wiki pages around Orbit App" width="1400" height="875" loading="lazy">
+    </figure>
+    <div class="graph-copy">
+      <h2 class="reveal">See how it all connects.</h2>
+      <p class="reveal">People, projects and ideas, linked as you write.</p>
+    </div>
+  </section>
+
+  <!-- Ask -->
+  <section id="ask" class="feature split">
+    <div class="split-copy">
+      <p class="eyebrow reveal">Ask</p>
+      <h2 class="reveal">Ask your vault anything.</h2>
+      <p class="reveal">Chat with the assistant you already have on your Mac. It answers from your notes, drafts replies and makes changes for you. It can do almost anything you can do in the app.</p>
+      <ul class="chips reveal">
+        <li>Claude Code</li><li>Codex</li><li>Copilot</li><li>Antigravity</li>
+      </ul>
+    </div>
+    <figure class="window split-shot reveal">
+      <picture><img src="img/ask-light.webp" alt="Ask: a chat about what changed on Orbit App" width="1400" height="875" loading="lazy"></picture>
+    </figure>
+  </section>
+
+  <!-- Changes -->
+  <section id="changes" class="feature tint center">
+    <p class="eyebrow reveal">Changes</p>
+    <h2 class="reveal">Your assistant does the work.<br><span class="grad">You keep the last word.</span></h2>
+    <p class="lede reveal">Every change an assistant makes is listed with its diff, its reason and the quotes it rests on. Revert any of it, even after you've edited since.</p>
+    <figure class="window reveal">
+      <img src="img/review-light.webp" alt="Changes: a change held for you, with why it was held and the quote it rests on" width="1400" height="875" loading="lazy">
+    </figure>
+  </section>
+
+  <!-- More -->
+  <section id="more" class="more">
+    <h2 class="center reveal">There's more.</h2>
+    <p class="lede center reveal">The small things that make it feel like home.</p>
+    <div class="bento">
+      <article class="card c-wide reveal">
+        <div class="card-copy"><h3>Everything, one keystroke away.</h3><p>Press <kbd>⌘K</kbd> to find any note, page, task, screen or command.</p></div>
+        <div class="card-shot"><img src="img/palette-light.webp" alt="⌘K: find a note, go to a screen or run a command" loading="lazy" width="1400" height="875"></div>
+      </article>
+      <article class="card c-tall reveal">
+        <div class="card-copy"><h3>Always in the menu bar.</h3><p>See what's due, capture a task and check on runs without opening the window.</p></div>
+        <div class="card-shot tray"><img src="img/tray-light.webp" alt="The menu-bar window" loading="lazy" width="720" height="1100"></div>
+      </article>
+      <article class="card c-half reveal">
+        <div class="card-copy"><h3>Capture as fast as you think.</h3><p>Dates, contexts and links become part of the task as you type.</p></div>
+        <div class="capture" aria-hidden="true">
+          <div class="cap-box"><span class="cap-plus">+</span><span class="cap-text"></span><span class="caret"></span></div>
+          <div class="cap-foot"><span class="cap-tab on">Task</span><span class="cap-tab">Thought</span><span class="cap-key"><kbd>⌃⌥Space</kbd> from any app</span></div>
+        </div>
+      </article>
+      <article class="card c-half reveal">
+        <div class="card-copy"><h3>Listen to any page.</h3><p>Brainstead reads notes aloud in your Mac's voices, lighting up each word as it goes.</p></div>
+        <div class="card-shot bottom"><img src="img/read-aloud-light.webp" alt="A wiki page being read aloud, with the player bar" loading="lazy" width="1400" height="875"></div>
+      </article>
+      <article class="card c-third reveal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M8 3v4M16 3v4M8 14h3"/></svg>
+        <h3>Your day, summed up.</h3>
+        <p>Daily and weekly summaries, written for you.</p>
+      </article>
+      <article class="card c-third reveal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4 3v-3H4z M17 10h3v8h-2v2l-3-2h-3"/></svg>
+        <h3>Meetings into notes.</h3>
+        <p>A Teams transcript becomes a note from your template.</p>
+      </article>
+      <article class="card c-third reveal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.2v.1"/></svg>
+        <h3>Help on every screen.</h3>
+        <p>Press <kbd>?</kbd> anywhere for that screen's help.</p>
+      </article>
+      <article class="card c-half reveal">
+        <div class="card-copy"><h3>Notes that do more.</h3><p>Task queries, tables from your notes, diagrams and maths, right in the page. Templates turn a routine into one click.</p></div>
+        <ul class="pills"><li>Tasks queries</li><li>Dataview</li><li>Templater</li><li>Mermaid diagrams</li><li>KaTeX maths</li><li>Callouts</li><li>Wikilinks</li><li>Highlights</li></ul>
+      </article>
+      <article class="card c-half term-card reveal">
+        <div class="card-copy"><h3>Works from Terminal, too.</h3><p>Add Brainstead's tools to Claude Code, Codex or Copilot once, and use them from any folder.</p></div>
+        <pre class="term" aria-label="Adding Brainstead to Claude Code"><span class="t-dim">~ %</span> <span class="t-type" data-text="claude mcp add brainstead -- Brainstead --mcp"></span><span class="caret"></span>
+<span class="t-out">Added brainstead to user config</span></pre>
+      </article>
+    </div>
+  </section>
+
+  <!-- Trust grid -->
+  <section class="trust">
+    <h2 class="center reveal">Yours, on your terms.</h2>
+    <div class="tiles">
+      <div class="tile reveal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z M14 3v5h5 M10 13h6 M10 17h6"/></svg>
+        <h3>Plain markdown.</h3>
+        <p>Your vault is a folder of files. Open it in any other editor, today or in twenty years.</p>
+      </div>
+      <div class="tile reveal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>
+        <h3>No account.</h3>
+        <p>Nothing to sign up for. Sync your vault with iCloud Drive, OneDrive or Dropbox, or don't.</p>
+      </div>
+      <div class="tile reveal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        <h3>Read-only first.</h3>
+        <p>Brainstead opens your vault without touching it, until you say it may.</p>
+      </div>
+      <div class="tile reveal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z M9 12l2 2 4-4"/></svg>
+        <h3>Risky changes wait for you.</h3>
+        <p>Anything that adds code or edits a template is held until you accept it.</p>
+      </div>
+      <div class="tile reveal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h13"/></svg>
+        <h3>Never reformats.</h3>
+        <p>Saving changes only what you changed, and won't overwrite a file edited elsewhere.</p>
+      </div>
+      <div class="tile reveal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.5-7 10-7 10z"/></svg>
+        <h3>Free, and open.</h3>
+        <p>Free software under the GPL. Read the code, change it, share it.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Questions -->
+  <section id="faq" class="faq">
+    <h2 class="center reveal">Questions.</h2>
+    <div class="qs">
+      <details class="reveal">
+        <summary>Is Brainstead a GTD app?</summary>
+        <p>Yes. It follows Getting Things Done: an Inbox to clarify, next actions by context, projects, waiting for, someday/maybe and a guided weekly review. Every task is a line in one of your markdown notes.</p>
+      </details>
+      <details class="reveal">
+        <summary>Does it work with the markdown notes I already have?</summary>
+        <p>Yes. Point it at any folder of markdown notes. It understands wikilinks, tags, task lines with dates, Tasks and Dataview queries and Templater templates, and it opens your folder read-only until you say it may make changes.</p>
+      </details>
+      <details class="reveal">
+        <summary>Which AI assistants does it use?</summary>
+        <p>The ones already on your Mac: Claude Code, Codex, GitHub Copilot and Antigravity, with your own accounts. Brainstead doesn't need one to be useful, and every change an assistant makes is listed with Revert.</p>
+      </details>
+      <details class="reveal">
+        <summary>Where is my data kept?</summary>
+        <p>In your vault, a folder on your Mac. Brainstead has no account and no server. When you use an assistant, what it reads is sent to that assistant's provider, as it would be anywhere else.</p>
+      </details>
+      <details class="reveal">
+        <summary>Can it bring in my email and Teams chats?</summary>
+        <p>Yes. Browser extensions for Outlook and Teams capture a thread, chat or meeting transcript in one click. It lands in your Inbox and can be turned into wiki pages or a meeting note.</p>
+      </details>
+      <details class="reveal">
+        <summary>Is it free? Does it run on Windows?</summary>
+        <p>It's free and open source under the GNU GPL. For now it's Mac only, for Apple silicon and macOS 14 or later.</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- Download -->
+  <section id="download" class="download center">
+    <img class="big-mark reveal" src="img/mark.svg" alt="" width="96" height="96">
+    <h2 class="reveal">Make room to think.</h2>
+    <p class="lede reveal">Point it at your notes, or start a new vault.</p>
+    <div class="cta reveal">
+      <a class="btn" href="https://github.com/waynetd777/brainstead/releases/latest/download/Brainstead.dmg">Download for Mac</a>
+      <a class="link" href="https://github.com/waynetd777/brainstead">View on GitHub <span aria-hidden="true">›</span></a>
+    </div>
+    <p class="fine reveal">Apple silicon (M1 or later), macOS 14 or later.</p>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <span>Brainstead is free software under the GNU GPL v3.</span>
+  <a href="https://github.com/waynetd777/brainstead">GitHub</a>
+</footer>
+
+<script src="main.js"></script>
+</body>
+</html>
