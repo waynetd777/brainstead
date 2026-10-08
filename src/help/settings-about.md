@@ -5,7 +5,7 @@ screens: [settings/about]
 order: 37
 summary: The app's version, its data folder, its logs and its licence.
 ---
-About shows which Brainstead you're running and where it keeps its own files. **Website** opens Brainstead's website in your browser. Brainstead › About Brainstead shows the version and the website's address too.
+About shows which Brainstead you're running and where it keeps its own files. **Website** opens Brainstead's website in your browser. Brainstead › About Brainstead shows the version and the website's address, which you can click, and Help › Brainstead Website opens it too.
 
 ## Find the version and app data folder
 **Version** gives the version and build. **App data** is Brainstead's own folder, outside the vault: the index, logs, summary runs, unsaved Ask chats (and a saved chat's new turns while the vault is read-only), and `summaries/automated.json` if you have one. An assistant can tell you both.

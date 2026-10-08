@@ -47,6 +47,7 @@ Press `?` on any screen, click **?** on the top bar, or choose Help › Brainste
 - **Getting started** has six step-by-step guides: Start here, Capture and write, Build the wiki, Find, GTD and Knowledge health.
 - **Ask about Brainstead** puts a question to Ask, which [answers from the same help](ask.md#questions-about-brainstead).
 - The keyboard shortcuts are in Help › Keyboard Shortcuts and in ⌘K.
+- Help › Brainstead Website opens [the website](https://brainstead.davies.co.za/), as does the link in Brainstead › About Brainstead and the **Website** button in Settings › About.
 
 ## Settings
 

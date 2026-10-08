@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 
 #[cfg(target_os = "macos")]
+mod about;
+#[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
 mod now_playing;
@@ -41,6 +43,16 @@ pub fn data_dir() -> PathBuf {
 /// hosts are registered in the registry.
 pub fn native_host_dirs() -> Vec<(&'static str, PathBuf)> {
     imp::native_host_dirs()
+}
+
+/// The About panel with `link` under the copyright, clickable, opening `url`: macOS's standard
+/// panel. Elsewhere the menu keeps the platform's own About item, so this does nothing. On the
+/// main thread.
+pub fn about_panel(name: &str, version: &str, copyright: &str, icon_png: &[u8], link: &str, url: &str) {
+    #[cfg(target_os = "macos")]
+    about::show(name, version, copyright, icon_png, link, url);
+    #[cfg(not(target_os = "macos"))]
+    let _ = (name, version, copyright, icon_png, link, url);
 }
 
 /// A quick preview of a file without opening it: the Quick Look panel over `w` on macOS (as Finder's
