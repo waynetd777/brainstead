@@ -93,6 +93,10 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Brainstead's website, under the copyright in the About dialog. The same as `WEBSITE` in
+/// src/Settings.tsx, which About's Website button opens (a test below keeps them the same).
+const WEBSITE: &str = "https://brainstead.davies.co.za/";
+
 /// The app menu's About item, with the app's icon in the theme's version: the charcoal tile when
 /// dark, the white one when light (the default item has no icon in `make dev`, where there's no
 /// bundle to take it from). Called again when the theme changes. macOS only.
@@ -113,6 +117,8 @@ fn about_with_icon(app: &AppHandle, dark: bool) -> tauri::Result<()> {
         name: Some("Brainstead".into()),
         version: Some(app.package_info().version.to_string()),
         copyright: Some("© 2026 Wayne Davies · GPL-3.0-or-later".into()),
+        // macOS shows credits under the copyright; it has no website field.
+        credits: Some(WEBSITE.into()),
         icon: Some(icon),
         ..Default::default()
     };
@@ -126,5 +132,14 @@ fn about_with_icon(app: &AppHandle, dark: bool) -> tauri::Result<()> {
 pub fn menu_note_open(menu: State<NoteMenu>, open: bool) {
     for i in menu.0.lock().unwrap().iter() {
         let _ = i.set_enabled(open);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn website_matches_the_settings_screen() {
+        let settings = include_str!("../../src/Settings.tsx");
+        assert!(settings.contains(&format!("export const WEBSITE = \"{}\";", super::WEBSITE)));
     }
 }
