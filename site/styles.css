@@ -595,16 +595,49 @@ h2 {
   margin-top: 28px;
 }
 
+.install {
+  max-width: 34em;
+  margin: 28px auto 0;
+  padding-left: 1.6em;
+  text-align: left;
+  color: var(--ink2);
+  font-size: 16px;
+}
+.install li {
+  padding-left: 0.3em;
+  margin-top: 10px;
+}
+.install li::marker {
+  color: var(--accent);
+  font-weight: 500;
+}
+
 .foot {
-  display: flex;
-  gap: 20px;
-  justify-content: center;
-  flex-wrap: wrap;
   padding: 28px 16px 40px;
   font-size: 13px;
   color: var(--ink3);
   background: var(--sunk);
   border-top: 1px solid var(--line);
+}
+.foot-links,
+.foot .copy {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+.foot-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  font-size: 15px;
+}
+.foot-links a {
+  color: var(--ink2);
+}
+.foot-links a:hover {
+  color: var(--ink);
+}
+.foot .copy {
+  margin-top: 16px;
 }
 
 /* The hero rises in by itself, without waiting for the script. */
