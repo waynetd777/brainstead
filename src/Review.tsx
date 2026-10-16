@@ -21,6 +21,7 @@ import { settings, Store, useStore } from "./store";
 import { Dialog, SearchBox, TableBand, useDebounced } from "./ui";
 import { offerFollowUp } from "./Ingest";
 import { DocButton, useGone } from "./docButton";
+import { isMod, keyLabel } from "./platform";
 
 /** A line of the page as the diff shows it: task fields as their icons, never the file's emoji. */
 export function DiffText({ text }: { text: string }) {
@@ -369,9 +370,11 @@ export function ReviewScreen() {
                           ? "Read-only is on (Settings › Vault)"
                           : accepting
                             ? "Accepting a run's changes…"
-                            : dq
-                              ? "Make every held change in this run that the search shows, oldest first (⌘↩)"
-                              : "Make every held change in this run, oldest first (⌘↩)"
+                            : keyLabel(
+                                dq
+                                  ? "Make every held change in this run that the search shows, oldest first (⌘↩)"
+                                  : "Make every held change in this run, oldest first (⌘↩)",
+                              )
                       }
                     >
                       <button
@@ -560,7 +563,7 @@ function Detail({ row, q, onMove }: { row: ChangeRow; q: string; onMove: (d: num
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       if (e.defaultPrevented || keyIsElsewhere(e)) return;
-      if (e.metaKey && e.key === "Enter") {
+      if (isMod(e) && e.key === "Enter") {
         if (e.repeat || !isHeld || readOnly || accepting || !v || v.problem) return;
         void acceptRun(row.group, all ?? [], q);
       } else if (e.repeat && (e.key === "a" || e.key === "r")) return;
@@ -746,7 +749,7 @@ function Detail({ row, q, onMove }: { row: ChangeRow; q: string; onMove: (d: num
               <span className="kbd">R</span>
             </button>
             <span className="grow" />
-            <span className="faint small">J / K · A accept · R reject · ⌘↩ accept the run</span>
+            <span className="faint small">J / K · A accept · R reject · {keyLabel("⌘↩")} accept the run</span>
           </>
         ) : (
           <>

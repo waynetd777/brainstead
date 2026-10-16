@@ -46,6 +46,7 @@ import {
   suggestKind,
   trashCapture,
 } from "./inboxActions";
+import { keyLabel } from "./platform";
 
 export { unclarified } from "./gtd";
 
@@ -124,7 +125,7 @@ const CHOICE: Record<string, { key: string; label: (i: InboxItem) => string; tip
   delete: {
     key: "⌫",
     label: (i) => (i.kind === "capture" ? "Move to the Trash" : "Delete"),
-    tip: (i) => (i.kind === "capture" ? "Move the captured file to the vault’s Trash" : "Delete it from the Inbox; ⌘Z undoes"),
+    tip: (i) => (i.kind === "capture" ? "Move the captured file to the vault’s Trash" : keyLabel("Delete it from the Inbox; ⌘Z undoes")),
   },
 };
 
@@ -141,7 +142,7 @@ const BULK_LABEL: Record<string, (n: number, caps: boolean) => [string, string, 
     caps ? `Move ${n} to the Trash` : `Delete ${n}`,
     caps
       ? "Move the captured files to the vault’s Trash"
-      : "Delete them from the Inbox (captures go to the Trash); ⌘Z undoes one at a time",
+      : keyLabel("Delete them from the Inbox (captures go to the Trash); ⌘Z undoes one at a time"),
   ],
 };
 /** Choices for several ticked items at once, as [key, choice, label, tip]: those every one of them
@@ -610,7 +611,7 @@ export function InboxScreen() {
                   })}
                 </div>
               )}
-              <p className="faint small">Nothing changes until you choose. J / K move between items; ⌘Z undoes.</p>
+              <p className="faint small">Nothing changes until you choose. J / K move between items; {keyLabel("⌘Z")} undoes.</p>
             </>
           ) : (
             raw && (
