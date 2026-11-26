@@ -40,8 +40,7 @@ pub fn client() -> Client {
 pub fn accept_handover(v: &serde_json::Value) -> Result<Vec<String>, String> {
     auth::changing(|| {
         let old = auth::load();
-        let refused = old.as_ref().map(|o| o.rejected.clone()).unwrap_or_default();
-        let sign_in = auth::from_handover_avoiding(v, &refused).ok_or("The Teams sign-in handover had no live sign-in to use.")?;
+        let sign_in = auth::from_handover_avoiding(v, old.as_ref()).ok_or("The Teams sign-in handover had no live sign-in to use.")?;
         let s = auth::keep_rejected(auth::keep_missing(sign_in, old.clone()), old.as_ref());
         auth::store(&s)?;
         Ok(still_refused(&s, &[auth::Service::Spaces, auth::Service::Substrate, auth::Service::Csa]))

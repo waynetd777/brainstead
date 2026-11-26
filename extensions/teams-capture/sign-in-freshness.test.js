@@ -34,6 +34,11 @@ describe("due", () => {
     expect(due(gone, now)).toEqual(["chats"]);
   });
 
+  it("sees a token coming due a whole hand-over (15 minutes) before Brainstead stops using it", () => {
+    const next = fresh.map((a) => (a.target.includes("spaces") ? at(a.target, 20) : a));
+    expect(due(next, now)).toEqual(["chats"]);
+  });
+
   it("goes by the longest-lived token for a service", () => {
     expect(due([...fresh, at("https://api.spaces.skype.com//x", -100)], now)).toEqual([]);
   });

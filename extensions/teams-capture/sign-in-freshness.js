@@ -22,8 +22,11 @@
     { name: "channel list", test: (t) => t.includes("chatsvcagg.teams.microsoft.com") },
   ];
 
-  /** How long a reload is given before the sign-in is considered due again, in seconds. */
-  const SOON_SECS = 10 * 60;
+  /** How soon before a token runs out the tab is reloaded, in seconds: longer than the 15 minutes
+   *  between hand-overs plus the 5 minutes' margin Brainstead keeps, so the hand-over before a token
+   *  runs out always sees it coming (at 10 minutes, one that had 11 left was missed, and had gone
+   *  stale by the next). */
+  const SOON_SECS = 25 * 60;
 
   /** Each service's longest-lived token expiry (seconds since 1970), or null when there's none. */
   function expiries(ats) {

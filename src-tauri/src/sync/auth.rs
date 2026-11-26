@@ -94,6 +94,12 @@ pub struct SignIn {
     /// a fingerprint of that token, so the same dead token handed over again isn't used.
     #[serde(default)]
     pub rejected: BTreeMap<String, String>,
+    /// When Microsoft turned each of those down (seconds since 1970). A refusal is usually Microsoft
+    /// ending the session, which kills every token issued before it, and a page can keep several of
+    /// those: a token issued before this is passed over as dead too, so the tab is reloaded at once
+    /// instead of each dead token being handed over in turn.
+    #[serde(default)]
+    pub rejected_at: BTreeMap<String, i64>,
 }
 
 /// What Settings shows about the sign-in — nothing secret.
@@ -148,6 +154,31 @@ pub fn claims(jwt: &str) -> Value {
 
 fn jwt_expiry(jwt: &str) -> i64 {
     claims(jwt)["exp"].as_i64().unwrap_or(0)
+}
+
+/// What an earlier sign-in had turned down for a service: the refused token's fingerprint and when.
+#[derive(Clone, Copy, Default)]
+pub struct Refused<'a> {
+    pub fingerprint: Option<&'a str>,
+    pub at: Option<i64>,
+}
+
+impl<'a> Refused<'a> {
+    pub fn of(old: Option<&'a SignIn>, svc: Service) -> Self {
+        Refused {
+            fingerprint: old.and_then(|o| o.rejected.get(svc.key())).map(String::as_str),
+            at: old.and_then(|o| o.rejected_at.get(svc.key())).copied(),
+        }
+    }
+
+    /// Whether `token` is the refused one, or was issued before the refusal (so it is as dead).
+    fn covers(&self, token: &str) -> bool {
+        if self.fingerprint.is_some_and(|fp| fingerprint(token) == fp) {
+            return true;
+        }
+        let issued = claims(token)["iat"].as_i64();
+        matches!((self.at, issued), (Some(at), Some(iat)) if iat < at)
+    }
 }
 
 /// Reads the sign-in from the Keychain.
@@ -252,12 +283,12 @@ pub fn state() -> SignInState {
 /// token the sync uses, so a handover from a signed-out tab doesn't replace a good sign-in.
 #[cfg(test)]
 pub fn from_handover(v: &Value) -> Option<SignIn> {
-    from_handover_avoiding(v, &BTreeMap::new())
+    from_handover_avoiding(v, None)
 }
 
-/// [`from_handover`], leaving out the tokens the earlier sign-in had turned down (`refused`: by
-/// service key, each one's fingerprint), so a live one beside it in the page is taken instead.
-pub fn from_handover_avoiding(v: &Value, refused: &BTreeMap<String, String>) -> Option<SignIn> {
+/// [`from_handover`], leaving out the tokens the earlier sign-in (`old`) had turned down, and those
+/// issued before it did, so a live one beside them in the page is taken instead.
+pub fn from_handover_avoiding(v: &Value, old: Option<&SignIn>) -> Option<SignIn> {
     let origin = v["origin"].as_str()?.to_string();
     let rt = &v["rt"];
     let refresh_token = rt["secret"].as_str().unwrap_or("").to_string();
@@ -275,7 +306,7 @@ pub fn from_handover_avoiding(v: &Value, refused: &BTreeMap<String, String>) -> 
     let now = now_secs();
     let mut tokens = BTreeMap::new();
     for svc in [Service::Spaces, Service::Outlook, Service::Substrate, Service::Csa] {
-        if let Some(best) = best_page_token(&ats, svc, now, refused.get(svc.key()).map(String::as_str)) {
+        if let Some(best) = best_page_token(&ats, svc, now, Refused::of(old, svc)) {
             tokens.insert(svc.key().to_string(), best);
         }
     }
@@ -295,6 +326,7 @@ pub fn from_handover_avoiding(v: &Value, refused: &BTreeMap<String, String>) -> 
         handed_over: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         extension_version: v["version"].as_str().unwrap_or("").to_string(),
         rejected: BTreeMap::new(),
+        rejected_at: BTreeMap::new(),
     })
 }
 
@@ -315,8 +347,7 @@ pub fn keep_missing(mut new: SignIn, old: Option<SignIn>) -> SignIn {
 /// starts one holding only the mail token.
 pub fn with_mail_handover(old: Option<SignIn>, v: &Value) -> Option<SignIn> {
     let ats = v["ats"].as_array().cloned().unwrap_or_default();
-    let refused = old.as_ref().and_then(|o| o.rejected.get(Service::Outlook.key()).cloned());
-    let token = best_page_token(&ats, Service::Outlook, now_secs(), refused.as_deref())?;
+    let token = best_page_token(&ats, Service::Outlook, now_secs(), Refused::of(old.as_ref(), Service::Outlook))?;
     let mut s = old.unwrap_or_else(|| SignIn {
         origin: v["origin"].as_str().unwrap_or("").to_string(),
         tenant: ats.iter().find_map(|a| a["realm"].as_str()).unwrap_or("common").to_string(),
@@ -339,6 +370,7 @@ pub fn reject(svc: Service) {
         let Some(mut s) = load() else { return };
         if let Some(t) = s.tokens.remove(svc.key()) {
             s.rejected.insert(svc.key().to_string(), fingerprint(&t.token));
+            s.rejected_at.insert(svc.key().to_string(), now_secs());
             let _ = store(&s);
         }
     })
@@ -348,28 +380,35 @@ pub fn reject(svc: Service) {
 /// dead token again stays rejected (and the token is dropped); one handed a new token is cleared.
 pub fn keep_rejected(mut new: SignIn, old: Option<&SignIn>) -> SignIn {
     let mut still = BTreeMap::new();
+    let mut still_at = BTreeMap::new();
     for (k, fp) in old.map(|o| o.rejected.clone()).unwrap_or_default() {
+        let at = old.and_then(|o| o.rejected_at.get(&k)).copied();
+        let refused = Refused { fingerprint: Some(&fp), at };
         match new.tokens.get(&k) {
-            Some(t) if fingerprint(&t.token) != fp => {}
+            Some(t) if !refused.covers(&t.token) => {}
             _ => {
                 new.tokens.remove(&k);
+                if let Some(at) = at {
+                    still_at.insert(k.clone(), at);
+                }
                 still.insert(k, fp);
             }
         }
     }
     new.rejected = still;
+    new.rejected_at = still_at;
     new
 }
 
 /// The longest-lived unexpired access token in the page for `svc`, leaving out the one Microsoft
-/// already turned down (`refused`, its fingerprint). The page often keeps an older long-lived token
-/// beside the one it renewed after the refusal, and the older one can outlast the new: it must not
-/// keep winning.
-fn best_page_token(ats: &[Value], svc: Service, now: i64, refused: Option<&str>) -> Option<Token> {
+/// already turned down and any issued before it did (`refused`). The page often keeps older
+/// long-lived tokens beside the one it renewed after the refusal, and they can outlast the new one:
+/// they must not keep winning, one after another.
+fn best_page_token(ats: &[Value], svc: Service, now: i64, refused: Refused) -> Option<Token> {
     ats.iter()
         .filter_map(|a| {
             let token = a["secret"].as_str()?.to_string();
-            if refused.is_some_and(|fp| fingerprint(&token) == fp) {
+            if refused.covers(&token) {
                 return None;
             }
             let c = claims(&token);
@@ -533,10 +572,39 @@ mod tests {
         let teams = json!({ "origin": "https://teams.cloud.microsoft", "gtm": "{}", "ats": [
             { "secret": dead, "realm": "t" }, { "secret": live, "realm": "t" },
         ]});
-        let mut refused_map = BTreeMap::new();
-        refused_map.insert(Service::Spaces.key().to_string(), fingerprint(&dead));
-        let s = from_handover_avoiding(&teams, &refused_map).unwrap();
+        let mut was = SignIn::default();
+        was.rejected.insert(Service::Spaces.key().to_string(), fingerprint(&dead));
+        let s = from_handover_avoiding(&teams, Some(&was)).unwrap();
         assert_eq!(s.tokens[Service::Spaces.key()].token, live);
+    }
+
+    #[test]
+    fn a_tab_holding_several_dead_tokens_is_renewed_at_once_not_one_dead_token_at_a_time() {
+        // Microsoft ended the session: every mail token issued before then is dead. The tab keeps two.
+        let now = now_secs();
+        let tok = |iat: i64, exp: i64| {
+            use base64::Engine;
+            let enc = |v: &Value| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(serde_json::to_vec(v).unwrap());
+            let payload = json!({"aud": "https://outlook.office.com", "scp": "Mail.Read", "iat": iat, "exp": exp});
+            format!("{}.{}.sig{iat}", enc(&json!({"alg": "RS256"})), enc(&payload))
+        };
+        let a = tok(now - 7200, now + 20 * 3600);
+        let b = tok(now - 3600, now + 10 * 3600);
+        let tab = |ts: &[&str]| json!({ "origin": "https://outlook.cloud.microsoft", "ats": ts.iter().map(|t| json!({"secret": t, "realm": "t"})).collect::<Vec<_>>() });
+        let first = with_mail_handover(None, &tab(&[&a, &b])).unwrap();
+        assert_eq!(first.tokens[Service::Outlook.key()].token, a);
+        // Turned down now (as reject() records it).
+        let mut old = first;
+        let t = old.tokens.remove(Service::Outlook.key()).unwrap();
+        old.rejected.insert(Service::Outlook.key().into(), fingerprint(&t.token));
+        old.rejected_at.insert(Service::Outlook.key().into(), now);
+        // The other token was issued before the refusal: not taken, so the extension reloads the tab.
+        assert!(with_mail_handover(Some(old.clone()), &tab(&[&a, &b])).is_none());
+        // The reloaded tab's fresh token, issued after, is taken and clears the refusal.
+        let fresh = tok(now + 60, now + 3600);
+        let next = keep_rejected(with_mail_handover(Some(old.clone()), &tab(&[&a, &b, &fresh])).unwrap(), Some(&old));
+        assert_eq!(next.tokens[Service::Outlook.key()].token, fresh);
+        assert!(next.rejected.is_empty() && next.rejected_at.is_empty());
     }
 
     #[test]
