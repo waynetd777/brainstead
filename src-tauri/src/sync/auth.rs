@@ -16,6 +16,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::refusal::{self, Refused};
 use crate::platform;
 
 /// The Keychain account the sign-in is kept under.
@@ -156,29 +157,14 @@ fn jwt_expiry(jwt: &str) -> i64 {
     claims(jwt)["exp"].as_i64().unwrap_or(0)
 }
 
-/// What an earlier sign-in had turned down for a service: the refused token's fingerprint and when.
-#[derive(Clone, Copy, Default)]
-pub struct Refused<'a> {
-    pub fingerprint: Option<&'a str>,
-    pub at: Option<i64>,
+/// When a JWT was issued (`iat`), if it says.
+fn issued(jwt: &str) -> Option<i64> {
+    claims(jwt)["iat"].as_i64()
 }
 
-impl<'a> Refused<'a> {
-    pub fn of(old: Option<&'a SignIn>, svc: Service) -> Self {
-        Refused {
-            fingerprint: old.and_then(|o| o.rejected.get(svc.key())).map(String::as_str),
-            at: old.and_then(|o| o.rejected_at.get(svc.key())).copied(),
-        }
-    }
-
-    /// Whether `token` is the refused one, or was issued before the refusal (so it is as dead).
-    fn covers(&self, token: &str) -> bool {
-        if self.fingerprint.is_some_and(|fp| fingerprint(token) == fp) {
-            return true;
-        }
-        let issued = claims(token)["iat"].as_i64();
-        matches!((self.at, issued), (Some(at), Some(iat)) if iat < at)
-    }
+/// What the earlier sign-in had turned down for `svc` (the shared rule: [`refusal`]).
+fn refused_of(old: Option<&SignIn>, svc: Service) -> Refused<'_> {
+    old.map(|o| Refused::of(&o.rejected, &o.rejected_at, svc.key())).unwrap_or_default()
 }
 
 /// Reads the sign-in from the Keychain.
@@ -306,7 +292,7 @@ pub fn from_handover_avoiding(v: &Value, old: Option<&SignIn>) -> Option<SignIn>
     let now = now_secs();
     let mut tokens = BTreeMap::new();
     for svc in [Service::Spaces, Service::Outlook, Service::Substrate, Service::Csa] {
-        if let Some(best) = best_page_token(&ats, svc, now, Refused::of(old, svc)) {
+        if let Some(best) = best_page_token(&ats, svc, now, refused_of(old, svc)) {
             tokens.insert(svc.key().to_string(), best);
         }
     }
@@ -347,7 +333,7 @@ pub fn keep_missing(mut new: SignIn, old: Option<SignIn>) -> SignIn {
 /// starts one holding only the mail token.
 pub fn with_mail_handover(old: Option<SignIn>, v: &Value) -> Option<SignIn> {
     let ats = v["ats"].as_array().cloned().unwrap_or_default();
-    let token = best_page_token(&ats, Service::Outlook, now_secs(), Refused::of(old.as_ref(), Service::Outlook))?;
+    let token = best_page_token(&ats, Service::Outlook, now_secs(), refused_of(old.as_ref(), Service::Outlook))?;
     let mut s = old.unwrap_or_else(|| SignIn {
         origin: v["origin"].as_str().unwrap_or("").to_string(),
         tenant: ats.iter().find_map(|a| a["realm"].as_str()).unwrap_or("common").to_string(),
@@ -358,19 +344,13 @@ pub fn with_mail_handover(old: Option<SignIn>, v: &Value) -> Option<SignIn> {
     Some(s)
 }
 
-/// A short fingerprint of a token (the end of its signature), to recognise it again.
-fn fingerprint(token: &str) -> String {
-    token.chars().rev().take(16).collect()
-}
-
 /// Microsoft turned `svc`'s token down (a 401): drops it and remembers it, so the sync says to sign
 /// in again rather than retrying it, until a different token for `svc` is handed over.
 pub fn reject(svc: Service) {
     changing(|| {
         let Some(mut s) = load() else { return };
         if let Some(t) = s.tokens.remove(svc.key()) {
-            s.rejected.insert(svc.key().to_string(), fingerprint(&t.token));
-            s.rejected_at.insert(svc.key().to_string(), now_secs());
+            refusal::record(&mut s.rejected, &mut s.rejected_at, svc.key(), &t.token, now_secs());
             let _ = store(&s);
         }
     })
@@ -379,21 +359,10 @@ pub fn reject(svc: Service) {
 /// A handed-over sign-in with what the earlier one had rejected applied: a service handed the same
 /// dead token again stays rejected (and the token is dropped); one handed a new token is cleared.
 pub fn keep_rejected(mut new: SignIn, old: Option<&SignIn>) -> SignIn {
-    let mut still = BTreeMap::new();
-    let mut still_at = BTreeMap::new();
-    for (k, fp) in old.map(|o| o.rejected.clone()).unwrap_or_default() {
-        let at = old.and_then(|o| o.rejected_at.get(&k)).copied();
-        let refused = Refused { fingerprint: Some(&fp), at };
-        match new.tokens.get(&k) {
-            Some(t) if !refused.covers(&t.token) => {}
-            _ => {
-                new.tokens.remove(&k);
-                if let Some(at) = at {
-                    still_at.insert(k.clone(), at);
-                }
-                still.insert(k, fp);
-            }
-        }
+    let (rejected, at) = old.map(|o| (o.rejected.clone(), o.rejected_at.clone())).unwrap_or_default();
+    let (still, still_at) = refusal::still(&rejected, &at, |k| new.tokens.get(k).map(|t| (t.token.as_str(), issued(&t.token))));
+    for k in still.keys() {
+        new.tokens.remove(k);
     }
     new.rejected = still;
     new.rejected_at = still_at;
@@ -408,7 +377,7 @@ fn best_page_token(ats: &[Value], svc: Service, now: i64, refused: Refused) -> O
     ats.iter()
         .filter_map(|a| {
             let token = a["secret"].as_str()?.to_string();
-            if refused.covers(&token) {
+            if refused.covers(&token, issued(&token)) {
                 return None;
             }
             let c = claims(&token);
@@ -454,6 +423,7 @@ fn stale_message(svc: Service) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::refusal::fingerprint;
     use super::*;
     use serde_json::json;
 

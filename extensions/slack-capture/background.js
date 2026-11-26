@@ -6,62 +6,39 @@
 // client token, and the session cookie) to Brainstead's local helper every few minutes, so the app
 // can read the user's own conversations with Slack's API. It reads nothing else and sends nothing
 // anywhere but that helper on this machine. Works alongside the Slack desktop app: the tab only has
-// to stay open.
+// to stay open. Keeping the sign-in alive (reloads, timeouts, the record) is handover.js, the same in
+// all three of Brainstead's extensions.
 
-importScripts("slack-reader.js");
+importScripts("handover.js", "slack-reader.js");
 
 const HOST = "com.wayned.brainstead";
-const ALARM = "brainstead-slack-handover";
-/** Minutes between hand-overs. */
-const EVERY = 10;
-/** What the last hand-over did, for the popup. Holds no secret. */
-const LAST = "slack-last-handover";
 
-async function handOver() {
-  const at = new Date().toISOString();
-  const say = (result, extra = {}) => chrome.storage.local.set({ [LAST]: { at, result, ...extra } });
-  try {
-    const tabs = await chrome.tabs.query({ url: ["https://app.slack.com/*"] });
-    if (!tabs.length) return say("no Slack tab open");
-    const pages = [];
-    const problems = [];
-    for (const tab of tabs) {
-      try {
-        const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: globalThis.brainsteadReadSlack });
-        if (r?.result) {
-          pages.push(r.result);
-          problems.push(...(r.result.problems || []));
-        }
-      } catch (e) {
-        problems.push(`tab ${tab.id}: ${e?.message || e}`);
-      }
-    }
+const handOver = globalThis.brainsteadHandover.start({
+  name: "slack",
+  every: 10,
+  lastKey: "slack-last-handover",
+  tabs: () => chrome.tabs.query({ url: ["https://app.slack.com/*"] }),
+  read: globalThis.brainsteadReadSlack,
+  usable: (page) => !!page?.workspaces?.length,
+  // Every tab's workspaces, with the session cookie they work with.
+  all: true,
+  send: async (pages) => {
     const workspaces = globalThis.brainsteadSlackWorkspaces(pages);
-    if (!workspaces.length) return say(`no sign-in found${problems.length ? ` (${problems.join("; ")})` : ""}`);
+    if (!workspaces.length) return { outcome: "no sign-in found" };
     const cookie = await chrome.cookies.get({ url: "https://app.slack.com/", name: "d" });
-    if (!cookie?.value) return say("the Slack session cookie isn't there: sign in to Slack in this browser");
+    if (!cookie?.value) return { outcome: "the Slack session cookie isn't there: sign in to Slack in this browser" };
     const reply = await chrome.runtime.sendNativeMessage(HOST, {
       type: "sign-in",
       workspaces,
       cookie: cookie.value,
       version: chrome.runtime.getManifest().version,
     });
-    return say(reply?.ok ? "handed over" : `Brainstead refused: ${reply?.message || "no answer"}`, {
-      workspaces: workspaces.map((w) => w.name || w.id),
-    });
-  } catch (e) {
-    return say(`failed: ${e?.message || e}`);
-  }
-}
-
-chrome.alarms.create(ALARM, { periodInMinutes: EVERY });
-chrome.alarms.onAlarm.addListener((a) => {
-  if (a.name === ALARM) void handOver();
+    return { ...reply, extra: { workspaces: workspaces.map((w) => w.name || w.id) } };
+  },
 });
-chrome.runtime.onStartup.addListener(() => void handOver());
-chrome.runtime.onInstalled.addListener(() => void handOver());
+
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg?.type !== "slack:hand-over") return false;
-  handOver().then(() => chrome.storage.local.get(LAST).then((s) => reply(s[LAST] ?? null)));
+  handOver().then(() => chrome.storage.local.get("slack-last-handover").then((s) => reply(s["slack-last-handover"] ?? null)));
   return true;
 });

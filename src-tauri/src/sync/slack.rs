@@ -48,7 +48,16 @@ pub struct SignIn {
     pub cookie: String,
     /// When it was handed over, epoch seconds.
     pub handed_over: i64,
+    /// Workspaces whose token Slack turned down (`invalid_auth`): workspace id → the token's
+    /// fingerprint, and when, as for Teams and Outlook ([`super::refusal`]).
+    #[serde(default)]
+    pub rejected: BTreeMap<String, String>,
+    #[serde(default)]
+    pub rejected_at: BTreeMap<String, i64>,
 }
+
+/// What a refused workspace's calls say.
+const LAPSED: &str = "Slack turned the sign-in down. If Slack in Chrome asks you to sign in, do so; the extension hands the new sign-in over within 10 minutes.";
 
 static SLACK_URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^https://[a-z0-9-]+(\.enterprise)?\.slack\.com/$").unwrap());
 
@@ -73,13 +82,37 @@ pub fn from_handover(v: &Value, now: i64) -> Result<SignIn, String> {
     if workspaces.is_empty() {
         return Err("The Slack hand-over had no workspace sign-in.".into());
     }
-    Ok(SignIn { workspaces, cookie: cookie.to_string(), handed_over: now })
+    Ok(SignIn { workspaces, cookie: cookie.to_string(), handed_over: now, rejected: BTreeMap::new(), rejected_at: BTreeMap::new() })
 }
 
-/// Keeps a hand-over's sign-in (the native host calls this).
-pub fn accept_handover(v: &Value) -> Result<(), String> {
-    let s = from_handover(v, Utc::now().timestamp())?;
-    crate::platform::secret_set(ACCOUNT, &serde_json::to_string(&s).map_err(|e| e.to_string())?)
+/// A hand-over's sign-in with the earlier one's refusals applied: a workspace handed the same dead
+/// token again stays refused; one handed a new token is cleared.
+fn keep_rejected(mut new: SignIn, old: Option<&SignIn>) -> SignIn {
+    let (rejected, at) = old.map(|o| (o.rejected.clone(), o.rejected_at.clone())).unwrap_or_default();
+    (new.rejected, new.rejected_at) =
+        super::refusal::still(&rejected, &at, |id| new.workspaces.iter().find(|w| w.id == id).map(|w| (w.token.as_str(), None)));
+    new
+}
+
+/// Keeps a hand-over's sign-in (the native host calls this). Says `slack` when a workspace is still
+/// turned down, for the extension to reload the tab so Slack fetches a fresh sign-in.
+pub fn accept_handover(v: &Value) -> Result<Vec<String>, String> {
+    let s = keep_rejected(from_handover(v, Utc::now().timestamp())?, load().as_ref());
+    store(&s)?;
+    Ok(if s.rejected.is_empty() { vec![] } else { vec!["slack".into()] })
+}
+
+fn store(s: &SignIn) -> Result<(), String> {
+    crate::platform::secret_set(ACCOUNT, &serde_json::to_string(s).map_err(|e| e.to_string())?)
+}
+
+/// Slack turned a workspace's token down: the sync stops using it until a new one is handed over.
+fn reject(ws: &Workspace) {
+    let Some(mut s) = load() else { return };
+    if s.workspaces.iter().any(|w| w.id == ws.id && w.token == ws.token) {
+        super::refusal::record(&mut s.rejected, &mut s.rejected_at, &ws.id, &ws.token, Utc::now().timestamp());
+        let _ = store(&s);
+    }
 }
 
 pub fn load() -> Option<SignIn> {
@@ -98,6 +131,8 @@ pub fn slack_sign_out() -> Result<(), String> {
 pub struct SignInState {
     pub signed_in: bool,
     pub workspaces: Vec<String>,
+    /// The workspaces Slack turned the sign-in down for, until a new one is handed over.
+    pub rejected: Vec<String>,
     /// RFC 3339.
     pub handed_over: Option<String>,
 }
@@ -107,10 +142,19 @@ pub fn slack_sign_in_state() -> SignInState {
     match load() {
         Some(s) => SignInState {
             signed_in: true,
-            workspaces: s.workspaces.iter().map(|w| if w.name.is_empty() { w.id.clone() } else { w.name.clone() }).collect(),
+            workspaces: s.workspaces.iter().map(ws_name).collect(),
+            rejected: s.workspaces.iter().filter(|w| s.rejected.contains_key(&w.id)).map(ws_name).collect(),
             handed_over: Utc.timestamp_opt(s.handed_over, 0).single().map(|t| t.to_rfc3339()),
         },
-        None => SignInState { signed_in: false, workspaces: vec![], handed_over: None },
+        None => SignInState { signed_in: false, workspaces: vec![], rejected: vec![], handed_over: None },
+    }
+}
+
+fn ws_name(w: &Workspace) -> String {
+    if w.name.is_empty() {
+        w.id.clone()
+    } else {
+        w.name.clone()
     }
 }
 
@@ -152,9 +196,7 @@ fn call(
     } else {
         let why = v["error"].as_str().unwrap_or("refused");
         Err(match why {
-            "invalid_auth" | "not_authed" | "token_revoked" => {
-                "Slack's sign-in has lapsed: open Slack in the browser so the extension hands it over again.".into()
-            }
+            "invalid_auth" | "not_authed" | "token_revoked" => LAPSED.into(),
             w => format!("Slack {method}: {w}"),
         })
     }
@@ -406,8 +448,16 @@ pub fn sync(
     let client = super::client();
     let mut prog = progress(data);
     for ws in &sign_in.workspaces {
+        // Turned down before: not tried again until a new sign-in is handed over.
+        if sign_in.rejected.contains_key(&ws.id) {
+            r.problems.push(format!("{}: {LAPSED}", ws_name(ws)));
+            continue;
+        }
         if let Err(e) = workspace(&client, ws, &sign_in.cookie, data, vault, s, (cutoff, from), &mut prog, r) {
-            r.problems.push(format!("{}: {e}", if ws.name.is_empty() { &ws.id } else { &ws.name }));
+            if e.contains(LAPSED) {
+                reject(ws);
+            }
+            r.problems.push(format!("{}: {e}", ws_name(ws)));
         }
     }
     if let Err(e) = save_progress(data, &prog) {
@@ -694,6 +744,20 @@ pub async fn slack_channels() -> Result<Vec<ChannelRow>, String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_refused_workspace_stays_refused_until_a_new_token_is_handed_over_as_for_teams_and_outlook() {
+        let hand = |t: &str| json!({"cookie": "xoxd-abc", "workspaces": [{"id": "T1", "name": "Acme", "url": "https://acme.slack.com/", "token": t}]});
+        let mut old = from_handover(&hand("xoxc-dead-0123456789abcdef"), 100).unwrap();
+        // As reject() records an invalid_auth.
+        super::super::refusal::record(&mut old.rejected, &mut old.rejected_at, "T1", "xoxc-dead-0123456789abcdef", 200);
+        // The same token again: still refused, so the extension is told to reload the tab.
+        let again = keep_rejected(from_handover(&hand("xoxc-dead-0123456789abcdef"), 300).unwrap(), Some(&old));
+        assert!(again.rejected.contains_key("T1") && again.rejected_at.get("T1") == Some(&200));
+        // A new one clears it.
+        let fresh = keep_rejected(from_handover(&hand("xoxc-live-0123456789abcdeX"), 400).unwrap(), Some(&again));
+        assert!(fresh.rejected.is_empty() && fresh.rejected_at.is_empty());
+    }
 
     #[test]
     fn a_handover_keeps_only_slack_workspaces_with_a_client_token() {

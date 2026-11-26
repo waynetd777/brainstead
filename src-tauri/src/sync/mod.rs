@@ -17,6 +17,7 @@ pub mod html;
 pub mod log;
 pub mod pictures;
 pub mod pull;
+pub mod refusal;
 pub mod reply;
 pub mod run;
 pub mod skips;

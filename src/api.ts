@@ -431,6 +431,14 @@ export interface Captured {
 }
 
 /** The Teams and Outlook sign-in state (Settings › Sync). */
+/** The Slack sign-in as Settings shows it: nothing secret. `rejected`: workspaces Slack turned it down for. */
+export interface SlackSignIn {
+  signedIn: boolean;
+  workspaces: string[];
+  rejected: string[];
+  handedOver: string | null;
+}
+
 export interface SyncSignIn {
   signedIn: boolean;
   handedOver: string | null;
@@ -1524,7 +1532,7 @@ export const api = {
   /** The last calendar read's meetings that haven't ended — instant, no network. */
   syncCachedMeetings: () => invoke<SyncMeeting[]>("sync_cached_meetings"),
   syncListChannels: () => invoke<{ id: string; topic: string }[]>("sync_list_channels"),
-  slackSignInState: () => invoke<{ signedIn: boolean; workspaces: string[]; handedOver: string | null }>("slack_sign_in_state"),
+  slackSignInState: () => invoke<SlackSignIn>("slack_sign_in_state"),
   slackSignOut: () => invoke<void>("slack_sign_out"),
   slackChannels: () => invoke<{ id: string; name: string; workspace: string }[]>("slack_channels"),
   syncPull: (query: string, days: number, kinds?: string[]) =>

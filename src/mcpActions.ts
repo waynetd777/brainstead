@@ -13,7 +13,7 @@
 import { startUpdate, targetName, UpdateTarget } from "./updates";
 import { runsNow, windowRuns } from "./runs";
 import { compareMarkdown, compareNote } from "./skills/Compare";
-import { extensionOutdatedText, rejectedText } from "./syncStatus";
+import { extensionOutdatedText, rejectedText, slackRejectedText } from "./syncStatus";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import moment from "moment";
 import { listen } from "@tauri-apps/api/event";
@@ -2703,7 +2703,7 @@ async function syncTool(a: Args): Promise<string> {
         .slackSignInState()
         .then((x) =>
           s.syncSlack
-            ? `Slack sync is on${x.signedIn ? `, signed in to ${x.workspaces.join(", ")}` : ", not signed in (open Slack in the browser with the Slack sync extension)"}; channels chosen: ${(s.slackChannels ?? []).length}.`
+            ? `Slack sync is on${x.signedIn ? `, signed in to ${x.workspaces.join(", ")}` : ", not signed in (open Slack in the browser with the Slack sync extension)"}; channels chosen: ${(s.slackChannels ?? []).length}.${x.rejected.length ? ` ${slackRejectedText(x.rejected)}` : ""}`
             : "Slack sync is off.",
         )
         .catch(() => "Slack sync: unknown."),

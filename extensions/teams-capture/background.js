@@ -348,138 +348,44 @@ async function sendToBrainstead(message) {
 
 // ── Sign-in handover (Brainstead's sync, D-20261025-01) ──────────────
 //
-// While a Teams tab is open, Brainstead can read the user's own chats, mail and calendar if it has
-// the page's sign-in. The page keeps it (MSAL's cache) in localStorage; this reads it from an open
-// Teams tab and hands it to Brainstead's host on a timer. It never leaves the user's own machine —
-// it goes to the local app only. Capturing by button is unchanged; this is separate and silent.
+// While a Teams tab is open, Brainstead can read the user's own chats and calendar if it has the
+// page's sign-in. The page keeps it (MSAL's cache) in localStorage; this reads it from an open Teams
+// tab and hands it to Brainstead's host on a timer. It never leaves the user's own machine: it goes
+// to the local app only. Capturing by button is unchanged; this is separate and silent. Keeping the
+// sign-in alive (reloads, timeouts, the record) is handover.js, the same in all three extensions.
 
-importScripts("sign-in-freshness.js", "sign-in-reader.js");
+importScripts("handover.js", "sign-in-reader.js");
 
-const HANDOVER_ALARM = "brainstead-signin-handover";
-const HANDOVER_PERIOD_MIN = 15;
-/** A one-off hand-over a minute after a reload, once Teams has fetched fresh tokens. */
-const AFTER_RELOAD_ALARM = "brainstead-signin-after-reload";
-/** At most one reload in this long, so a token Teams doesn't renew on load can't cause a loop. */
-const RELOAD_GAP_MS = 45 * 60 * 1000;
-const LAST_RELOAD_KEY = "signin-last-reload";
+/** The services the sync uses, by what the token's scopes name (Brainstead's sync/auth.rs picks
+ *  the same ones by audience), for renewing before one runs out. Not mail: its token comes from the
+ *  Outlook extension (D-20261028-02), and reloading Teams doesn't reliably fetch one. */
+const TEAMS_SERVICES = [
+  { name: "chats", test: (t) => t.includes("api.spaces.skype.com") },
+  { name: "transcripts", test: (t) => t.includes("substrate.office.com") },
+  { name: "channel list", test: (t) => t.includes("chatsvcagg.teams.microsoft.com") },
+];
 
-/** Reloads a background Teams tab so Teams fetches fresh tokens, then hands them over a minute
- *  later. Never a tab the user is looking at or one playing sound (a call), and at most once in
- *  RELOAD_GAP_MS; otherwise it waits for the next hand-over. */
-async function renewSignIn(tab) {
-  if (tab.audible) return "not reloaded: in a call";
-  if (tab.active) {
-    const win = await chrome.windows.get(tab.windowId).catch(() => null);
-    if (win?.focused) return "not reloaded: you're looking at it";
-  }
-  const last = (await chrome.storage.local.get(LAST_RELOAD_KEY))[LAST_RELOAD_KEY] || 0;
-  if (Date.now() - last < RELOAD_GAP_MS) return "not reloaded: reloaded in the last 45 minutes";
-  await chrome.storage.local.set({ [LAST_RELOAD_KEY]: Date.now() });
-  try {
-    await chrome.tabs.reload(tab.id);
-    chrome.alarms.create(AFTER_RELOAD_ALARM, { delayInMinutes: 1 });
-    return "reloaded";
-  } catch (_) {
-    return "not reloaded: the tab went away";
-  }
-}
-
-/** What the last hand-over attempt did, kept in chrome.storage.local (`signin-last-handover`) so a
- *  sign-in that stops arriving can be explained. Holds no tokens. */
-const LAST_HANDOVER_KEY = "signin-last-handover";
-
-/** How long one step of a hand-over may take. A tab Chrome has frozen never answers a script, and
- *  without a limit the hand-over would wait on it for good. */
-const STEP_MS = 20_000;
-
-/** `p`, or a rejection saying `what` took too long. */
-function inTime(p, what) {
-  let timer;
-  const late = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${what} took over ${STEP_MS / 1000}s`)), STEP_MS);
-  });
-  return Promise.race([p, late]).finally(() => clearTimeout(timer));
-}
-
-async function handOverSignIn() {
-  const notes = [];
-  const record = (outcome) =>
-    chrome.storage.local
-      .set({ [LAST_HANDOVER_KEY]: { at: new Date().toISOString(), version: chrome.runtime.getManifest().version, outcome, notes } })
-      .catch(() => {});
-  await record("started");
-  record(await handOver(notes).catch((e) => `failed: ${e?.message || e}`));
-}
-
-async function handOver(notes) {
-  let tabs;
-  try {
-    tabs = await chrome.tabs.query({
+globalThis.brainsteadHandover.start({
+  name: "signin",
+  every: 15,
+  lastKey: "signin-last-handover",
+  tabs: () =>
+    chrome.tabs.query({
       url: [
         "https://teams.microsoft.com/*",
         "https://teams.cloud.microsoft/*",
         "https://teams.microsoft.us/*",
         "https://teams.office365.us/*",
       ],
-    });
-  } catch (e) {
-    return `couldn't list tabs: ${e?.message || e}`;
-  }
-  if (!tabs.length) return "no Teams tab open";
-  for (const tab of tabs) {
-    // Keep Chrome's Memory Saver from putting the tab to sleep: a sleeping tab can't be read, so
-    // its sign-in would stop being handed over.
-    chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
-    if (tab.discarded) {
-      notes.push(`tab ${tab.id} asleep: ${await renewSignIn(tab)}`);
-      continue;
-    }
-    let results;
-    try {
-      results = await inTime(
-        chrome.scripting.executeScript({ target: { tabId: tab.id }, func: globalThis.brainsteadReadSignIn }),
-        "reading the tab",
-      );
-    } catch (e) {
-      // A tab still loading, one we can't script, or one Chrome has frozen: reloading wakes a frozen one.
-      notes.push(`tab ${tab.id} couldn't be read: ${e?.message || e}; ${await renewSignIn(tab)}`);
-      continue;
-    }
-    const page = results?.[0]?.result;
-    // Teams no longer keeps a refresh token in the page, and Brainstead doesn't use one: the live
-    // access tokens are what it needs. The version lets Brainstead say when Chrome is still running
-    // an older copy of this extension (an unpacked one only updates when it's reloaded).
-    if (page?.seen) notes.push(`tab ${tab.id} keeps ${JSON.stringify(page.seen)}`);
-    delete page?.seen;
-    if (page?.ats?.length && page.gtm) {
-      let answer;
-      try {
-        const reply = await inTime(
-          chrome.runtime.sendNativeMessage(HOST, { type: "sign-in", ...page, version: chrome.runtime.getManifest().version }),
-          "Brainstead's answer",
-        );
-        answer = reply?.ok ? "handed over" : `Brainstead refused: ${reply?.message || "no answer"}`;
-        // Microsoft turned down the only token the tab had for these: reload it so Teams fetches
-        // fresh ones (Brainstead D-20261124-03), rather than handing the dead one over every time.
-        if (reply?.ok && reply.renew?.length) {
-          notes.push(`turned down: ${reply.renew.join(", ")}; ${await renewSignIn(tab)}`);
-          return answer;
-        }
-      } catch (e) {
-        // Brainstead not running or not registered yet; try again on the next alarm.
-        answer = `Brainstead unreachable: ${e?.message || e}`;
-      }
-      // Hand over what there is, then renew it if a token the sync uses is about to run out.
-      const due = globalThis.brainsteadSignIn.due(page.ats, Date.now() / 1000);
-      if (due.length) {
-        notes.push(`due: ${due.join(", ")}; ${await renewSignIn(tab)}`);
-      }
-      return answer; // one good hand-over is enough
-    }
-    notes.push(`tab ${tab.id} has ${page?.ats?.length || 0} tokens${page?.gtm ? "" : ", no region settings"}`);
-  }
-  return "no tab had a sign-in to hand over";
-}
+    }),
+  read: globalThis.brainsteadReadSignIn,
+  // The page's live access tokens and its region settings. Teams no longer keeps a refresh token
+  // in the page, and Brainstead doesn't use one.
+  usable: (page) => !!(page?.ats?.length && page.gtm),
+  // The version lets Brainstead say when Chrome is still running an older copy of this extension.
+  send: ([page]) => chrome.runtime.sendNativeMessage(HOST, { type: "sign-in", ...page, version: chrome.runtime.getManifest().version }),
+  due: (page, now) => globalThis.brainsteadHandover.due(page.ats, now, TEAMS_SERVICES),
+});
 
 // ── Put in Teams (Brainstead's Draft reply, D-20261120-05) ───────────
 //
@@ -539,10 +445,3 @@ chrome.webNavigation.onBeforeNavigate.addListener(
   },
   { url: [{ urlContains: "brainstead-reply=" }] },
 );
-
-chrome.alarms.create(HANDOVER_ALARM, { periodInMinutes: HANDOVER_PERIOD_MIN });
-chrome.alarms.onAlarm.addListener((a) => {
-  if (a.name === HANDOVER_ALARM || a.name === AFTER_RELOAD_ALARM) handOverSignIn();
-});
-chrome.runtime.onStartup.addListener(handOverSignIn);
-chrome.runtime.onInstalled.addListener(handOverSignIn);

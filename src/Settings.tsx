@@ -8,7 +8,7 @@ import { localToday } from "./md/taskQuery";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, AppInfo, CliInfo, CliName, Skill, SkipSuggestion, Theme } from "./api";
 import { acceptSkip, unskipChat } from "./skips";
-import { extensionOutdatedText, mailOn, rejectedText } from "./syncStatus";
+import { extensionOutdatedText, mailOn, rejectedText, slackRejectedText } from "./syncStatus";
 import appIconDark from "../src-tauri/icons/128x128@2x.png";
 import appIconLight from "../src-tauri/icons/about-light.png";
 import { Icon, TrayMark } from "./icons";
@@ -1957,7 +1957,7 @@ function SlackSync() {
             <div className="pt">Sync Slack</div>
             <div className="faint">
               {state?.signedIn
-                ? `Signed in to ${state.workspaces.join(", ")}${state.handedOver ? `, handed over ${ago(new Date(state.handedOver).getTime())}` : ""}. Keep Slack open in a browser tab; the desktop app can stay open too.`
+                ? `Signed in to ${state.workspaces.join(", ")}${state.handedOver ? `, handed over ${ago(new Date(state.handedOver).getTime())}` : ""}. Keep Slack open in a browser tab; the desktop app can stay open too.${state.rejected.length ? ` ${slackRejectedText(state.rejected)}` : ""}`
                 : "Not signed in: open Slack in Chrome with the Slack sync extension loaded."}
             </div>
           </div>

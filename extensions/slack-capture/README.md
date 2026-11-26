@@ -1,6 +1,6 @@
 # Slack sync — Chrome / Edge extension
 
-Hands your open Slack tab's sign-in to Brainstead, so its Slack sync can read your own Slack conversations into `sources/` (D-20261118-01). It captures nothing itself and has no button to press: it hands over every ten minutes, when the browser starts, and when you click **Hand over now** in its popup.
+Hands your open Slack tab's sign-in to Brainstead, so its Slack sync can read your own Slack conversations into `sources/` (D-20261118-01). It captures nothing itself and has no button to press: it hands over every ten minutes, when the browser starts, and when you click **Hand over now** in its popup. It keeps the tab awake and reloads it when Slack turned the sign-in down and the tab has nothing newer, as the Teams and Outlook extensions do (see [the extensions' README](../README.md)).
 
 What it hands over, to Brainstead's local helper only (Chrome native messaging, `com.wayned.brainstead`):
 

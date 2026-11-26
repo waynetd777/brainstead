@@ -762,7 +762,13 @@ pub fn watch(app: tauri::AppHandle) {
                 // A sign-in that has just gone stale or been turned down needs the user: told once,
                 // and again only after it has come back and gone again.
                 let s = settings::load(&data.join("settings.json"));
-                let now = sign_in_trouble(&auth::state(), s.sync_enabled, s.mail_on());
+                let mut now = sign_in_trouble(&auth::state(), s.sync_enabled, s.mail_on());
+                // Slack alike: a workspace it turned down (D-20261126-02).
+                let slack = if s.sync_slack { super::slack::slack_sign_in_state().rejected } else { vec![] };
+                if !slack.is_empty() {
+                    let sep = if now.is_empty() { "" } else { " " };
+                    now.push_str(&format!("{sep}Signed out of Slack: {}. Sign in again in that Chrome tab.", slack.join(", ")));
+                }
                 if !now.is_empty() && now != told {
                     crate::notify::show(&app, crate::notify::Need::You, "Sync needs you", &now);
                 }

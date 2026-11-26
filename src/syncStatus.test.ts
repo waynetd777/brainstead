@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import type { SyncSignIn } from "./api";
 import { syncStatus } from "./syncStatus";
+import type { SlackSignIn } from "./api";
 
 const ok: SyncSignIn = {
   signedIn: true,
@@ -47,5 +48,15 @@ describe("syncStatus", () => {
       text: "Outlook: not signed in. Open Outlook in Chrome so the extension hands the sign-in over.",
     });
     expect(syncStatus({ ...ok, stale: ["mail"], outlook: false }, { teams: true, mail: false }).text).toBe("Teams connected.");
+  });
+
+  it("takes Slack in when its sync is on, as it does Teams and Outlook", () => {
+    const slack: SlackSignIn = { signedIn: true, workspaces: ["Acme"], rejected: [], handedOver: null };
+    expect(syncStatus(ok, undefined, slack)).toEqual({ tone: "ok", text: "Teams, Outlook and Slack connected." });
+    const refused = syncStatus(ok, undefined, { ...slack, rejected: ["Acme"] });
+    expect(refused.tone).toBe("warn");
+    expect(refused.text).toContain("Signed out of Slack: Acme");
+    expect(syncStatus(null, { teams: false, mail: false }, slack)).toEqual({ tone: "ok", text: "Slack connected." });
+    expect(syncStatus(null, { teams: false, mail: false }, null).tone).toBe("off");
   });
 });

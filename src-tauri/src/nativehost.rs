@@ -134,7 +134,7 @@ fn handle(data: &Path, origin: &str, v: Value) -> Value {
         // extension to reload the tab so the page fetches fresh ones (D-20261124-03).
         let accepted = match ext.as_str() {
             "outlook" => crate::sync::accept_mail_handover(&v),
-            "slack" => crate::sync::slack::accept_handover(&v).map(|()| Vec::new()),
+            "slack" => crate::sync::slack::accept_handover(&v),
             _ => crate::sync::accept_handover(&v),
         };
         return match accepted {
