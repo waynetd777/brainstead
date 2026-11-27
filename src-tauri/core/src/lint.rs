@@ -591,10 +591,18 @@ fn run_with(root: &Path, today: NaiveDate, dismissed: &HashSet<String>, zone: Zo
         for p in &i.problems {
             items.push(Item { text: format!("{name}: {}", p.text), page: Some(f.rel.clone()), ..Default::default() });
         }
-        let quoted = i.actions.iter().map(|a| (&a.text, &a.quotes)).chain(i.decisions.iter().map(|d| (&d.text, &d.quotes)));
+        // An action done or dropped is settled: its evidence no longer needs checking.
+        let open = i.actions.iter().filter(|a| a.status == crate::initiatives::Status::Open);
+        let quoted = open.map(|a| (&a.text, &a.quotes)).chain(i.decisions.iter().map(|d| (&d.text, &d.quotes)));
         for (what, quotes) in quoted {
             for q in quotes {
                 let target = q.source.split('#').next().unwrap_or("").trim();
+                // A PDF, Office file or picture: its own text isn't here (only its summary page,
+                // which shares its name), so the quote can't be checked against it.
+                const NOT_TEXT: [&str; 12] = ["pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", "png", "jpg", "jpeg", "gif", "webp"];
+                if target.rsplit_once('.').is_some_and(|(_, e)| NOT_TEXT.iter().any(|x| e.eq_ignore_ascii_case(x))) {
+                    continue;
+                }
                 let Some(srcs) = texts.get(&lint_key(name_of(target).trim_end_matches(".md"))) else { continue };
                 if !srcs.iter().any(|src| crate::reviews::prep::quote_in(&q.text, src)) {
                     items.push(Item {
@@ -766,6 +774,12 @@ pub fn ignore_key(check: &str, text: &str) -> String {
 /// stays ignored for as long as its page still has that line, whatever else on the page changes.
 pub const LINE_KEYED: [&str; 1] = ["uncited-claims"];
 
+/// Checks whose issue names exactly what it's about (an initiative's action, its quote's source):
+/// one of these stays ignored while it's still listed, however often its page changes. An
+/// initiative page changes with nearly every ingest, so ignoring until the page changed lasted
+/// only until the next one.
+pub const ITEM_KEYED: [&str; 1] = ["initiative-items"];
+
 /// An uncited claim's line as the check gives it: trimmed, at most 160 characters.
 fn claim_line(l: &str) -> String {
     l.trim().chars().take(160).collect()
@@ -786,7 +800,7 @@ pub fn without_ignored(
     let mut seen = HashSet::new();
     for c in &mut r.checks {
         let (id, n) = (c.id, &mut c.ignored);
-        let by_line = LINE_KEYED.contains(&id);
+        let by_line = LINE_KEYED.contains(&id) || ITEM_KEYED.contains(&id);
         c.items.retain(|i| {
             let key = ignore_key(id, &i.text);
             let Some(was) = ignored.get(&key) else { return true };
@@ -897,8 +911,9 @@ mod tests {
         w("wiki/summaries/Mail. Pricing.md", "Lena asked for the revised pricing.\n");
         w(
             "wiki/initiatives/Acme renewal.md",
-            "---\ntype: initiative\n---\n# Acme renewal\n\n## Actions\n\n- Send pricing [owner:: me] ^a-1\n  - \"can you send the revised pricing\" — [[Mail. Pricing]]\n- Book legal [status:: open] ^a-2\n  - \"Legal is booked\" — [[Mail. Pricing#Branch 2]]\n",
+            "---\ntype: initiative\n---\n# Acme renewal\n\n## Actions\n\n- Send pricing [owner:: me] ^a-1\n  - \"can you send the revised pricing\" — [[Mail. Pricing]]\n- Book legal [status:: open] ^a-2\n  - \"Legal is booked\" — [[Mail. Pricing#Branch 2]]\n- Chase Lena [owner:: me] [status:: dropped] ^a-3\n  - \"Lena never said this\" — [[Mail. Pricing]]\n- Sign the order [owner:: me] ^a-4\n  - \"Sign by Friday\" — [[Mail. Order form.pdf#page=2]]\n",
         );
+        w("wiki/summaries/Mail. Order form.pdf.md", "The order form wants a signature.\n");
         let r = run_in(t.path(), today(), &HashSet::new(), fixture::zone());
         let got: Vec<&str> = r.check("initiative-items").unwrap().items.iter().map(|i| i.text.as_str()).collect();
         // Nothing links to it, and it isn't an orphan: initiatives are reached from the Inbox and the brief.
@@ -910,6 +925,16 @@ mod tests {
                 "Acme renewal: “Book legal” quotes words that aren't in Mail. Pricing",
             ]
         );
+        // Not listed: the dropped action (settled), and the quote from a PDF, whose text isn't here
+        // (only its summary page, which shares its name).
+
+        // Ignored, it stays ignored while it's listed, however often the initiative page changes.
+        let issue = "Acme renewal: “Book legal” quotes words that aren't in Mail. Pricing".to_string();
+        let mut ignored = BTreeMap::from([(ignore_key("initiative-items", &issue), "version-1".to_string())]);
+        let mut again = run_in(t.path(), today(), &HashSet::new(), fixture::zone());
+        without_ignored(&mut again, &mut ignored, &|_| Some("version-2".into()), &|_| None);
+        assert!(again.check("initiative-items").unwrap().items.iter().all(|i| i.text != issue));
+        assert_eq!(ignored.len(), 1, "kept while it's listed");
     }
 
     #[test]

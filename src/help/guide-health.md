@@ -16,7 +16,7 @@ Click **Fix safe issues** in the top bar of [Wiki health](app:health). Brainstea
 ## Decide the rest
 - Missing pages: click **Create** or **Link to…**.
 - Possible duplicates: **Not duplicates** if they aren't.
-- Nothing to fix, such as a stale page: **Ignore** hides it until its page changes. Stale pages and claims with no citation also have **Ignore all**.
+- Nothing to fix, such as a stale page: **Ignore** hides it until its page changes (an initiative's action stays hidden while it's listed). Stale pages and claims with no citation also have **Ignore all**.
 - The rest: **Fix with Ask**. The assistant makes the fixes, each listed in [Changes](app:review) with Revert.
 
 ## Settle contradictions

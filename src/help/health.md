@@ -11,7 +11,7 @@ Wiki health checks the wiki and its sources whenever the vault changes. Open it 
 The checks come in two groups.
 
 - **Wiki checks**: missing pages (linked but never written), broken sources, orphan pages (nothing links to them), missing cross-links, stale `updated:` dates, unlogged writes (pages changed after `log.md` was last written), sources not yet ingested, and images nothing uses.
-- **More checks**: possible duplicates, stale pages others rely on, sources changed since they were cited, pages not in the page shape, pages with no Current state, initiative actions and decisions to check (no owner, a status or date that doesn't read, an id used twice, or a quote that isn't in its source), claims with no citation (found by the [contradictions](app:contradictions) check), and system notes missing their header.
+- **More checks**: possible duplicates, stale pages others rely on, sources changed since they were cited, pages not in the page shape, pages with no Current state, initiative actions and decisions to check (no owner, a status or date that doesn't read, an id used twice, or a quote that isn't in its source: only for open actions and decisions, and only a source Brainstead has the text of, so not a PDF, Office file or picture; an issue you ignore here stays ignored while it's listed, however often the initiative page changes), claims with no citation (found by the [contradictions](app:contradictions) check), and system notes missing their header.
 
 A system note's header is the "This is a system note" callout at the top of notes such as the To Do list, which Brainstead looks for. **Fix** puts it back as Brainstead last saw it.
 
