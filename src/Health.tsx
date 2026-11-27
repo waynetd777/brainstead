@@ -903,8 +903,8 @@ function WriteCurrentState({ n, refresh = false, pages = null }: { n: number; re
   return (
     <div className="ckitem">
       <span className="grow faint small" title={run?.failed.join("\n") || undefined}>
-        {last}The model {refresh ? "rewrites" : "writes"} each from the page's opening and newest Timeline entries; each is a change in
-        Changes.
+        {last}The model {refresh ? "rewrites" : "writes"} each from the page's opening and newest Timeline entries
+        {refresh ? ", keeping what's still true of the Current state it has" : ""}; each is a change in Changes.
       </span>
       <button
         type="button"

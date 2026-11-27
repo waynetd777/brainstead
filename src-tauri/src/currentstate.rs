@@ -8,7 +8,8 @@
 //! of a few pages first, then the rest; it runs in the background, four pages at once, and can be stopped.
 //! Refresh Current state (D-20261127-13) is the same run on pages whose Current state is out of date (core
 //! `pageshape::current_state_behind`, or the pages named, `wants_refresh`): rewritten from the same
-//! text, dated as of the newest entry, and left alone when there's nothing new.
+//! text and the Current state as it stands (its `###` sub-parts kept as they are), dated as of the
+//! newest entry, and left alone when there's nothing new.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -243,7 +244,11 @@ fn one(
         page,
         Kind::Edit,
         title,
-        "Written by the model from the page's opening and newest Timeline entries only.",
+        if refresh {
+            "Rewritten by the model from the page's opening, newest Timeline entries and its Current state as it stood."
+        } else {
+            "Written by the model from the page's opening and newest Timeline entries only."
+        },
         origin,
         brainstead_core::changes::from_texts(Some(&before), &after),
     );

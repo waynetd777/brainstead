@@ -1069,25 +1069,52 @@ fn current_state_body<'a>(p: &Page<'a>) -> Option<&'a str> {
 }
 
 /// When the page's Current state says it's from: the newest date it gives after "As of", else the
-/// newest date in it at all; a date with no year takes the newest Timeline entry's. None when it
-/// has none (or no Current state).
+/// newest date in it at all; a date with no year takes the latest year that doesn't put it after
+/// the newest Timeline entry (`dated`). None when it has none (or no Current state).
 pub fn current_state_as_of(page: &str) -> Option<Date> {
     let p = parse(page);
-    let year = newest_entry(page).map_or_else(|| chrono::Datelike::year(&chrono::Local::now()), Date::year);
-    as_of_in(current_state_body(&p)?, year, false)
+    as_of_in(current_state_body(&p)?, newest_entry(page), false)
 }
 
-/// The date a Current state's text says it's from (`current_state_as_of`), `year` for a date with
-/// none; with `strict`, only a date after "As of" counts.
-fn as_of_in(body: &str, year: i32, strict: bool) -> Option<Date> {
+/// A date with no year in a Current state, given one: the latest year that doesn't put it after
+/// the newest entry (`20 December` under a newest entry of 10 January 2027 is 2026's), or this
+/// year when there are no entries.
+fn dated(when: When, newest: Option<Date>) -> Option<Date> {
+    if let Some(y) = when.year() {
+        return when.in_year(y);
+    }
+    let Some(n) = newest else { return when.in_year(chrono::Datelike::year(&chrono::Local::now())) };
+    (0..=4).filter_map(|back| when.in_year(n.year() - back)).find(|d| start_key(*d) <= end_key(n))
+}
+
+/// The date a Current state's text says it's from (`current_state_as_of`), a date with no year
+/// read against the newest entry (`dated`); with `strict`, only a date after "As of" counts.
+fn as_of_in(body: &str, newest: Option<Date>, strict: bool) -> Option<Date> {
     let lower = body.to_ascii_lowercase();
     let found = dates_in(body);
     let as_of = |f: &&Found| {
         let before = lower[..f.start].trim_end();
         before.ends_with("as of") || before.ends_with("as of the")
     };
-    let pick = |fs: Vec<&Found>| fs.iter().filter_map(|f| f.when.in_year(f.when.year().unwrap_or(year))).max_by_key(|d| end_key(*d));
+    let pick = |fs: Vec<&Found>| fs.iter().filter_map(|f| dated(f.when, newest)).max_by_key(|d| end_key(*d));
     pick(found.iter().filter(as_of).collect()).or_else(|| if strict { None } else { pick(found.iter().collect()) })
+}
+
+/// A Current state's text split where its first `###` (or deeper) sub-part starts, outside code:
+/// the lead, and the sub-parts (empty when it has none).
+fn lead_and_parts(body: &str) -> (&str, &str) {
+    let mut code = false;
+    let mut at = 0;
+    for l in body.split_inclusive('\n') {
+        let t = l.trim_start();
+        if t.starts_with("```") || t.starts_with("~~~") {
+            code = !code;
+        } else if !code && markdown::heading(l.trim_end()).is_some_and(|(n, _)| n >= 3) {
+            return (&body[..at], &body[at..]);
+        }
+        at += l.len();
+    }
+    (body, "")
 }
 
 /// The last day a date covers, to compare with when an entry starts.
@@ -1140,10 +1167,21 @@ fn spoken(d: Date) -> String {
 }
 
 /// What a model is shown to refresh an out-of-date Current state from: the same as for writing
-/// one (only the opening and the newest Timeline entries; not the old Current state), told to
-/// say it's as of the newest entry.
+/// one (the opening and the newest Timeline entries), and the Current state as it stands (its
+/// lead, before any `###` sub-part, which stay as they are), to keep what's still true of it, a
+/// hand-written one included; told to say it's as of the newest entry.
 pub fn refresh_prompt(path: &str, page: &str, budget: usize) -> String {
     let mut out = current_state_prompt(path, page, budget);
+    let p = parse(page);
+    let lead = current_state_body(&p).map(|b| lead_and_parts(b).0.trim()).unwrap_or("");
+    if !lead.is_empty() {
+        out = out.replacen(
+            "- Only facts in the text below.",
+            "- Rewrite the Current state as it stands now (the first part below): keep everything in it that the entries don't show has changed, in its own words where you can, and change only what they show is out of date.\n- Only facts in the text below.",
+            1,
+        );
+        out.push_str(&format!("\nThe Current state as it stands:\n---\n{lead}\n---\n"));
+    }
     if let Some(d) = newest_entry(page) {
         out = out.replacen(
             "- Answer with the section's text only",
@@ -1155,19 +1193,45 @@ pub fn refresh_prompt(path: &str, page: &str, budget: usize) -> String {
 }
 
 /// A model's refreshed Current state, checked as `current_state_answer` checks one, and dated:
-/// when it doesn't say it's as of the newest entry, "As of …:" goes first, so the page isn't
-/// behind again. An answer the same as the page's Current state is nothing new.
+/// when it doesn't say it's as of the newest entry, its own leading "As of …" is replaced by the
+/// newest entry's date, or "As of …:" goes first when it has none, so the page isn't behind again
+/// and never says two dates. It replaces the lead only: the Current state's `###` sub-parts are
+/// kept after it as they were. An answer the same as the lead is nothing new.
 pub fn refreshed_answer(page: &str, answer: &str, exists: &dyn Fn(&str) -> bool) -> Result<String, String> {
     let mut t = current_state_answer(page, answer, exists)?;
     if let Some(newest) = newest_entry(page) {
-        if as_of_in(&t, newest.year(), true).is_none_or(|d| end_key(d) < start_key(newest)) {
-            t = format!("As of {}:\n\n{t}", spoken(newest));
+        if as_of_in(&t, Some(newest), true).is_none_or(|d| end_key(d) < start_key(newest)) {
+            t = match leading_as_of(&t) {
+                Some((start, end)) => format!("{}As of {}{}", &t[..start], spoken(newest), &t[end..]),
+                None => format!("As of {}:\n\n{t}", spoken(newest)),
+            };
         }
     }
-    if current_state_body(&parse(page)).is_some_and(|b| b.trim() == t.trim()) {
+    let p = parse(page);
+    let (lead, parts) = current_state_body(&p).map_or(("", ""), lead_and_parts);
+    if lead.trim() == t.trim() {
         return Err("the model found nothing new since the Current state".into());
     }
+    if !parts.trim().is_empty() {
+        t = format!("{}\n\n{}", t.trim_end(), parts.trim());
+    }
     Ok(t)
+}
+
+/// Where a text's own leading "As of <date>" starts and ends (`As of the 20 September steerco, …`:
+/// up to the comma), when it opens with one (after a bullet's `- `, if any). None otherwise.
+fn leading_as_of(t: &str) -> Option<(usize, usize)> {
+    let start = t.len() - t.trim_start_matches(['-', '*', ' ']).len();
+    let rest = &t[start..];
+    if !rest.get(..5).is_some_and(|w| w.eq_ignore_ascii_case("as of")) {
+        return None;
+    }
+    let line = rest.split('\n').next().unwrap_or(rest);
+    let clause = line.find([',', ':', ';']).unwrap_or(line.len());
+    let first = dates_in(&line[..clause]).into_iter().next()?;
+    // The clause's date is the "As of"'s own, right after it (with an optional "the").
+    let between = line[5..first.start].trim().to_ascii_lowercase();
+    (between.is_empty() || between == "the").then_some((start, start + clause))
 }
 
 /// What a model is shown to write a page's Current state from (D-20261006-10): the page's
@@ -1735,7 +1799,8 @@ mod tests {
         assert!(!wants_refresh(&page) && !wants_refresh("# Orbit App\n\n## Current state\n\nLive.\n"));
 
         let prompt = refresh_prompt("wiki/entities/Orbit App.md", &old, 6000);
-        assert!(prompt.contains("Start with \"As of 2 October 2026,\"") && !prompt.contains("the pilot finished [[Programme"), "{prompt}");
+        // The Current state as it stands is shown, to keep what's still true of it.
+        assert!(prompt.contains("Start with \"As of 2 October 2026,\"") && prompt.contains("the pilot finished [[Programme"), "{prompt}");
         let no = |_: &str| false;
         let ans =
             refreshed_answer(&old, "As of 2 October 2026, launch moves to 28 November [[Meeting. Orbit App Steerco - 2026-10-02]].", &no)
@@ -1751,6 +1816,44 @@ mod tests {
         assert!(refreshed_answer(&new, &ans, &no).unwrap_err().contains("nothing new"));
         assert!(refreshed_answer(&old, "NONE", &no).is_err());
         assert!(refreshed_answer(&old, "As of 2 October 2026, with [[Theo]].", &no).unwrap().ends_with("with Theo."));
+        // The model's own older "As of" is replaced, not stacked under another.
+        let ans = refreshed_answer(&old, "As of the 20 September steerco, launch moves to 28 November.", &no).unwrap();
+        assert_eq!(ans, "As of 2 October 2026, launch moves to 28 November.");
+        let ans = refreshed_answer(&old, "- As of September 2026: launch moves.\n- Lena leads it.", &no).unwrap();
+        assert_eq!(ans, "- As of 2 October 2026: launch moves.\n- Lena leads it.");
+    }
+
+    #[test]
+    fn a_refresh_keeps_a_hand_written_current_state_and_its_sub_parts() {
+        let (page, _) = reshape(&fixture("dated-only"), &is_source);
+        let hand = with_current_state(&page, "Live with [[Lena]] in Acme's stores.\n\n### Risks\n\n- Pricing isn't agreed.\n");
+        assert!(wants_refresh(&hand));
+        // The lead is in the prompt; its sub-parts aren't the model's to rewrite.
+        let prompt = refresh_prompt("wiki/entities/Orbit App.md", &hand, 6000);
+        assert!(prompt.contains("The Current state as it stands:\n---\nLive with [[Lena]] in Acme's stores.\n---"), "{prompt}");
+        assert!(prompt.contains("keep everything in it") && !prompt.contains("Pricing isn't agreed"), "{prompt}");
+        let no = |_: &str| false;
+        let ans = refreshed_answer(&hand, "Live with Lena in Acme's stores; launch moves to 28 November.", &no).unwrap();
+        assert_eq!(ans, "As of 2 October 2026:\n\nLive with Lena in Acme's stores; launch moves to 28 November.\n\n### Risks\n\n- Pricing isn't agreed.");
+        let new = with_current_state_text(&hand, &ans).unwrap();
+        assert!(new.contains("### Risks\n\n- Pricing isn't agreed.") && !wants_refresh(&new), "{new}");
+        // The lead given back unchanged is nothing new, sub-parts or not.
+        let dated = with_current_state(&page, "As of 2 October 2026, live.\n\n### Risks\n\n- Pricing.\n");
+        assert!(refreshed_answer(&dated, "As of 2 October 2026, live.", &no).unwrap_err().contains("nothing new"));
+        // A ### in code isn't a sub-part.
+        assert_eq!(lead_and_parts("a\n```\n### x\n```\nb\n"), ("a\n```\n### x\n```\nb\n", ""));
+    }
+
+    #[test]
+    fn a_current_state_date_without_a_year_is_never_after_the_newest_entry() {
+        let jan = Some(Date::Day(2027, 1, 10));
+        assert_eq!(dated(When::Day(None, 12, 20), jan), Some(Date::Day(2026, 12, 20)));
+        assert_eq!(dated(When::Day(None, 1, 5), jan), Some(Date::Day(2027, 1, 5)));
+        assert_eq!(dated(When::Month(None, 1), jan), Some(Date::Month(2027, 1)));
+        assert_eq!(dated(When::Day(Some(2025), 12, 20), jan), Some(Date::Day(2025, 12, 20)));
+        let page = "# Orbit App\n\n## Current state\n\nAs of 20 December, live.\n\n## Timeline\n\n### 2027-01-10 — Launch\n\nLaunched.\n";
+        assert_eq!(current_state_as_of(page), Some(Date::Day(2026, 12, 20)));
+        assert!(current_state_behind(page));
     }
 
     #[test]
