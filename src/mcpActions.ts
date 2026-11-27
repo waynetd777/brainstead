@@ -179,7 +179,7 @@ import {
 } from "./weeklyPrep";
 import { draftNotes, followThrough, isTranscriptPath, keepNote, noteFile, specOf, specOk, trashTranscript } from "./meetingFlow";
 import { DONE as MEETING_DONE, needsDate, noteExists, TYPES as MEETING_TYPES } from "./Meeting";
-import { order as contradictionsOrder, reportMarkdown } from "./Contradictions";
+import { type ContradictionGroup, groupOf, order as contradictionsOrder, reportMarkdown } from "./Contradictions";
 import { KINDS as GRAPH_KINDS, visible as graphVisible } from "./graphModel";
 import { checklist, isDone, isRetired, STOP_FIRST } from "./Switchover";
 import { canIngest, ingestable } from "./Lists";
@@ -2282,7 +2282,14 @@ async function healthIgnore(a: Args): Promise<string> {
   const r = v.report;
   if (!r) throw new Error("Wiki health has no report yet; try again in a moment.");
   if (a.show_again) {
-    const check = typeof a.check === "string" && a.check ? a.check : null;
+    const check = typeof a.check === "string" ? a.check.trim() : "";
+    // Show again is a check's button on the screen; with no check nothing comes back (a slip
+    // would list every issue ever ignored again), it says what's ignored instead.
+    if (!check) {
+      const quiet = r.checks.filter((c) => c.ignored).map((c) => `${c.id} ${c.ignored}`);
+      if (!quiet.length) return "Nothing is ignored.";
+      throw new Error(`show_again is for one check at a time: give its id as check. Ignored now: ${quiet.join(", ")}.`);
+    }
     const n = await api.healthUnignore(check);
     told(`showed ${n} ignored Wiki health issue${n === 1 ? "" : "s"} again`);
     return n ? `${n} ignored issue${n === 1 ? " is" : "s are"} listed again.` : "Nothing was ignored.";
@@ -3466,6 +3473,21 @@ async function healthLint(a: Args): Promise<string> {
   return [`Wiki health${page ? ` for ${page}` : ""}:`, ...(summary ? [summary] : []), ...out, ...(ignored ? ["", ignored] : [])].join("\n");
 }
 
+/** The issues an assistant means by `given`: the one whose text it is as lint gives it, also with
+ *  what lint adds after it (the Trash note, Did you mean…); with `named`, otherwise the ones whose
+ *  link target it is, with or without [[ ]] (a missing page, or a broken source's file, once per
+ *  page citing it). */
+export function findIssues<I extends { text: string; name?: string }>(items: I[], given: string, named: boolean): I[] {
+  const g = given.trim();
+  if (!g) return [];
+  const exact = items.find((i) => i.text === g) ?? items.find((i) => g.startsWith(i.text.trimEnd()));
+  if (exact) return [exact];
+  if (!named) return [];
+  const linked = /^\[\[([^\]|#]+)/.exec(g)?.[1] ?? g;
+  const key = linked.trim().toLowerCase();
+  return items.filter((i) => i.name?.trim().toLowerCase() === key);
+}
+
 /** health_issue: the buttons an issue has of its own on Wiki health. */
 async function healthIssue(a: Args): Promise<string> {
   const r = (await api.healthReport(true)).report;
@@ -3478,16 +3500,26 @@ async function healthIssue(a: Args): Promise<string> {
     told("brought index.md's catalogue up to date");
     return `${said.charAt(0).toUpperCase()}${said.slice(1)}.`;
   }
-  const want = {
-    create: "missing-pages",
-    link_to: str(a, "item")?.includes(" not found") ? "broken-sources" : "missing-pages",
-    not_duplicates: "duplicates",
-    move_to_trash: "unreferenced-images",
+  const wants = {
+    create: ["missing-pages"],
+    // A missing page first: it has every page linking there, a broken source's own page among them.
+    link_to: ["missing-pages", "broken-sources"],
+    not_duplicates: ["duplicates"],
+    move_to_trash: ["unreferenced-images"],
   }[action ?? ""];
-  if (!want) throw new Error("action is create, link_to, not_duplicates, move_to_trash or add_to_index.");
-  const c = r.checks.find((x) => x.id === want);
-  const i = c?.items.find((x) => x.text === text);
-  if (!c || !i) return `That isn't an issue under ${c?.title ?? want}: give its text as lint gives it.`;
+  if (!wants) throw new Error("action is create, link_to, not_duplicates, move_to_trash or add_to_index.");
+  const named = action === "create" || action === "link_to";
+  const found = wants
+    .map((id) => r.checks.find((x) => x.id === id))
+    .map((c) => ({ c, is: c ? findIssues(c.items, text, named) : [] }))
+    .find((f) => f.is.length);
+  const c = found?.c;
+  const is = found?.is ?? [];
+  const i = is[0];
+  if (!c || !i) {
+    const title = r.checks.find((x) => x.id === wants[0])?.title ?? wants[0];
+    return `That isn't an issue under ${title}: give its text as lint gives it${named ? ", or the missing page's name" : ""}.`;
+  }
   if (action === "create") {
     // A file in the Trash isn't a page to write: the screen offers Restore or Link to it instead of Create.
     const g = (await ghostsOf(r)).get(`${c.id}:${i.text}`);
@@ -3503,8 +3535,9 @@ async function healthIssue(a: Args): Promise<string> {
     if (!to) throw new Error("Give to: the page the links should point at.");
     const [target] = await api.linksResolve([to]);
     if (!target) return `There's no page called ${to}.`;
-    // A broken source is on its one page; a missing page's links are on every page using it.
-    const pages = c.id === "broken-sources" && i.page ? [i.page] : (i.pages ?? []);
+    // A broken source is on its one page (on each of them, named by the file it cites); a
+    // missing page's links are on every page using it.
+    const pages = c.id === "broken-sources" ? [...new Set(is.flatMap((x) => (x.page ? [x.page] : [])))] : (i.pages ?? []);
     const n = await api.healthLinkGhost(i.name!, target, pages, a.unattended === true);
     noted(`pointed the links to ${i.name} at ${pageName(target)}`);
     return `Pointed the links to ${i.name} at ${pageName(target)} in ${n} page${n === 1 ? "" : "s"}, each a change in Changes, where the user can revert it.`;
@@ -3566,10 +3599,21 @@ async function contradictionsTool(a: Args, r: McpRequest): Promise<string> {
   if (l.failed) head.push(` ${l.failed === 1 ? "1 fix" : `${l.failed} fixes`} not made: ${l.failures.join("; ")}.`);
   // Every finding, in the screen's order (real ones by severity, then unclear, then the settled);
   // the ones to decide are a real contradiction or an unclear one, not yet resolved or ignored.
-  const settled = new Set(["compatible", "evolution", "resolved", "ignored"]);
-  const shown = contradictionsOrder(rep.items);
-  const toDecide = shown.filter((i) => !i.verdict || !settled.has(i.verdict.verdict)).length;
+  // status picks the screen's groups (groupOf): to_decide is the first two.
+  const status = str(a, "status") ?? "all";
+  const groups: Record<string, ContradictionGroup[]> = {
+    all: ["contradiction", "unclear", "settled"],
+    to_decide: ["contradiction", "unclear"],
+    contradiction: ["contradiction"],
+    unclear: ["unclear"],
+    settled: ["settled"],
+  };
+  const want = groups[status];
+  if (!want) throw new Error(`status is ${Object.keys(groups).join(", ")}.`);
+  const ordered = contradictionsOrder(rep.items);
+  const toDecide = ordered.filter((i) => groupOf(i) !== "settled").length;
   const left = rep.items.length - toDecide;
+  const shown = ordered.filter((i) => want.includes(groupOf(i)));
   const page = pagedRows(
     a,
     shown,
@@ -3579,7 +3623,9 @@ async function contradictionsTool(a: Args, r: McpRequest): Promise<string> {
   );
   if (rep.items.length) {
     head.push(` ${toDecide} to decide${left ? `; ${left} not a conflict, newer superseding older, resolved or ignored` : ""}.`);
-    if (shown.length) head.push(` ${page.head}.`);
+    const only = status === "all" ? "" : `Only ${status === "to_decide" ? "those to decide" : status}: `;
+    if (shown.length) head.push(` ${only}${page.head}.`);
+    else if (only) head.push(` ${only}none.`);
   }
   // The judge's fix, and its change in Changes (the check makes or holds it, as the screen's The fix
   // is in Changes says): found by the finding's id, which the change's origin carries.

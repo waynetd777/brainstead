@@ -1085,6 +1085,84 @@ describe("MCP actions", () => {
       expect(calls.find(([c]) => c === "health_ignore")![1]).toEqual({ check: "orphans", text: "Lena" });
     });
 
+    it("finds link_to's issue by its link target, or by lint's line with the Trash note after it", async () => {
+      const missing = "[[Orbit Beta]]  — linked from 2 wiki page(s)";
+      answers.health_report = () => ({
+        report: {
+          checks: [
+            {
+              id: "missing-pages",
+              title: "Missing pages",
+              classic: true,
+              items: [{ text: missing, name: "Orbit Beta", pages: ["wiki/entities/Acme.md", "wiki/entities/Maya.md"], safe: false }],
+            },
+            {
+              id: "broken-sources",
+              title: "Broken sources",
+              classic: true,
+              items: [
+                {
+                  text: "wiki/entities/Lena.md: [[Kickoff notes]] not found",
+                  page: "wiki/entities/Lena.md",
+                  name: "Kickoff notes",
+                  safe: false,
+                },
+                {
+                  text: "wiki/entities/Acme.md: [[Kickoff notes]] not found",
+                  page: "wiki/entities/Acme.md",
+                  name: "Kickoff notes",
+                  safe: false,
+                },
+              ],
+            },
+          ],
+        },
+        history: [],
+        ranAt: null,
+      });
+      answers.trash_list = () => [
+        {
+          id: "t9",
+          originalRel: "wiki/entities/Orbit Beta.md",
+          basename: "Orbit Beta.md",
+          layer: "wiki",
+          deletedAt: "2026-11-02T09:00",
+          sizeBytes: 10,
+        },
+      ];
+      answers.links_resolve = () => ["wiki/entities/Orbit App.md"];
+      answers.health_link_ghost = (x) => (x!.pages as string[]).length;
+      // The line as lint gives it for a page in the Trash, what's after the issue's text included.
+      const line = ((await run("health.lint")) as string)
+        .split("\n")
+        .find((l) => l.includes("[[Orbit Beta]]"))!
+        .slice(2);
+      expect(line).toMatch(/^\[\[Orbit Beta\]\] {2}— linked from 2 wiki page\(s\) \(in the Trash since 2026-11-02/);
+      const linked = () => calls.filter(([c]) => c === "health_link_ghost").at(-1)![1];
+      for (const item of [line, "[[Orbit Beta]]", "Orbit Beta", "orbit beta", missing]) {
+        expect(await run("health.issue", { action: "link_to", item, to: "Orbit App" })).toMatch(/in 2 pages, each a change/);
+        expect(linked()).toMatchObject({ target: "Orbit Beta", pages: ["wiki/entities/Acme.md", "wiki/entities/Maya.md"] });
+      }
+      // A broken source by the file it cites: every page citing it; by its line, that page alone.
+      await run("health.issue", { action: "link_to", item: "[[Kickoff notes]]", to: "Orbit App" });
+      expect(linked()).toMatchObject({ target: "Kickoff notes", pages: ["wiki/entities/Lena.md", "wiki/entities/Acme.md"] });
+      await run("health.issue", { action: "link_to", item: "wiki/entities/Acme.md: [[Kickoff notes]] not found", to: "Orbit App" });
+      expect(linked()).toMatchObject({ target: "Kickoff notes", pages: ["wiki/entities/Acme.md"] });
+      expect(await run("health.issue", { action: "link_to", item: "Orbit Gamma", to: "Orbit App" })).toMatch(
+        /isn't an issue under Missing pages: give its text as lint gives it, or the missing page's name/,
+      );
+    });
+
+    it("refuses Show again without a check, saying which checks have ignored issues", async () => {
+      await expect(run("health.ignore", { show_again: true })).rejects.toThrow(
+        /one check at a time: give its id as check\. Ignored now: orphans 2\./,
+      );
+      expect(calls.some(([c]) => c === "health_unignore")).toBe(false);
+      answers.health_unignore = () => 2;
+      expect(await run("health.ignore", { show_again: true, check: "orphans" })).toMatch(/^2 ignored issues are listed again/);
+      expect(calls.find(([c]) => c === "health_unignore")![1]).toEqual({ check: "orphans" });
+    });
+
     it("tells Reshape pages and Write Current state when nobody's watching", async () => {
       answers.health_reshape = () => ({ run: "r", applied: 0, failed: [], left: 0 });
       answers.current_state_start = () => true;
@@ -1103,6 +1181,36 @@ describe("MCP actions", () => {
       await run("health.current_state", { unattended: true });
       expect(calls.find(([c]) => c === "health_reshape")![1]).toEqual({ pages: null, unattended: true });
       expect(calls.find(([c]) => c === "current_state_start")![1]).toEqual({ pages: null, limit: null, unattended: true });
+    });
+
+    it("lists only the contradictions to decide, the screen's first two groups, with status", async () => {
+      const item = (id: string, subject: string, verdict: string | null) => ({
+        id,
+        subject,
+        attribute: "role",
+        claims: [],
+        verdict: verdict
+          ? { id, verdict, severity: verdict === "contradiction" ? "high" : "", summary: "", correct: "", fix: "", patch: null, judged: "" }
+          : null,
+      });
+      answers.contradictions_report = () => ({
+        last: { finished: "2026-10-05T10:05", running: false, failures: [], pages: 3, claims: 9, clashes: 4, contradictions: 1 },
+        items: [
+          item("c1", "Acme", "compatible"),
+          item("c2", "Lena", "unclear"),
+          item("c3", "Maya", "contradiction"),
+          item("c4", "Orbit App", "resolved"),
+          item("c5", "Kai", null),
+        ],
+      });
+      const ids = (out: string) => [...out.matchAll(/\(id (c\d)\)/g)].map((m) => m[1]);
+      expect(ids((await run("contradictions")) as string)).toEqual(["c3", "c5", "c2", "c1", "c4"]);
+      const open = (await run("contradictions", { status: "to_decide" })) as string;
+      expect(open).toMatch(/ 3 to decide; 2 not a conflict[^.]*\. Only those to decide: 3 findings\./);
+      expect(ids(open)).toEqual(["c3", "c5", "c2"]);
+      expect(ids((await run("contradictions", { status: "unclear" })) as string)).toEqual(["c5", "c2"]);
+      expect(ids((await run("contradictions", { status: "settled" })) as string)).toEqual(["c1", "c4"]);
+      await expect(run("contradictions", { status: "open" })).rejects.toThrow(/status is all, to_decide/);
     });
 
     it("lists contradictions, marks one and saves the report through Changes", async () => {

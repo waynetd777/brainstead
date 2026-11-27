@@ -45,13 +45,23 @@ export function verdictLabel(it: ContradictionItem): [string, string] {
   }
 }
 
+/** The list's three groups: real contradictions, unclear ones (or not judged yet), and the settled
+ *  (not a conflict, newer superseding older, resolved or ignored). The first two are to decide. */
+export type ContradictionGroup = "contradiction" | "unclear" | "settled";
+
+export function groupOf(it: ContradictionItem): ContradictionGroup {
+  const v = it.verdict?.verdict;
+  if (v === "contradiction") return "contradiction";
+  if (v === "unclear" || !v) return "unclear";
+  return "settled";
+}
+
 /** Open first: real contradictions by severity, then unclear, then the rest. */
 export function order(items: ContradictionItem[]): ContradictionItem[] {
   const rank = (it: ContradictionItem) => {
-    const v = it.verdict?.verdict;
-    if (v === "contradiction") return { high: 0, medium: 1, low: 2 }[it.verdict?.severity ?? ""] ?? 2;
-    if (v === "unclear" || !v) return 3;
-    return 4;
+    const g = groupOf(it);
+    if (g === "contradiction") return { high: 0, medium: 1, low: 2 }[it.verdict?.severity ?? ""] ?? 2;
+    return g === "unclear" ? 3 : 4;
   };
   return [...items].sort((a, b) => rank(a) - rank(b) || a.subject.localeCompare(b.subject));
 }

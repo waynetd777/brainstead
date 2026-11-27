@@ -40,7 +40,7 @@ Safe fixes don't turn anything amber: in the [Wiki](app:wiki) list a page with o
 - **Orphan pages**: `index.md`'s catalogue links every wiki page, so an orphan is one it hasn't caught up with yet (the daily check does). **Add them to index.md** brings it up to date now. An initiative is never an orphan: you reach it from the Inbox, the brief and the Wiki's initiative filter, not by links.
 - **Pages whose properties don't read**: the row says where the YAML goes wrong. The common slips (a colon in a plain value, which needs quotes, or a list item put among a long item's lines) are safe fixes: **Fix** repairs just those lines, and an ingest repairs them itself before it adds its source. Anything else, open the page and fix its properties; the issue leaves the list once they read.
 - **Possible duplicates**: **Open the other** compares them; **Not duplicates** stops the pair being flagged.
-- **Anything else** (a stale page, a broken source…): **Ignore** hides it until its page (or, for a claim, its line) changes; **Show again** lists ignored ones again. Stale pages and claims with no citation also have **Ignore all**, at the top of their list.
+- **Anything else** (a stale page, a broken source…): **Ignore** hides it until its page (or, for a claim, its line) changes; **Show again** lists a check's ignored ones again (one check at a time). Stale pages and claims with no citation also have **Ignore all**, at the top of their list.
 
 A fixed issue leaves the list as soon as its fix is made, and the checks rerun within a second of any change to the vault, wherever it was made (Changes, Ask, another editor).
 - **Images nothing uses**: **Move to the Trash**, after asking; you can restore them.

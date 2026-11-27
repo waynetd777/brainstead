@@ -24,7 +24,7 @@ These happen at once with no `⌘Z`, and only when you ask:
 - The Weekly review's **Start over**. Its progress and notes go; what it changed in the vault stays.
 - Moving over ([Settings › General](app:settings/general)): ticking items, and **Retire them** once **The other app is stopped** is ticked. The other app's skills and scripts go to the Trash, where you can restore them.
 - Going through the Weekly review, and marking a [contradiction](app:contradictions) resolved or ignored.
-- Wiki health's **Ignore**, **Ignore all** and **Show again**.
+- Wiki health's **Ignore**, **Ignore all** and **Show again**. Show again is one check at a time, as its button is: asked for every check at once, the assistant is told which checks have ignored issues and how many, and nothing comes back.
 - Putting a drafted reply in Outlook or Teams, as **Put in Outlook** and **Put in Teams** do, for you to send. Never in a session nobody is watching.
 - **Update…** on an Inbox item, a task or a project: the line you give is applied in the background, and each change it makes is in [Changes](app:review). Not in a session nobody is watching.
 - Sync ([Settings › Sync](app:settings/sync)): switching Teams, Outlook mail or Slack on or off, **Sync now** and **Fetch again**, choosing channels and changing the skip lists; and pulling a topic's chats, mail and transcripts into Sources to read.
@@ -43,7 +43,7 @@ These are made at once too. Each is listed in [Changes](app:review), where you c
 - Images: add one to the vault's `images/` folder, as pasting it into a note does, for a note it writes to embed. It's never held, and **Revert** moves it to Brainstead's Trash.
 - Wiki health's safe fixes. Each page fixed is a change of its own, with `updated:` set to today. Putting a system note's header back is held for you to accept.
 - Fix a name everywhere, with the same choices as its screen. Each file is a change, and they're made, or held, together. The correction is remembered once the files are changed.
-- **Add the example notes**, Doc check's **Save as note** and **Start the register**, a saved Contradictions report, and Wiki health's **Reshape pages**, **Link to…** and **Link to it**.
+- **Add the example notes**, Doc check's **Save as note** and **Start the register**, a saved Contradictions report, and Wiki health's **Reshape pages**, **Link to…** and **Link to it** (an assistant can name the missing page or file, not only the issue's whole line).
 
 A quote that isn't in its source is flagged, once.
 
