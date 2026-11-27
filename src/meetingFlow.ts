@@ -33,8 +33,16 @@ export const specOk = (s: NoteSpec) => !!s.name.trim() && /^\d{4}-\d{2}-\d{2}$/.
 /** A Teams meeting transcript, as the extension names it, in sources/ or a folder in it. */
 export const isTranscriptPath = (p: string) => /^sources\/(?:.+\/)?Teams\. Transcript\./.test(p);
 
-/** Brainstead is sure what note it becomes: nothing to ask, so it can go in one step. */
-export const sureOf = (t: Transcript) => t.inferred.confident && !t.inferred.dateCheck && !t.inferred.exists && specOk(specOf(t));
+/** Brainstead is sure what note it becomes: nothing to ask, so it can go in one step. A note there
+ *  already is no question: the note is written into it, keeping what's there (D-20261127-09). */
+export const sureOf = (t: Transcript) =>
+  (t.inferred.confident || (t.inferred.exists && t.inferred.ask.every((a) => / exists already: /.test(a)))) &&
+  !t.inferred.dateCheck &&
+  !(t.inferred.exists && t.noteIngested) &&
+  specOk(specOf(t));
+
+/** Its note is made and ingested already: only the transcript is left, to move to the Trash. */
+export const onlyTranscriptLeft = (t: Transcript) => t.inferred.exists && !!t.noteIngested && !t.inferred.dateCheck;
 
 /** Whether a finished meeting run made its note, rather than holding it in Changes (its last step says which). */
 export function meetingNoteMade(r: IngestRun): boolean {
@@ -125,6 +133,7 @@ const starting = new Set<string>();
  *  (D-20261118-05): a sure one is written and ingested with nobody asked (unattended for a synced
  *  one), an unsure one just waits in the Inbox, without opening the meeting screen. */
 export async function makeMeetingNotes(paths: string[], auto?: { unattended: boolean }) {
+  if (!paths.length) return;
   const fresh = [...new Set(paths)].filter((p) => !starting.has(p));
   if (!fresh.length) return;
   fresh.forEach((p) => starting.add(p));
@@ -132,7 +141,17 @@ export async function makeMeetingNotes(paths: string[], auto?: { unattended: boo
     const all = await api.meetingTranscripts();
     const asked = fresh.map((p) => all.find((t) => t.path === p)).filter((t): t is Transcript => !!t);
     const sure = asked.filter(sureOf);
-    const unsure = asked.filter((t) => !sureOf(t));
+    // Automatically, a transcript whose note is made and ingested already just goes to the Trash.
+    const left = auto ? asked.filter(onlyTranscriptLeft) : [];
+    for (const t of left) {
+      const by: TrashBy = {
+        origin: { kind: "meeting", label: "Meeting notes", ...(auto?.unattended ? { trigger: "scheduled" } : {}) },
+        reason: "Its meeting note is made and ingested already.",
+      };
+      await trashTranscript(t.path, noteFile(specOf(t)), by).catch(() => undefined);
+      starting.delete(t.path);
+    }
+    const unsure = asked.filter((t) => !sureOf(t) && !left.includes(t));
     // Only the sure ones run now; the rest can be pressed again once the meeting screen has asked.
     fresh.filter((p) => !sure.some((t) => t.path === p)).forEach((p) => starting.delete(p));
     if (sure.length) {
@@ -162,6 +181,17 @@ export async function makeMeetingNotes(paths: string[], auto?: { unattended: boo
     fresh.forEach((p) => starting.delete(p));
     reportEditError(e);
   }
+}
+
+/** The daily check's catch-up, with Ingest new sources as they arrive on: every transcript still to
+ *  do (one that came while Brainstead was closed, say) gets the same automatic go as one arriving. */
+export async function catchUpMeetingNotes() {
+  if (!settings.get().ingestOnArrival) return;
+  const all = await api.meetingTranscripts().catch(() => []);
+  await makeMeetingNotes(
+    all.filter((t) => !t.done).map((t) => t.path),
+    { unattended: true },
+  );
 }
 
 function finish(transcript: string, r: Result) {

@@ -20,7 +20,7 @@ import { applyScene, parseScene } from "./scene";
 import { recheckPermissions, startStatus } from "./state";
 import { applyReadSize, installFlushers, settings } from "./store";
 import { startMoves } from "./moves";
-import { isTranscriptPath, makeMeetingNotes } from "./meetingFlow";
+import { catchUpMeetingNotes, isTranscriptPath, makeMeetingNotes } from "./meetingFlow";
 import { loadFeatures } from "./features";
 import { applyPlatform, blockBrowserKeys } from "./platform";
 import { applyInterfaceSize } from "./interfaceSize";
@@ -97,6 +97,19 @@ async function start() {
   // window, as every other ingest is: its setting is the live one, and one window starts the runs.
   void api.onSyncReplied((paths) => {
     if (settings.get().ingestOnArrival && paths.length) ingest(paths, true);
+  });
+  // The daily check ended: transcripts still waiting get their meeting notes, as on arrival.
+  let lastCheck: string | null | undefined;
+  void api.dailyCheckStatus().then(
+    (s) => (lastCheck ??= s.lastRun),
+    () => undefined,
+  );
+  void api.onDailyCheckChanged(() => {
+    void api.dailyCheckStatus().then((s) => {
+      if (s.running) return;
+      if (lastCheck !== undefined && s.lastRun && s.lastRun !== lastCheck) void catchUpMeetingNotes();
+      lastCheck = s.lastRun;
+    });
   });
   // A capture from the Outlook or Teams extension (src-tauri/src/nativehost.rs).
   void api.onCapture((c) => {

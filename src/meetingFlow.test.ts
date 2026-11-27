@@ -42,6 +42,7 @@ import {
   makeMeetingNotes,
   meetingRunEnded,
   resumeMeetingNotes,
+  onlyTranscriptLeft,
   sureOf,
   trashTranscript,
 } from "./meetingFlow";
@@ -107,11 +108,40 @@ beforeEach(() => {
 });
 
 describe("sure of a transcript", () => {
-  it("is when its name gives the type, name and date, and there's no note yet", () => {
+  it("is when its name gives the type, name and date, a note there already being no question", () => {
     expect(sureOf(transcript(MAYA))).toBe(true);
     expect(sureOf(transcript(MAYA, { dateCheck: true }))).toBe(false);
-    expect(sureOf(transcript(MAYA, { exists: true }))).toBe(false);
+    // A note there already is written into: only its own "exists already" line asked.
+    const there = transcript(MAYA, { exists: true, confident: false, ask: ["1-1. Maya - 2026-10-01.md exists already: open it."] });
+    expect(sureOf(there)).toBe(true);
+    expect(sureOf({ ...there, noteIngested: true })).toBe(false);
+    expect(onlyTranscriptLeft({ ...there, noteIngested: true })).toBe(true);
+    expect(sureOf(transcript(MAYA, { exists: true, confident: false, ask: ["x exists already: open it.", "Which Maya?"] }))).toBe(false);
     expect(sureOf(transcript(MAYA, { confident: false, ask: ["Which Maya?"] }))).toBe(false);
+  });
+});
+
+const LENA = "sources/Teams. Transcript. 11 Maya, Lena - 2026-10-01-2.md";
+const RETRO = "sources/Teams. Transcript. Orbit App retro - 2026-10-02.md";
+
+describe("automatically", () => {
+  it("writes into a note there already, and trashes a transcript whose note is done", async () => {
+    const into = { ...transcript(LENA, { exists: true, confident: false, ask: ["1-1. Maya - 2026-10-01.md exists already: open it."] }) };
+    const done = {
+      ...transcript(RETRO, { type: "Meeting", name: "Orbit App steerco", date: "2026-10-02", exists: true }),
+      noteIngested: true,
+    };
+    meetingTranscripts.mockResolvedValue([into, done]);
+    meetingDraft.mockResolvedValue(["m1"]);
+    docRead.mockResolvedValue({ content: "", meta: { backlinks: [] } });
+    changeSubmit.mockResolvedValue({ id: "c1", applied: true, page: RETRO, flags: [], message: "" });
+    await makeMeetingNotes([LENA, RETRO], { unattended: true });
+    expect(meetingDraft).toHaveBeenCalledWith([[LENA, { type: "1-1", name: "Maya", date: "2026-10-01" }]], true);
+    expect(changeSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ page: RETRO, kind: "trash", origin: expect.objectContaining({ trigger: "scheduled" }) }),
+    );
+    // Nothing opened for the user to check.
+    expect(place.get().place).not.toMatchObject({ screen: "meeting" });
   });
 });
 
