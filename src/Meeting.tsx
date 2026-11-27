@@ -94,9 +94,9 @@ export function cardFor(
           actions: ["trash", "openNote"],
         }
       : {
-          say: `${noteFile(spec)} exists already. Ingest it as it is, or change the name or date above for a new note.`,
+          say: `${noteFile(spec)} exists already. Make the note writes it from the transcript into that note, keeping what's there under it; or ingest it as it is.`,
           tone: "warn",
-          actions: ["ingestNote", "trash", "openNote"],
+          actions: ["make", "ingestNote", "trash", "openNote"],
         };
   if (t.done === "ingested")
     return {
@@ -205,7 +205,7 @@ export function MeetingScreen() {
     [allRuns, sending],
   );
   const batch = useMemo(
-    () => (list ?? []).filter((t) => picked.has(t.path) && !drafting.has(t.path) && !noteExists(t, edits[t.path])),
+    () => (list ?? []).filter((t) => picked.has(t.path) && !drafting.has(t.path) && !(noteExists(t, edits[t.path]) && t.noteIngested)),
     [list, picked, drafting, edits],
   );
   // Make all asks once for the dates of the ticked transcripts, rather than a Confirm on each.

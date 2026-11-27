@@ -318,6 +318,75 @@ pub fn note_from_answer(answer: &str) -> Result<String, String> {
     Ok(format!("{body}\n"))
 }
 
+/// The note written from a transcript, with the note that was there already merged into it, so
+/// nothing of either is lost: the existing note's properties and opening text; under a heading
+/// both have, a list's items together (the existing note's first, none twice) and other text
+/// with the existing note's under "### Your notes" after it; the existing note's other sections
+/// at the end. Every line of the existing note is kept as it was and in its order (but for an
+/// empty `- ` bullet a list's items replace), so the merge only adds to it.
+pub fn merged(written: &str, existing: &str) -> String {
+    fn sections(body: &str) -> (String, Vec<(String, String)>) {
+        let mut pre = String::new();
+        let mut out: Vec<(String, String)> = Vec::new();
+        for line in body.split_inclusive('\n') {
+            if let Some(h) = line.strip_prefix("## ") {
+                out.push((h.trim().to_string(), String::new()));
+            } else if let Some((_, b)) = out.last_mut() {
+                b.push_str(line);
+            } else {
+                pre.push_str(line);
+            }
+        }
+        (pre, out)
+    }
+    let is_list = |b: &str| b.lines().all(|l| l.trim().is_empty() || l.trim_start().starts_with("- ") || l.trim() == "-");
+    let items = |b: &str| b.lines().filter(|l| !l.trim().is_empty() && l.trim() != "-").map(str::to_string).collect::<Vec<_>>();
+    let wfm = crate::frontmatter::split(written);
+    let efm = crate::frontmatter::split(existing);
+    let (props, _) = if efm.body_start > 0 { existing.split_at(efm.body_start) } else { written.split_at(wfm.body_start) };
+    let (wpre, wsecs) = sections(&written[wfm.body_start..]);
+    let (epre, esecs) = sections(&existing[efm.body_start..]);
+    let mut out = props.to_string();
+    out.push_str(if epre.trim().is_empty() { &wpre } else { &epre });
+    let mut used = vec![false; esecs.len()];
+    for (h, wb) in &wsecs {
+        out.push_str(&format!("## {h}\n"));
+        let at = esecs.iter().position(|(eh, _)| eh.eq_ignore_ascii_case(h));
+        match at {
+            None => out.push_str(wb),
+            Some(k) => {
+                used[k] = true;
+                let eb = &esecs[k].1;
+                if eb.trim().is_empty() || eb.trim() == "-" {
+                    out.push_str(wb);
+                } else if wb.trim().is_empty() {
+                    out.push_str(eb);
+                } else if is_list(eb) && is_list(wb) {
+                    let mut all = items(eb);
+                    for l in items(wb) {
+                        if !all.iter().any(|a| a.trim() == l.trim()) {
+                            all.push(l);
+                        }
+                    }
+                    out.push_str(&format!("{}\n\n", all.join("\n")));
+                } else {
+                    out.push_str(&format!("{}\n\n### Your notes\n{}", wb.trim_end(), eb.trim_start_matches('\n')));
+                    if !out.ends_with('\n') {
+                        out.push('\n');
+                    }
+                }
+            }
+        }
+    }
+    for ((h, b), u) in esecs.iter().zip(used) {
+        if !u {
+            out.push_str(&format!("## {h}\n{b}"));
+        }
+    }
+    let t = out.trim_end().to_string();
+    format!("{t}\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,5 +522,18 @@ mod tests {
             assert!(note_from_answer(&fence).is_err());
             let _ = note_from_answer(&format!("{fence}\n# Meeting notes for the steerco"));
         }
+    }
+
+    #[test]
+    fn a_written_note_takes_in_the_one_there_already() {
+        let existing = "---\ncreated-by: assistant\n---\n## Attendees\n- Maya, Lena\n\n## Tags\n- #orbit\n\n## Actions\n- \n\n## Notes\nThursday, 15:00. Related: [[Orbit App]].\n\n### Talking points\n1. \"Thank you for the funding.\"\n\n## Prep\nRead the pack.\n";
+        let written = "## Attendees\n- [[Maya]]\n- Lena\n\n## Tags\n- \n\n## Actions\n- Lena to send the slides\n\n## Notes\n### Summary\n- The build starts on 11 January.\n";
+        let m = merged(written, existing);
+        assert_eq!(
+            m,
+            "---\ncreated-by: assistant\n---\n## Attendees\n- Maya, Lena\n- [[Maya]]\n- Lena\n\n## Tags\n- #orbit\n\n## Actions\n- Lena to send the slides\n\n## Notes\n### Summary\n- The build starts on 11 January.\n\n### Your notes\nThursday, 15:00. Related: [[Orbit App]].\n\n### Talking points\n1. \"Thank you for the funding.\"\n\n## Prep\nRead the pack.\n"
+        );
+        // It only adds to the note there: nothing of it is taken out or changed.
+        assert!(!crate::ingest::removes_text(existing, &m));
     }
 }

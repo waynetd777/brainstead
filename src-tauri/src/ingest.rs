@@ -1106,7 +1106,7 @@ pub async fn meeting_transcripts(app: AppHandle) -> Res<Vec<Transcript>> {
 #[tauri::command]
 pub fn meeting_draft(app: AppHandle, items: Vec<(String, NoteSpec)>, unattended: Option<bool>) -> Res<Vec<String>> {
     let trigger = unattended.unwrap_or(false).then(|| "scheduled".to_string());
-    let root = root(&app)?;
+    root(&app)?;
     let model = crate::ask::job_model(&app, "meeting", trigger.is_some());
     let mut runs = Vec::new();
     // A note already being drafted from a transcript isn't drafted twice.
@@ -1128,9 +1128,7 @@ pub fn meeting_draft(app: AppHandle, items: Vec<(String, NoteSpec)>, unattended:
         if spec.name.trim().is_empty() || f.contains(['/', '\\', ':']) {
             bad("Give the note a name.")?;
         }
-        if root.join(&f).exists() {
-            bad(&format!("{f} exists already: fill it in by hand, or change the name or date."))?;
-        }
+        // A note there already isn't refused: the note written is merged with it (meeting::merged).
         let r = Run {
             id: proposals::new_id(),
             kind: "meeting".into(),
@@ -1214,14 +1212,26 @@ fn meeting_steps(app: &AppHandle, r: &mut Run, stopped: &dyn Fn(&Run) -> bool) -
             run: Some(r.id.clone()),
             trigger: r.trigger.clone(),
         };
-        let mut s = crate::changes::Submit::new(
-            &filename,
-            proposals::Kind::New,
-            &format!("New note: {}", filename.trim_end_matches(".md")),
-            &format!("From {}.", r.source),
-            origin,
-            brainstead_core::changes::Instruction::Page { content: note },
-        );
+        // A note there already (the user's prep, say) is merged in, with all its text kept.
+        let existing = std::fs::read_to_string(root.join(&filename)).ok();
+        let mut s = match existing {
+            Some(before) => crate::changes::Submit::new(
+                &filename,
+                proposals::Kind::Edit,
+                &format!("Meeting note written into {}", filename.trim_end_matches(".md")),
+                &format!("From {}, with the note that was there kept under it.", r.source),
+                origin,
+                brainstead_core::changes::from_texts(Some(&before), &brainstead_core::meeting::merged(&note, &before)),
+            ),
+            None => crate::changes::Submit::new(
+                &filename,
+                proposals::Kind::New,
+                &format!("New note: {}", filename.trim_end_matches(".md")),
+                &format!("From {}.", r.source),
+                origin,
+                brainstead_core::changes::Instruction::Page { content: note },
+            ),
+        };
         s.model = Some(model.clone());
         let o = crate::changes::submit(app, s).map_err(|e| e.message().to_string())?;
         r.proposals.push(o.id);

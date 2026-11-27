@@ -43,7 +43,7 @@ The card always says where a transcript is and leads with the step that's left, 
 - **Held in Changes**: the note isn't in the vault yet. **Open Changes** to accept it.
 - **Making the note failed** (with why): **Try again**, or **Move the transcript to the Trash**.
 - **The note was made, but its ingest failed**: **Ingest the note again**, **Move the transcript to the Trash** or **Open the note**.
-- **The note exists already**: **Ingest the existing note** (no new note), **Move the transcript to the Trash** or **Open the note**. If it's ingested already, only the transcript is left: **Move the transcript to the Trash**. Change the name or date for a new note instead.
+- **The note exists already** (your prep notes, say): **Make the note** writes it from the transcript into that note, with what you wrote kept under it: your properties and opening text stay, a list such as Attendees gets the new items after yours, and your notes go under **Your notes** after the summary. Nothing of yours is taken out or reordered. Or **Ingest the existing note** (no new note), **Move the transcript to the Trash** or **Open the note**. If it's ingested already, only the transcript is left: **Move the transcript to the Trash**. Change the name or date for a new note instead.
 - **The transcript was ingested itself, or a note links to it** (under **All**): **Move the transcript to the Trash**, or make a note anyway.
 - **Read-only is on**: **Open Settings › Vault** to turn it off.
 
@@ -54,7 +54,7 @@ Turn either step off in [Settings › AI assistants](app:settings/assistants), u
 
 A note held in Changes isn't in the vault yet, so the offer comes when you (or an assistant) accept it there. A note is held when a scheduled run's note failed a check, or when it adds or changes code that runs, such as a `dataviewjs` block.
 
-An assistant can list the transcripts as **Show** does and draft a note of any of the four types when you ask. Like **Make the note**, it needs a name and a date (the transcript's topic and today's date don't count), and won't draft a note that exists already or is being drafted; for a note that exists already it can do **Ingest the existing note** instead. A note drafted by an assistant nobody is watching is ingested the same way, with changes that fail a check held for you.
+An assistant can list the transcripts as **Show** does and draft a note of any of the four types when you ask. Like **Make the note**, it needs a name and a date (the transcript's topic and today's date don't count), and won't draft a note that's being drafted. A note that exists already is written into, keeping what's there, as **Make the note** does; it can do **Ingest the existing note** instead. A note drafted by an assistant nobody is watching is ingested the same way, with changes that fail a check held for you.
 
 ## Resize the panes
 Drag the line beside the meeting list, or beside the right-hand pane, to resize them; a double-click on it puts it back ([pane widths](help:settings-general)).

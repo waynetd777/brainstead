@@ -82,9 +82,9 @@ describe("the Meeting notes card", () => {
     expect(first(cardFor(ok, {}, { progress: { label: "Ingest failed", busy: false } }))).toBe("ingestNote");
   });
 
-  it("with its note there already: ingest it, or only the transcript is left", () => {
+  it("with its note there already: write into it, or only the transcript is left", () => {
     const there = { ...ok, inferred: { ...ok.inferred, exists: true } };
-    expect(first(cardFor(there))).toBe("ingestNote");
+    expect(cardFor(there).actions).toEqual(["make", "ingestNote", "trash", "openNote"]);
     expect(first(cardFor({ ...there, noteIngested: true }))).toBe("trash");
     // A new name makes a new note.
     expect(first(cardFor(there, { name: "Orbit App kickoff" }))).toBe("make");

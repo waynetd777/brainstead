@@ -649,7 +649,8 @@ pub fn removes_text(before: &str, after: &str) -> bool {
     let new: Vec<&str> = a[fa.body_start..].lines().collect();
     similar::capture_diff_slices(similar::Algorithm::Myers, &old, &new)
         .iter()
-        .any(|op| !matches!(op, similar::DiffOp::Equal { .. }) && old[op.old_range()].iter().any(|l| !l.trim().is_empty()))
+        // An empty bullet (a template's `- `) is no text of the user's.
+        .any(|op| !matches!(op, similar::DiffOp::Equal { .. }) && old[op.old_range()].iter().any(|l| !matches!(l.trim(), "" | "-")))
 }
 
 /// The new page's properties and body.

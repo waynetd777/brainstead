@@ -1812,16 +1812,15 @@ async function startRun(a: Args, r: McpRequest): Promise<string> {
         throw new Error(
           `${t.path} needs a name and a date: give name (who the 1-1 was with, or the meeting's name) and date (YYYY-MM-DD) as the user confirms them.`,
         );
-      // As the screen's Draft the note waits: not over a note there already.
-      if (noteExists(t, edits))
-        throw new Error(
-          `${noteFile(spec)} exists already: the user can open it to fill it in, ingest it as it is (ingest_existing), or give another name or date for a new note.`,
-        );
+      // A note there already (the user's prep) is merged with the one written, all its text kept.
+      const into = noteExists(t, edits);
       await draftNotes([[t.path, spec]], unattended);
       noted(`started a meeting note from ${t.path}`);
       const f = followThrough();
       const then = [f.ingest && "ingested", f.trash && "the transcript moved to the Trash"].filter(Boolean).join(" and ");
-      return `Drafting the ${spec.type} note “${spec.name}” for ${spec.date}; it's made in the vault when it's ready (listed in Changes)${then ? `, then ${then}` : ""}.`;
+      return into
+        ? `Writing the ${spec.type} note “${spec.name}” for ${spec.date} into ${noteFile(spec)}, which exists already: the note there is kept, under the one written, when it's ready (listed in Changes)${then ? `, then ${then}` : ""}.`
+        : `Drafting the ${spec.type} note “${spec.name}” for ${spec.date}; it's made in the vault when it's ready (listed in Changes)${then ? `, then ${then}` : ""}.`;
     }
     default:
       throw new Error(
@@ -3336,7 +3335,7 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
     const line = (t: Transcript) =>
       `- ${t.path} · ${t.done ? `done: ${MEETING_DONE[t.done]}` : `looks like ${t.inferred.type ?? "a meeting"} ${t.inferred.name ?? t.inferred.topic ?? ""} ${t.inferred.date ?? ""}${t.inferred.dateCheck ? " (the capture day: check the meeting date)" : ""}`}${
         exists(t)
-          ? ` · note exists: ${exists(t)}${t.noteIngested ? " (ingested already: only the transcript is left, trash_note it if the user agrees)" : " (start_run meeting_note with ingest_existing ingests it as it is)"}`
+          ? ` · note exists: ${exists(t)}${t.noteIngested ? " (ingested already: only the transcript is left, trash_note it if the user agrees)" : " (start_run meeting_note writes the note from the transcript into it, keeping what's there; with ingest_existing it's ingested as it is)"}`
           : ""
       }${drafting(t) ? " · being drafted" : drafted(t) ? " · a note was drafted (see Changes)" : ""}${(t.inferred.ask ?? []).map((q) => `\n  - ${q}`).join("")}`;
     return listed(a, rows, {

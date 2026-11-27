@@ -2854,7 +2854,7 @@ describe("MCP actions", () => {
       await expect(run("meeting.transcripts", { show: "done" })).rejects.toThrow(/show is to_do or all/);
     });
 
-    it("refuses a meeting note that exists or is being drafted, and lists both as the screen marks them", async () => {
+    it("writes into a meeting note that exists, refuses one being drafted, and lists both as the screen marks them", async () => {
       const t = {
         path: "sources/Teams. Transcript. Offsite.vtt",
         done: null,
@@ -2863,9 +2863,15 @@ describe("MCP actions", () => {
       answers.meeting_transcripts = () => [t];
       answers.ingest_runs = () => [];
       const start = { run: "meeting_note", transcript: t.path };
-      await expect(run("run.start", start)).rejects.toThrow(/Meeting\. Offsite - 2026-10-06\.md exists already/);
+      answers.meeting_draft = () => ["m0"];
+      // The note there is written into, keeping what's in it, not refused.
+      expect(await run("run.start", start)).toMatch(
+        /into Meeting\. Offsite - 2026-10-06\.md, which exists already: the note there is kept/,
+      );
+      expect(calls.filter(([c]) => c === "meeting_draft")).toHaveLength(1);
+      calls.length = 0;
       expect(await run("meeting.transcripts")).toBe(
-        "1 transcript to write up:\n- sources/Teams. Transcript. Offsite.vtt · looks like Meeting Offsite 2026-10-06 · note exists: Meeting. Offsite - 2026-10-06.md (start_run meeting_note with ingest_existing ingests it as it is)\n  - Was this the Orbit App offsite?",
+        "1 transcript to write up:\n- sources/Teams. Transcript. Offsite.vtt · looks like Meeting Offsite 2026-10-06 · note exists: Meeting. Offsite - 2026-10-06.md (start_run meeting_note writes the note from the transcript into it, keeping what's there; with ingest_existing it's ingested as it is)\n  - Was this the Orbit App offsite?",
       );
       answers.ingest_runs = () => [{ id: "m1", kind: "meeting", status: "queued", source: t.path }];
       await expect(run("run.start", { ...start, date: "2026-10-07" })).rejects.toThrow(/being drafted from .* already/);
