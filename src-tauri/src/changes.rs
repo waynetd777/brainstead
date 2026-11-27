@@ -11,6 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use brainstead_core::changes::{self, Change, Facts, Instruction, Status, Store};
+use brainstead_core::meeting::kept;
 use brainstead_core::proposals::{self, Kind, Origin, Quote};
 use brainstead_core::{paths, reviews, write};
 use serde::{Deserialize, Serialize};
@@ -406,6 +407,35 @@ pub fn record_trash(app: &AppHandle, page: &str, entry: &str, screen: &str, by: 
     match store().save(&changes::trashed_from_screen(page, entry, screen, by)) {
         Ok(()) => emit_changed(app),
         Err(e) => crate::applog!("recording {page} moved to the Trash: {e}"),
+    }
+}
+
+/// The transcripts the user kept (brainstead_core::meeting::kept), which the daily check's
+/// leftover catch-up leaves alone. Started on first use from what Changes still holds: every
+/// transcript whose move to the Trash was reverted or put back another way.
+pub fn kept_transcripts() -> Vec<String> {
+    let dir = crate::platform::data_dir();
+    if !kept::started(&dir) {
+        let back: Vec<String> = store()
+            .list()
+            .into_iter()
+            .filter(|c| c.status == Status::Reverted && matches!(c.instruction, Instruction::Trash))
+            .map(|c| c.page)
+            .collect();
+        if let Err(e) = kept::add(&dir, &back) {
+            crate::applog!("starting the kept transcripts: {e}");
+        }
+    }
+    kept::load(&dir)
+}
+
+/// Records transcripts as kept (put back from the Trash, kept in Sources): see `kept_transcripts`.
+pub fn keep_transcripts(paths: &[String]) {
+    let dir = crate::platform::data_dir();
+    // Started first, so a first restore doesn't skip the seed from Changes.
+    let _ = kept_transcripts();
+    if let Err(e) = kept::add(&dir, paths) {
+        crate::applog!("recording {paths:?} kept: {e}");
     }
 }
 

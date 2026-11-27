@@ -260,6 +260,18 @@ pub async fn inbox_capture_done(path: String) -> Res<()> {
     writing(move || mark_done(&captures_done_file(), &path)).await
 }
 
+/// Keep in Sources: the capture leaves the Inbox, kept; a transcript kept so is one the daily
+/// check's catch-up never moves to the Trash.
+#[tauri::command]
+pub async fn inbox_capture_kept(path: String) -> Res<()> {
+    writing(move || {
+        mark_done(&captures_done_file(), &path)?;
+        crate::changes::keep_transcripts(std::slice::from_ref(&path));
+        Ok(())
+    })
+    .await
+}
+
 /// An initiative action's line after `edit` (its status, the task it became), without writing it:
 /// the MCP's clarify_inbox sends it as a change, the Inbox writes it with `initiative_action_set`.
 #[tauri::command]

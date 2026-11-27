@@ -202,7 +202,14 @@ describe("the daily check's catch-up", () => {
     expect(trashMove).not.toHaveBeenCalled();
     expect(inboxCaptureDone).not.toHaveBeenCalled();
     expect(toast).not.toHaveBeenCalled();
+    // Kept for good (restored, under any name, or kept in Sources), long after Changes forgot the revert.
     changesList.mockResolvedValue([]);
+    meetingTranscripts.mockResolvedValue([{ ...leftover(), kept: true }]);
+    await catchUpMeetingNotes();
+    expect(changeSubmit).not.toHaveBeenCalled();
+    expect(trashMove).not.toHaveBeenCalled();
+    expect(meetingDraft).not.toHaveBeenCalled();
+    meetingTranscripts.mockResolvedValue([leftover()]);
     settings.update({ meetingTrash: false });
     await catchUpMeetingNotes();
     expect(changeSubmit).not.toHaveBeenCalled();

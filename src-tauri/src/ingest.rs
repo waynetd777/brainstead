@@ -1025,6 +1025,9 @@ pub struct Transcript {
     done: Option<&'static str>,
     /// Its meeting note exists already and a wiki page cites it: nothing left but the transcript.
     note_ingested: bool,
+    /// The user kept it (put it back from the Trash, or kept it in Sources from the Inbox): the
+    /// daily check's catch-up never moves it to the Trash again.
+    kept: bool,
 }
 
 /// A transcript's first few kilobytes (its header lines), or nothing when it can't be read.
@@ -1052,6 +1055,7 @@ pub async fn meeting_transcripts(app: AppHandle) -> Res<Vec<Transcript>> {
         let files: Vec<_> =
             files.into_iter().filter(|f| brainstead_core::meeting::is_transcript(brainstead_core::lint::name_of(&f.path))).collect();
         let paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
+        let kept: std::collections::HashSet<String> = crate::changes::kept_transcripts().into_iter().collect();
         let (ingested, linked) = app.state::<VaultService>().with_index(|ix, _| {
             let ing = ix.ingested(&paths)?;
             let linked = paths.iter().map(|p| ix.linkers(p).map(|l| !l.is_empty())).collect::<Result<Vec<_>, _>>()?;
@@ -1078,7 +1082,8 @@ pub async fn meeting_transcripts(app: AppHandle) -> Res<Vec<Transcript>> {
                 } else {
                     None
                 };
-                Transcript { path: f.path, mtime: f.mtime, inferred, done, note_ingested: false }
+                let kept = kept.contains(&f.path);
+                Transcript { path: f.path, mtime: f.mtime, inferred, done, note_ingested: false, kept }
             })
             .collect();
         // An existing note's own ingested state, as Sources tells it (a wiki page cites it).

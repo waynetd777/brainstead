@@ -244,6 +244,8 @@ pub async fn rename_commit(app: AppHandle, plan: RenamePlan) -> Res<String> {
         let root = root(&svc)?;
         with_links(&svc, &plan.from, |linkers, resolves| Ok(rename::commit(&root, &plan, linkers, resolves)?))?;
         app.state::<Drafts>().rename(&plan.from, &plan.to);
+        // A kept transcript renamed is still kept.
+        let _ = brainstead_core::meeting::kept::renamed(&crate::platform::data_dir(), &plan.from, &plan.to);
         moved(&app, &plan.from, Some(&plan.to), &plan.to);
         let mut paths: Vec<PathBuf> = plan.changes.iter().map(|c| root.join(&c.path)).collect();
         paths.extend([root.join(&plan.from), root.join(&plan.to)]);
@@ -313,8 +315,10 @@ pub async fn trash_restore(app: AppHandle, id: String, r#as: Option<String>) -> 
         crate::gtd::forget_clarified(&to);
         app.state::<Drafts>().rename(&trashed_draft(&id), &to);
         written(&app, &[root.join(&to)]);
-        // Its move to the Trash, in Changes, is undone now.
+        // Its move to the Trash, in Changes, is undone now; a transcript put back is one the user
+        // keeps, under whatever name it's restored as, so the daily check doesn't trash it again.
         crate::changes::restored_from_trash(&app, &id);
+        crate::changes::keep_transcripts(std::slice::from_ref(&to));
         Ok(to)
     })
     .await

@@ -234,6 +234,10 @@ export const useInbox = () => useLoaded<InboxItem[]>(() => api.inboxList(), useS
 /** Takes a capture out of the Inbox, its file kept in Sources; every Inbox shown reloads. */
 export const captureDone = (path: string) => api.inboxCaptureDone(path).then(() => capturesDone.set(capturesDone.get() + 1));
 
+/** Keep in Sources: out of the Inbox, as captureDone, and a transcript kept so is never moved to
+ *  the Trash by the daily check's catch-up. */
+export const keepInSources = (path: string) => api.inboxCaptureKept(path).then(() => capturesDone.set(capturesDone.get() + 1));
+
 /** An Inbox item still to clarify. A To Do `#### Other` task is, while it's open and has no
  *  project, context or GTD tag; Next actions leaves those out too (`inboxTaskKeys`). */
 export function unclarified(i: InboxItem): boolean {

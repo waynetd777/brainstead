@@ -200,10 +200,11 @@ export async function makeMeetingNotes(paths: string[], auto?: { unattended: boo
 }
 
 /** The transcripts of `ts` with only themselves left (onlyTranscriptLeft) that may go to the Trash
- *  by themselves: not one whose move to the Trash was reverted in Changes, or that was put back
- *  from the Trash, which the user wants kept. */
+ *  by themselves: not one the user kept (`kept`: put back from the Trash under any name, or kept
+ *  in Sources, remembered in app data for good), nor one whose move to the Trash Changes still
+ *  shows reverted. */
 async function leftovers(ts: Transcript[]): Promise<Transcript[]> {
-  const left = ts.filter(onlyTranscriptLeft);
+  const left = ts.filter((t) => onlyTranscriptLeft(t) && !t.kept);
   if (!left.length) return [];
   const rows = await api.changesList().catch(() => [] as ChangeRow[]);
   const kept = new Set(rows.filter((c) => c.kind === "trash" && c.status === "reverted").map((c) => c.page));

@@ -387,6 +387,75 @@ pub fn merged(written: &str, existing: &str) -> String {
     format!("{t}\n")
 }
 
+/// The transcripts the user kept: put back from the Trash (however: the Trash screen, Revert in
+/// Changes, a toast's Undo, a restore under another name), or kept in Sources from the Inbox. The
+/// daily check's leftover catch-up never moves one of these to the Trash again. Kept in app data
+/// (`kept-transcripts.json` in `dir`), by vault path, so it outlasts Changes' history; a kept
+/// transcript renamed keeps its place under its new path.
+pub mod kept {
+    use std::path::{Path, PathBuf};
+
+    pub const FILE: &str = "kept-transcripts.json";
+
+    /// One edit at a time, so two kept at once don't lose each other.
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    pub fn file(dir: &Path) -> PathBuf {
+        dir.join(FILE)
+    }
+
+    /// Whether the list has been started (a first start seeds it from Changes).
+    pub fn started(dir: &Path) -> bool {
+        file(dir).exists()
+    }
+
+    pub fn load(dir: &Path) -> Vec<String> {
+        std::fs::read(file(dir)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    }
+
+    fn is_transcript(path: &str) -> bool {
+        path.starts_with("sources/") && super::is_transcript(path.rsplit('/').next().unwrap_or(path))
+    }
+
+    fn edit(dir: &Path, f: impl FnOnce(&mut Vec<String>) -> bool) -> crate::write::Result<()> {
+        let _one = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let had = started(dir);
+        let mut list = load(dir);
+        if !f(&mut list) && had {
+            return Ok(());
+        }
+        let b = serde_json::to_vec_pretty(&list).unwrap_or_default();
+        crate::write::write_atomic(&file(dir), &b, false)
+    }
+
+    /// Records these as kept (only the transcripts among them; the list is started even when none is).
+    pub fn add(dir: &Path, paths: &[String]) -> crate::write::Result<()> {
+        edit(dir, |list| {
+            let n = list.len();
+            for p in paths.iter().filter(|p| is_transcript(p)) {
+                if !list.contains(p) {
+                    list.push(p.clone());
+                }
+            }
+            list.len() != n
+        })
+    }
+
+    /// A file renamed or moved (`from` to `to`): a kept transcript stays kept at its new path.
+    pub fn renamed(dir: &Path, from: &str, to: &str) -> crate::write::Result<()> {
+        if !load(dir).iter().any(|p| p == from) {
+            return Ok(());
+        }
+        edit(dir, |list| {
+            list.retain(|p| p != from && p != to);
+            if is_transcript(to) {
+                list.push(to.to_string());
+            }
+            true
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -535,5 +604,22 @@ mod tests {
         );
         // It only adds to the note there: nothing of it is taken out or changed.
         assert!(!crate::ingest::removes_text(existing, &m));
+    }
+
+    #[test]
+    fn kept_transcripts_are_remembered_by_path_and_follow_a_rename() {
+        let d = tempfile::tempdir().unwrap();
+        let t = "sources/Teams. Transcript. Orbit App steerco - 2026-10-02.md".to_string();
+        assert!(!kept::started(d.path()) && kept::load(d.path()).is_empty());
+        // Not a transcript: not listed, but the list is started.
+        kept::add(d.path(), &["Idea. Pricing.md".into()]).unwrap();
+        assert!(kept::started(d.path()) && kept::load(d.path()).is_empty());
+        kept::add(d.path(), &[t.clone(), t.clone()]).unwrap();
+        assert_eq!(kept::load(d.path()), vec![t.clone()]);
+        let to = "sources/Teams. Transcript. Orbit App steerco (kept) - 2026-10-02.md";
+        kept::renamed(d.path(), &t, to).unwrap();
+        assert_eq!(kept::load(d.path()), vec![to.to_string()]);
+        kept::renamed(d.path(), "sources/other.md", "sources/else.md").unwrap();
+        assert_eq!(kept::load(d.path()), vec![to.to_string()]);
     }
 }

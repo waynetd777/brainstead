@@ -963,6 +963,7 @@ pub fn run() {
             ingest::ingest_start,
             ingest::source_provenance,
             ingest::meeting_transcripts,
+            gtd::inbox_capture_kept,
             ingest::meeting_draft,
             daily_check::daily_check_status,
             daily_check::daily_check_stop,

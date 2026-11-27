@@ -29,7 +29,7 @@ const known: Record<string, (...a: unknown[]) => unknown> = {
   weekprepStatus: async () => ({
     prep: { suggestions: [{ text: "A plan to keep", action: { do: "clarify", item: capture, becomes: "reference", text: "" } }] },
   }),
-  inboxCaptureDone: vi.fn(async () => undefined),
+  inboxCaptureKept: vi.fn(async () => undefined),
 };
 const api = vi.hoisted(
   () =>
@@ -56,9 +56,9 @@ describe("the Inbox list's divider", () => {
     divider.focus();
     fireEvent.keyDown(divider, { key: "Enter" });
     await new Promise((r) => setTimeout(r, 50));
-    expect(known.inboxCaptureDone).not.toHaveBeenCalled();
+    expect(known.inboxCaptureKept).not.toHaveBeenCalled();
     // Enter off the divider is the suggestion's key, and does write: the control for the above.
     fireEvent.keyDown(document.body, { key: "Enter" });
-    await waitFor(() => expect(known.inboxCaptureDone).toHaveBeenCalledWith(capture.path));
+    await waitFor(() => expect(known.inboxCaptureKept).toHaveBeenCalledWith(capture.path));
   });
 });

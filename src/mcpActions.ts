@@ -56,6 +56,7 @@ import { ACTION as FIX_ACTION, chosenRows, startUnticked } from "./FixName";
 import {
   areaProjects,
   captureDone as markCaptureDone,
+  keepInSources,
   contextName,
   moveInProjectOrder,
   orderedAreas,
@@ -979,7 +980,7 @@ export async function clarifyChanges(
       };
     }
     case "reference": {
-      if (i.kind === "capture") return { said: "kept in Sources", changes: [], after: captureDone };
+      if (i.kind === "capture") return { said: "kept in Sources", changes: [], after: () => keepInSources(i.path) };
       const note = str(a, "note");
       const title = str(a, "new_note");
       const body = i.text.trim();
@@ -3350,7 +3351,7 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
     const line = (t: Transcript) =>
       `- ${t.path} · ${t.done ? `done: ${MEETING_DONE[t.done]}` : `looks like ${t.inferred.type ?? "a meeting"} ${t.inferred.name ?? t.inferred.topic ?? ""} ${t.inferred.date ?? ""}${t.inferred.dateCheck ? " (the capture day: check the meeting date)" : ""}`}${
         exists(t)
-          ? ` · note exists: ${exists(t)}${t.noteIngested ? " (ingested already: only the transcript is left, which the daily check moves to the Trash by itself; trash_note it now if the user asks)" : " (start_run meeting_note writes the note from the transcript into it, keeping what's there; with ingest_existing it's ingested as it is)"}`
+          ? ` · note exists: ${exists(t)}${t.noteIngested ? (t.kept ? " (ingested already; the user kept the transcript, so the daily check leaves it alone: trash_note it only if the user asks)" : " (ingested already: only the transcript is left, which the daily check moves to the Trash by itself; trash_note it now if the user asks)") : " (start_run meeting_note writes the note from the transcript into it, keeping what's there; with ingest_existing it's ingested as it is)"}`
           : ""
       }${drafting(t) ? " · being drafted" : drafted(t) ? " · a note was drafted (see Changes)" : ""}${(t.inferred.ask ?? []).map((q) => `\n  - ${q}`).join("")}`;
     return listed(a, rows, {

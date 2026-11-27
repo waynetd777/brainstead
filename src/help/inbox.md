@@ -56,7 +56,7 @@ The first choices on a capture are its source's own, the same as its row on [Sou
 
 **Ask about this source** starts a chat about it in [Ask](app:ask) and leaves it in the Inbox, to clarify once you know what it is. Ask and Draft reply show a **Still in the Inbox** strip with the choices that take it out (**Done, keep in Sources**, **Ingest and take out**, **Move to the Trash**, or for a transcript its meeting note), so there's no going back to the Inbox for them. In Ask it shows on the chat about the capture; a new chat (`⌘T`) or asking about something else drops it. If a choice fails, the strip stays.
 
-**Ingest into the wiki** lists its changes in [Changes](app:review). **Keep in Sources** takes it out of the Inbox and leaves the file in [Sources](app:sources), so a capture has no Done now. **Move to the Trash** moves the file to the vault's Trash; restored from there (or with `⌘Z`), it's back in the Inbox.
+**Ingest into the wiki** lists its changes in [Changes](app:review). **Keep in Sources** takes it out of the Inbox and leaves the file in [Sources](app:sources), so a capture has no Done now. A transcript kept so is never moved to the Trash by the daily check, even once its meeting note is made and ingested. **Move to the Trash** moves the file to the vault's Trash; restored from there (or with `⌘Z`), it's back in the Inbox.
 
 As a task, a capture starts as `Follow up on [[the capture]]`.
 

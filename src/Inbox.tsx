@@ -15,7 +15,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { sampleSuggestion, sceneInboxSuggest } from "./scene";
 import { api, ClarifySuggestion, InboxItem, ProjectRow } from "./api";
 import { prepareCapture } from "./Capture";
-import { captureDone, contextName, fmtEffort, effortMinutes, projectLink, projectName, unclarified, useInbox, useProjects } from "./gtd";
+import {
+  captureDone,
+  keepInSources,
+  contextName,
+  fmtEffort,
+  effortMinutes,
+  projectLink,
+  projectName,
+  unclarified,
+  useInbox,
+  useProjects,
+} from "./gtd";
 import { Icon } from "./icons";
 import { fmtShortDate, resolveDateWord } from "./md/dates";
 import { localToday } from "./md/taskQuery";
@@ -417,7 +428,7 @@ export function InboxScreen() {
       case "todo":
         return act(() => makeTask(i, base.text), "Put on the To Do list");
       case "reference":
-        if (i.kind === "capture") return act(() => captureDone(i.path), "Kept in Sources");
+        if (i.kind === "capture") return act(() => keepInSources(i.path), "Kept in Sources");
         return setFiling(true);
       case "delete":
         if (i.kind === "capture")
@@ -440,7 +451,8 @@ export function InboxScreen() {
     }
     if (b === "ingest") ingest(ps.map((i) => i.path));
     const one = (i: InboxItem): Promise<unknown> => {
-      if (b === "ingest" || b === "reference") return captureDone(i.path);
+      if (b === "reference") return keepInSources(i.path);
+      if (b === "ingest") return captureDone(i.path);
       if (b === "done") return doneNow(i);
       if (b === "todo") return makeTask(i, startText(i));
       if (b === "someday") return settle(i, taskLine({ text: startText(i), project: null, tag: "someday-maybe" }), null, "Next actions");

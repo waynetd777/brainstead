@@ -741,6 +741,9 @@ export interface Transcript {
   done: "ingested" | "linked" | null;
   /** Its meeting note exists already and a wiki page cites it: only the transcript is left. */
   noteIngested: boolean;
+  /** The user kept it (put it back from the Trash, or kept it in Sources): the daily check's
+   *  catch-up never moves it to the Trash again. */
+  kept?: boolean;
 }
 
 export interface NoteSpec {
@@ -1562,6 +1565,7 @@ export const api = {
   inboxList: () => invoke<InboxItem[]>("inbox_list"),
   /** A capture clarified in the Inbox: it leaves the Inbox (the file stays in sources/). */
   inboxCaptureDone: (path: string) => invoke<void>("inbox_capture_done", { path }),
+  inboxCaptureKept: (path: string) => invoke<void>("inbox_capture_kept", { path }),
   taskSetContexts: (t: TaskRef, contexts: string[]) =>
     invoke<Edited>("task_set_contexts", { path: t.path, line: t.line, lineText: t.lineText, contexts }),
   taskSetEffort: (t: TaskRef, effort: string | null) =>
