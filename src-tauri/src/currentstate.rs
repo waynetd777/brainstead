@@ -231,6 +231,8 @@ fn one(
         Err(why) => return Err(why),
     };
     let after = if refresh { pageshape::with_current_state_text(&before, &text)? } else { pageshape::with_current_state(&before, &text) };
+    // `updated:` moves to the day the change is made, as every other change to a wiki page does.
+    let after = brainstead_core::proposals::bump_updated(&before, &after, &chrono::Local::now().date_naive().to_string());
     let (label, title) =
         if refresh { ("Refresh Current state", "Refreshed the Current state") } else { ("Write Current state", "Wrote a Current state") };
     let origin = Origin {
