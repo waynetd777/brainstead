@@ -517,6 +517,8 @@ function Row({ check, i, on }: { check: string; i: LintItem; on: Handlers }) {
         return `${pageName(page ?? "")}: updated says older than the file (${i.detail})`;
       case "stale-pages":
         return `${pageName(page ?? "")} · ${i.count} backlinks · ${i.detail}`;
+      case "broken-properties":
+        return `${pageName(page ?? "")}: ${i.text.slice((page ?? "").length + 2)}`;
       case "page-shape":
         return pageName(page ?? "");
       case "initiative-items":

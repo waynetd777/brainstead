@@ -290,6 +290,19 @@ fn with_source(text: String, cite: &str, warnings: &mut Vec<String>) -> String {
     match crate::fixname::list_value_added(&text, &["sources"], cite) {
         ListValue::Changed(t) => t,
         ListValue::Already => text,
+        // Properties that don't read for one of the common slips: repaired, then the source added.
+        ListValue::CannotEdit if let Some(fixed) = crate::frontmatter::repaired(&text) => {
+            match crate::fixname::list_value_added(&fixed, &["sources"], cite) {
+                ListValue::Changed(t) => t,
+                ListValue::Already => fixed,
+                ListValue::CannotEdit => {
+                    if !warnings.iter().any(|w| w == SOURCES_WARNING) {
+                        warnings.push(SOURCES_WARNING.into());
+                    }
+                    text
+                }
+            }
+        }
         ListValue::CannotEdit => {
             if !warnings.iter().any(|w| w == SOURCES_WARNING) {
                 warnings.push(SOURCES_WARNING.into());
@@ -1293,6 +1306,20 @@ mod tests {
         // A page that takes it has no warning.
         let (planned, _) = plan(&pdf(), &answer(), super::tests::read, resolve, "2026-10-02", page_budget(1));
         assert!(planned[1].warnings.is_empty());
+    }
+
+    #[test]
+    fn properties_with_a_common_slip_are_repaired_and_take_the_source() {
+        // A colon in a plain value: repaired, then the source added, with no warning to hold it.
+        let page = "---\ntype: entity\ndescription: Staff app: launch plans\nsources: []\n---\n# Orbit App\n\n## Current state\n\nSoft launch on 14 November.\n";
+        let read = move |r: &str| (r == "wiki/entities/Orbit App.md").then(|| page.to_string());
+        let (planned, dropped) = plan(&pdf(), &shaped_answer(""), read, resolve, "2026-10-02", page_budget(1));
+        assert!(dropped.is_empty(), "{dropped:?}");
+        assert!(planned[0].warnings.is_empty(), "{:?}", planned[0].warnings);
+        let fm = crate::frontmatter::split(&planned[0].after);
+        assert!(fm.error.is_none(), "{}", planned[0].after);
+        assert_eq!(crate::frontmatter::string(&fm.data, "description").as_deref(), Some("Staff app: launch plans"));
+        assert_eq!(crate::frontmatter::list(&fm.data, &["sources"], false).len(), 1);
     }
 
     #[test]

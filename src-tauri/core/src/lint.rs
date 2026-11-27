@@ -512,6 +512,8 @@ fn run_with(root: &Path, today: NaiveDate, dismissed: &HashSet<String>, zone: Zo
                 text: format!("{}: properties don't read as YAML ({why})", f.rel),
                 page: Some(f.rel.clone()),
                 detail: Some(err),
+                // One of the common slips, which Fix repairs (frontmatter::repaired).
+                safe: crate::frontmatter::repaired(text).is_some(),
                 ..Default::default()
             });
         }
@@ -1018,13 +1020,17 @@ mod tests {
         );
         w("wiki/concepts/Date for a Date.md", "---\ndescription: Estimates by horizon: a date, then a month\n---\n# Date for a Date\n");
         w("wiki/entities/Maya.md", "---\ndescription: \"Product lead: Orbit App\"\n---\n# Maya\n");
+        w("wiki/entities/Lena.md", "---\nsources:\n  - [[a\n  b: [\n---\n# Lena\n");
         // Not a wiki page: not this check's.
         w("Meeting. Kickoff.md", "---\ntitle: Kickoff: plan\n---\nNotes.\n");
         let r = run_in(t.path(), today(), &HashSet::new(), fixture::zone());
         let c = r.check("broken-properties").unwrap();
         let pages: Vec<&str> = c.items.iter().filter_map(|i| i.page.as_deref()).collect();
-        assert_eq!(pages, ["wiki/concepts/Date for a Date.md", "wiki/entities/Orbit App.md"]);
-        assert!(c.items.iter().all(|i| i.text.contains("properties don't read as YAML (") && !i.safe));
+        assert_eq!(pages, ["wiki/concepts/Date for a Date.md", "wiki/entities/Lena.md", "wiki/entities/Orbit App.md"]);
+        assert!(c.items.iter().all(|i| i.text.contains("properties don't read as YAML (")));
+        // The common slips are safe fixes; anything else needs an edit.
+        let safe: Vec<bool> = c.items.iter().map(|i| i.safe).collect();
+        assert_eq!(safe, [true, false, true]);
         // Counted: nothing fixes it but an edit, so it needs a decision.
         assert!(!ADVISORY.contains(&"broken-properties") && !IN_INBOX.contains(&"broken-properties"));
     }

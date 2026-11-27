@@ -286,11 +286,23 @@ pub fn list_value_added(text: &str, keys: &[&str], value: &str) -> ListValue {
                             if inner.is_empty() { format!("{key_name}: [{quoted}]") } else { format!("{key_name}: [{inner}, {quoted}]") };
                     } else if rest.is_empty() {
                         // A block list: after its last item, with the same indent.
+                        // An item's own lines go with it: a long value folded onto the lines
+                        // under its `- >-` is indented further than the item's dash.
+                        let ind = |l: &str| l.len() - l.trim_start().len();
                         let mut last = k;
-                        while last + 1 < end && lines[last + 1].trim_start().starts_with("- ") {
+                        let mut item_indent = None;
+                        while last + 1 < end {
+                            let next = &lines[last + 1];
+                            let is_item = next.trim_start().starts_with("- ") || next.trim() == "-";
+                            let continues = item_indent.is_some_and(|i| !next.trim().is_empty() && ind(next) > i);
+                            if is_item && item_indent.is_none_or(|i| ind(next) == i) {
+                                item_indent = Some(ind(next));
+                            } else if !continues {
+                                break;
+                            }
                             last += 1;
                         }
-                        let indent = if last > k { lines[last].len() - lines[last].trim_start().len() } else { 2 };
+                        let indent = item_indent.unwrap_or(2);
                         lines.insert(last + 1, format!("{}- {quoted}", " ".repeat(indent)));
                     } else {
                         lines[k] = format!("{key_name}: [{rest}, {quoted}]");
@@ -544,6 +556,15 @@ mod tests {
     fn an_alias_that_cannot_be_added_stops_the_fix() {
         assert_eq!(list_value_added("---\naliases: [OA]\n---\n", &["aliases"], "OA"), ListValue::Already);
         assert_eq!(list_value_added("---\naliases: [OA\n---\n", &["aliases"], "Orbit"), ListValue::CannotEdit);
+        // After a folded item's own lines, not between `- >-` and them.
+        let folded = "---\nsources:\n  - \"[[Kickoff]]\"\n  - >-\n    [[Launch plan for the Orbit App -\n    2026-05-07]]\ntags: [orbit]\n---\n# Orbit App\n";
+        assert_eq!(
+            list_value_added(folded, &["sources"], "[[Retro]]"),
+            ListValue::Changed(
+                "---\nsources:\n  - \"[[Kickoff]]\"\n  - >-\n    [[Launch plan for the Orbit App -\n    2026-05-07]]\n  - \"[[Retro]]\"\ntags: [orbit]\n---\n# Orbit App\n"
+                    .into()
+            )
+        );
         let (_t, root) = vault();
         std::fs::write(root.join("wiki/entities/Lena.md"), "---\nname: Lena\naliases: [Lena F\n---\n").unwrap();
         let rows = audit(&root, &req());

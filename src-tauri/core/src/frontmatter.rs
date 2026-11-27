@@ -75,6 +75,65 @@ pub fn string(data: &Value, key: &str) -> Option<String> {
     }
 }
 
+/// The text with its properties repaired, when they don't read as YAML and one of the common
+/// slips is why, or None. Only the lines at fault change, and only when the properties then read:
+///
+/// - a top-level value that YAML misreads: a colon followed by a space in a plain value
+///   (`description: Estimates: by horizon`), or a quoted start with more after its closing quote
+///   (`description: "Working with SFTX" — a guide`). It's quoted as a whole.
+/// - a list item put between a `- >-` (or `- |`) and the folded lines under it, as an edit
+///   adding to the list can: the item moves above the `- >-`.
+pub fn repaired(text: &str) -> Option<String> {
+    let fm = split(text);
+    fm.error.as_ref()?;
+    let bom = if text.starts_with('\u{feff}') { "\u{feff}" } else { "" };
+    let src = &text[bom.len()..];
+    let (mut lines, eol, trailing) = crate::write::split_lines(src);
+    let end = lines.iter().skip(1).position(|l| matches!(l.trim_end(), "---" | "..."))? + 1;
+    let ind = |l: &str| l.len() - l.trim_start().len();
+    // Folded items split by an item put in among their lines.
+    let mut i = 1;
+    while i + 1 < end {
+        let t = lines[i].trim();
+        let folded = t.strip_prefix("- ").is_some_and(|v| matches!(v.trim(), ">" | ">-" | ">+" | "|" | "|-" | "|+"));
+        if folded {
+            let dash = ind(&lines[i]);
+            let mut j = i + 1;
+            while j < end && ind(&lines[j]) == dash && lines[j].trim_start().starts_with("- ") {
+                j += 1;
+            }
+            if j > i + 1 && j < end && ind(&lines[j]) > dash && !lines[j].trim().is_empty() {
+                let moved: Vec<String> = lines.drain(i + 1..j).collect();
+                let n = moved.len();
+                lines.splice(i..i, moved);
+                i += n;
+            }
+        }
+        i += 1;
+    }
+    // Top-level values YAML misreads.
+    for line in lines.iter_mut().take(end).skip(1) {
+        if line.starts_with([' ', '\t', '#', '-']) {
+            continue;
+        }
+        let Some((key, value)) = line.split_once(':') else { continue };
+        let v = value.trim();
+        if v.is_empty() || key.trim().is_empty() || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b"_- ".contains(&b)) {
+            continue;
+        }
+        if v.starts_with(['[', '{', '|', '>', '&', '*', '!']) {
+            continue;
+        }
+        if serde_yaml_ng::from_str::<Value>(line.as_str()).is_ok() {
+            continue;
+        }
+        *line = format!("{key}: \"{}\"", v.replace('\\', "\\\\").replace('"', "\\\""));
+    }
+    let out = format!("{bom}{}", crate::write::join_lines(&lines, &eol, trailing));
+    let again = split(&out);
+    (again.error.is_none() && again.data.is_object() && out[again.body_start..] == text[fm.body_start..]).then_some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,5 +157,30 @@ mod tests {
         let crlf = split("---\r\ntags: a, b\r\n---\r\nx");
         assert_eq!(list(&crlf.data, &["tags"], true), ["a", "b"]);
         assert_eq!(split("---\n---\nx").body_start, 8);
+    }
+
+    #[test]
+    fn repairs_the_common_slips_and_nothing_else() {
+        // A colon in a plain value; a quoted start with more after it.
+        let t =
+            "---\nname: Date for a Date\ndescription: Estimates by horizon: a date, then a month\ntags: [planning]\n---\n# Body: kept\n";
+        assert_eq!(
+            repaired(t).unwrap(),
+            "---\nname: Date for a Date\ndescription: \"Estimates by horizon: a date, then a month\"\ntags: [planning]\n---\n# Body: kept\n"
+        );
+        let t = "---\ndescription: \"Working with Orbit\" \u{2014} a short guide\n---\nBody\n";
+        let r = repaired(t).unwrap();
+        assert_eq!(string(&split(&r).data, "description").as_deref(), Some("\"Working with Orbit\" \u{2014} a short guide"));
+        // A list item put between a folded item and its lines: moved above it.
+        let t = "---\nsources:\n  - \"[[Kickoff]]\"\n  - >-\n  - \"[[Retro]]\"\n    [[Launch plan for the Orbit App -\n    2026-05-07]]\n  - \"[[Demo]]\"\n---\nBody\n";
+        let r = repaired(t).unwrap();
+        assert_eq!(
+            list(&split(&r).data, &["sources"], false),
+            ["[[Kickoff]]", "[[Retro]]", "[[Launch plan for the Orbit App - 2026-05-07]]", "[[Demo]]"]
+        );
+        // Properties that read, none, or a slip it doesn't know: left alone.
+        assert_eq!(repaired("---\nname: Orbit\n---\nBody\n"), None);
+        assert_eq!(repaired("No properties: here\n"), None);
+        assert_eq!(repaired("---\nsources:\n  - [[a\n  b: [\n---\nBody\n"), None);
     }
 }

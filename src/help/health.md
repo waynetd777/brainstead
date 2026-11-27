@@ -26,6 +26,7 @@ Some issues have one right answer, so Brainstead fixes them without asking:
 - setting `updated:` to the file's date
 - adding a missing line to `log.md`
 - putting back a system note's header
+- repairing properties that don't read for one of the common slips
 
 Click **Fix** on one issue, or **Fix safe issues** in the top bar for all of them. `⌘Z` undoes each fix.
 
@@ -37,7 +38,7 @@ Safe fixes don't turn anything amber: in the [Wiki](app:wiki) list a page with o
 - **Broken sources** (a page's `sources:` lists a file that isn't there): **Link to…** points it at a file that's there, with **Did you mean** and **Restore from Trash** as for missing pages.
 - **Sources changed since they were cited**: **Ingest again** reads the source again, so the pages citing it catch up. A source an ingest has already read as it is now isn't listed, even when nothing in it was worth adding to those pages. With **Also refresh pages whose sources changed** on (Settings › AI assistants), an email thread or chat that's grown is left to the daily check, which ingests it again; it's listed here only if its pages are still behind after that.
 - **Orphan pages**: `index.md`'s catalogue links every wiki page, so an orphan is one it hasn't caught up with yet (the daily check does). **Add them to index.md** brings it up to date now. An initiative is never an orphan: you reach it from the Inbox, the brief and the Wiki's initiative filter, not by links.
-- **Pages whose properties don't read**: the row says where the YAML goes wrong (often a colon in a plain value, which needs quotes, or a line put in the middle of a list item). Open the page and fix its properties; the issue leaves the list once they read.
+- **Pages whose properties don't read**: the row says where the YAML goes wrong. The common slips (a colon in a plain value, which needs quotes, or a list item put among a long item's lines) are safe fixes: **Fix** repairs just those lines, and an ingest repairs them itself before it adds its source. Anything else, open the page and fix its properties; the issue leaves the list once they read.
 - **Possible duplicates**: **Open the other** compares them; **Not duplicates** stops the pair being flagged.
 - **Anything else** (a stale page, a broken source…): **Ignore** hides it until its page (or, for a claim, its line) changes; **Show again** lists ignored ones again. Stale pages and claims with no citation also have **Ignore all**, at the top of their list.
 
@@ -75,7 +76,7 @@ A page that needs you says why: a heading whose year it can't tell, two summing-
 On the right, **Wiki pages by type** and **Wiki pages by tag** are pie charts; click a slice or row to open the [Wiki](app:wiki) filtered to it. **Most linked** lists the notes and wiki pages the most others link to; click one to open it. Sources changed since they were cited are under **More checks**. The **Contradictions** tab at the top has the report of wiki pages that disagree.
 
 ## The daily check
-Turn on **Daily check** in [Settings › Automations](app:settings/jobs) to have Brainstead, at the time you set (09:00 to start), look for contradictions in pages that changed and update the list of pages in `index.md`. It catches up after sleep. **Also refresh pages whose sources changed**, in [Settings › AI assistants](app:settings/assistants), has it ingest those sources again. Its notification also says how many pages have left the page shape, for **Reshape pages**. **Run now** runs it straight away and becomes **Stop** while it runs.
+Turn on **Daily check** in [Settings › Automations](app:settings/jobs) to have Brainstead, at the time you set (09:00 to start), look for contradictions in pages that changed, make the safe fixes (all but a system note's header, which is yours to put back) and update the list of pages in `index.md`. It catches up after sleep. **Also refresh pages whose sources changed**, in [Settings › AI assistants](app:settings/assistants), has it ingest those sources again. Its notification also says how many pages have left the page shape, for **Reshape pages**. **Run now** runs it straight away and becomes **Stop** while it runs.
 
 ## Resize the panes
 Drag the line beside the side column to make it wider or narrower; a double-click on it puts it back ([pane widths](help:settings-general)).

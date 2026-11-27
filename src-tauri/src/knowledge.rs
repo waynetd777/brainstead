@@ -286,7 +286,9 @@ fn fixed_pages(root: &Path, fixes: &[Fix], callouts: &BTreeMap<String, String>, 
     let mut unlogged = 0;
     for f in fixes {
         match f.check.as_str() {
-            "missing-crossrefs" | "stale-dates" | "system-callouts" => by_page.entry(f.page.clone()).or_default().push(f),
+            "missing-crossrefs" | "stale-dates" | "system-callouts" | "broken-properties" => {
+                by_page.entry(f.page.clone()).or_default().push(f)
+            }
             "unlogged-writes" => unlogged += 1,
             other => return Err(invalid(format!("{other} has no safe fix."))),
         }
@@ -301,6 +303,9 @@ fn fixed_pages(root: &Path, fixes: &[Fix], callouts: &BTreeMap<String, String>, 
         for f in fs {
             let next = match (f.check.as_str(), f.name.as_deref(), f.detail.as_deref()) {
                 ("missing-crossrefs", Some(n), _) => lint::link_first_mention(&text, n).inspect(|_| what.push(format!("linked {n}"))),
+                ("broken-properties", _, _) => {
+                    brainstead_core::frontmatter::repaired(&text).inspect(|_| what.push("properties repaired".into()))
+                }
                 ("stale-dates", _, Some(d)) => lint::fix_updated(&text, day.unwrap_or(d)).inspect(|_| what.push("updated date".into())),
                 ("system-callouts", _, _) => callouts
                     .get(page)
@@ -414,6 +419,32 @@ fn health_fix_now(app: AppHandle, fixes: Vec<Fix>) -> Res<String> {
         fixes.iter().any(|f| f.check == check && i.page.as_deref() == Some(f.page.as_str()) && i.name == f.name && i.detail == f.detail)
     });
     Ok(label)
+}
+
+/// The daily check's safe fixes: every one Wiki health lists, as Fix safe issues makes them, but
+/// a system note's header, which only the user puts back (D-20261005-08). What it did, for the
+/// check's summary.
+pub(crate) fn daily_safe_fixes(app: &AppHandle) -> String {
+    let Some(report) = run_lint(app) else { return "safe fixes not run: no vault".into() };
+    let fixes: Vec<Fix> = report
+        .checks
+        .iter()
+        .filter(|c| c.id != "system-callouts")
+        .flat_map(|c| c.items.iter().filter(|i| i.safe).map(move |i| (c.id, i)))
+        .filter_map(|(check, i)| {
+            Some(Fix { check: check.to_string(), page: i.page.clone()?, name: i.name.clone(), detail: i.detail.clone() })
+        })
+        .collect();
+    if fixes.is_empty() {
+        return "no safe fixes to make".into();
+    }
+    match health_fix_now(app.clone(), fixes) {
+        Ok(label) => format!("safe fixes: {}", label.to_lowercase()),
+        Err(e) => format!(
+            "safe fixes not made: {}",
+            serde_json::to_value(&e).ok().and_then(|v| v["message"].as_str().map(String::from)).unwrap_or_default()
+        ),
+    }
 }
 
 /// What Reshape pages did.

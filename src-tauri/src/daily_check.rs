@@ -86,6 +86,7 @@ pub fn progress(doing: &str, contra: &str) -> f32 {
             }
         }
         "refresh" => 0.9,
+        "fixes" => 0.94,
         "index" => 0.97,
         "shape" => 0.99,
         _ => 0.0,
@@ -159,6 +160,7 @@ pub fn daily_check_status(app: AppHandle) -> Status {
                 }
             }
             "refresh" => "Ingesting changed sources again".into(),
+            "fixes" => "Making Wiki health's safe fixes".into(),
             "index" => "Updating index.md".into(),
             "shape" => "Checking the page shape".into(),
             _ => String::new(),
@@ -301,6 +303,13 @@ fn check(app: &AppHandle, trigger: Option<&str>) {
                 )),
             }
         }
+    }
+
+    // Wiki health's safe fixes (a link, a date, a log line, properties repaired), so they don't
+    // wait for Fix safe issues.
+    if !stopped() {
+        step("fixes");
+        did.push(crate::knowledge::daily_safe_fixes(app));
     }
 
     // index.md's catalogue.
