@@ -1480,7 +1480,8 @@ export const api = {
     invoke<ChangeOutcome>("image_add", { name, base64, reason, origin, model }),
   renamePreview: (path: string, to: string) => invoke<RenamePlan>("rename_preview", { path, to }),
   renameCommit: (plan: RenamePlan) => invoke<string>("rename_commit", { plan }),
-  trashMove: (path: string) => invoke<TrashEntry>("trash_move", { path }),
+  /** A screen's Move to the Trash, recorded in Changes as the user's own (`from` names the screen), with Revert. */
+  trashMove: (path: string, from: string) => invoke<TrashEntry>("trash_move", { path, from }),
   /** Quick Look on a trashed file, where it lies. */
   trashQuickLook: (id: string) => invoke<void>("trash_quick_look", { id }),
   /** A vault file in the system's Quick Look panel, as Finder's space bar shows it. */

@@ -400,6 +400,31 @@ pub fn record_image(app: &AppHandle, rel: &str, reason: &str, origin: Origin, mo
     Ok(Outcome { id: c.id.clone(), applied: true, page: rel.to_string(), flags: vec![], message })
 }
 
+/// A move to the Trash made on a screen (`screen` names it), not through a change: recorded as
+/// the user's own, applied, with Revert. A record that can't be saved doesn't undo the move.
+pub fn record_trash(app: &AppHandle, page: &str, entry: &str, screen: &str) {
+    match store().save(&changes::trashed_from_screen(page, entry, screen)) {
+        Ok(()) => emit_changed(app),
+        Err(e) => crate::applog!("recording {page} moved to the Trash: {e}"),
+    }
+}
+
+/// A Trash entry put back (the Trash screen, a toast's Undo, a restore change, a revert): its
+/// move to the Trash in Changes is marked reverted, as there's nothing left for its Revert to do.
+pub fn restored_from_trash(app: &AppHandle, entry: &str) {
+    let st = store();
+    let back = changes::restored_another_way(st.list(), entry);
+    if back.is_empty() {
+        return;
+    }
+    for c in back {
+        if let Err(e) = st.save(&c) {
+            crate::applog!("marking {} restored from the Trash: {e}", c.page);
+        }
+    }
+    emit_changed(app);
+}
+
 /// Writes the change's claims into its page's claims file (an ingest's set, or a source renamed),
 /// recording the file before and after. Returns the file's ⌘Z entry when it changed and is still there.
 fn write_claims(st: &Store, root: &Path, c: &mut Change) -> Res<Option<FileUndo>> {
@@ -706,7 +731,7 @@ fn revert_one(app: &AppHandle, id: &str) -> Res<Reverted> {
             format!("Restored {name} from the Trash")
         }
         Instruction::Restore { .. } => {
-            let e = tauri::async_runtime::block_on(crate::notes::trash_move(app.clone(), c.page.clone()))?;
+            let e = tauri::async_runtime::block_on(crate::notes::trash_move_as(app.clone(), c.page.clone(), true))?;
             c.trash = Some(e.id);
             format!("Moved {name} back to the Trash")
         }
@@ -714,7 +739,7 @@ fn revert_one(app: &AppHandle, id: &str) -> Res<Reverted> {
             if !root.join(&c.page).is_file() {
                 return Ok(Reverted { ok: false, message: format!("{} isn't in the vault any more.", c.page), before: None });
             }
-            let e = tauri::async_runtime::block_on(crate::notes::trash_move(app.clone(), c.page.clone()))?;
+            let e = tauri::async_runtime::block_on(crate::notes::trash_move_as(app.clone(), c.page.clone(), true))?;
             c.trash = Some(e.id);
             format!("Moved {} to the Trash", c.page)
         }

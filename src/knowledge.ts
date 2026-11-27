@@ -59,6 +59,8 @@ export const held = (rows: ChangeRow[]) => rows.filter((c) => c.status === "held
 export function originLabel(c: ChangeRow): string {
   if (c.origin.kind === "lint") return c.origin.label === "Missing page" || !c.origin.label ? "Wiki health" : c.origin.label;
   if (c.origin.kind === "review") return c.origin.label ? reviewLabel(c.origin.label) : "Scheduled run";
+  // The user's own move to the Trash, from a screen (core's BY_USER): "You · Inbox".
+  if (c.origin.kind === "user") return `You · ${c.origin.label ?? "Brainstead"}`;
   if (c.origin.label) return c.origin.label;
   return c.origin.chat ? "Ask" : "An assistant";
 }

@@ -255,13 +255,18 @@ pub async fn rename_commit(app: AppHandle, plan: RenamePlan) -> Res<String> {
     .map_err(|e| EditError::from(e.to_string()))?
 }
 
+/// A screen's Move to the Trash (`from` names it: "Inbox", "File menu", "Sources"…), recorded in
+/// Changes as the user's own move, with Revert, so list_changes shows what became of the file.
 #[tauri::command]
-pub async fn trash_move(app: AppHandle, path: String) -> Res<TrashEntry> {
-    trash_move_as(app, path, true).await
+pub async fn trash_move(app: AppHandle, path: String, from: Option<String>) -> Res<TrashEntry> {
+    let e = trash_move_as(app.clone(), path.clone(), true).await?;
+    crate::changes::record_trash(&app, &path, &e.id, from.as_deref().unwrap_or_default());
+    Ok(e)
 }
 
-/// [`trash_move`]; `learn` false for a move Brainstead makes itself (an ingest trashing a chat-day
-/// nothing came of), which mustn't count towards skipping the chat.
+/// [`trash_move`] without its entry in Changes, for a move a change makes (whose own record says
+/// so); `learn` false for a move Brainstead makes itself (an ingest trashing a chat-day nothing
+/// came of), which mustn't count towards skipping the chat.
 pub async fn trash_move_as(app: AppHandle, path: String, learn: bool) -> Res<TrashEntry> {
     writing(move || {
         writable(&app.state::<AppState>())?;
@@ -308,6 +313,8 @@ pub async fn trash_restore(app: AppHandle, id: String, r#as: Option<String>) -> 
         crate::gtd::forget_clarified(&to);
         app.state::<Drafts>().rename(&trashed_draft(&id), &to);
         written(&app, &[root.join(&to)]);
+        // Its move to the Trash, in Changes, is undone now.
+        crate::changes::restored_from_trash(&app, &id);
         Ok(to)
     })
     .await

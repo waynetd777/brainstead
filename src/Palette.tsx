@@ -119,7 +119,7 @@ export function commands(): Command[] {
             icon: "trash",
             label: "Move this note to the Trash",
             keywords: "delete remove",
-            run: () => void trashFile(here.path!),
+            run: () => void trashFile(here.path!, "Command palette"),
           },
         ]
       : [];

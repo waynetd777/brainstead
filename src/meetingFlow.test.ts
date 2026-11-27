@@ -36,6 +36,7 @@ const toast = vi.fn();
 vi.mock("./Toast", () => ({ toast: (...a: unknown[]) => toast(...a) }));
 
 import {
+  catchUpMeetingNotes,
   draftNotes,
   ingestRunEnded,
   keepNote,
@@ -97,7 +98,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  settings.update({ meetingIngest: undefined, meetingTrash: undefined });
+  settings.update({ meetingIngest: undefined, meetingTrash: undefined, ingestOnArrival: undefined });
   meetingDraft.mockResolvedValue(["r1"]);
   ingestStart.mockResolvedValue(["i1"]);
   trashMove.mockResolvedValue({});
@@ -145,6 +146,69 @@ describe("automatically", () => {
   });
 });
 
+describe("the daily check's catch-up", () => {
+  // A note written by hand (or in a terminal), "Meeting. Orbit App retro - 2026-10-02.md", that a
+  // wiki page cites; its transcript isn't cited itself, and a note links to it.
+  const HAND = "Meeting. Orbit App retro - 2026-10-02.md";
+  const leftover = () => ({
+    ...transcript(RETRO, { type: "Meeting", name: "Orbit App retro", date: "2026-10-02", exists: true, confident: false }),
+    noteIngested: true,
+    done: "linked" as const,
+  });
+  beforeEach(() => {
+    docRead.mockResolvedValue({ content: "", meta: { backlinks: [{ path: "wiki/entities/Orbit App.md" }, { path: HAND }] } });
+    changeSubmit.mockResolvedValue({ id: "c1", applied: true, page: RETRO, flags: [], message: "" });
+  });
+
+  it("trashes a transcript whose hand-written note is ingested, its links pointed at the note, without Ingest on arrival", async () => {
+    settings.update({ ingestOnArrival: false });
+    meetingTranscripts.mockResolvedValue([leftover(), transcript(MAYA)]);
+    await catchUpMeetingNotes();
+    expect(healthLinkGhost).toHaveBeenCalledWith(
+      "Teams. Transcript. Orbit App retro - 2026-10-02",
+      HAND,
+      ["wiki/entities/Orbit App.md"],
+      true,
+    );
+    expect(changeSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        page: RETRO,
+        kind: "trash",
+        instruction: { op: "trash" },
+        origin: { kind: "meeting", label: "Meeting notes", trigger: "scheduled" },
+      }),
+    );
+    // Writing Maya's note needs a model: only with Ingest new sources as they arrive on.
+    expect(meetingDraft).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("writes the others up too with Ingest on arrival", async () => {
+    settings.update({ ingestOnArrival: true });
+    meetingTranscripts.mockResolvedValue([leftover(), transcript(MAYA)]);
+    await catchUpMeetingNotes();
+    expect(changeSubmit).toHaveBeenCalledWith(expect.objectContaining({ page: RETRO, kind: "trash" }));
+    expect(meetingDraft).toHaveBeenCalledWith([[MAYA, { type: "1-1", name: "Maya", date: "2026-10-01" }]], true);
+    // Its run ends, so the tests after can write Maya's note again.
+    meetingRunEnded(run({ status: "failed" }), false);
+  });
+
+  it("keeps one whose move to the Trash was reverted, and only takes it out of the Inbox with Move to the Trash off", async () => {
+    meetingTranscripts.mockResolvedValue([leftover()]);
+    changesList.mockResolvedValue([{ id: "c0", kind: "trash", page: RETRO, status: "reverted", origin: { kind: "meeting" } }]);
+    await catchUpMeetingNotes();
+    expect(changeSubmit).not.toHaveBeenCalled();
+    expect(trashMove).not.toHaveBeenCalled();
+    expect(inboxCaptureDone).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+    changesList.mockResolvedValue([]);
+    settings.update({ meetingTrash: false });
+    await catchUpMeetingNotes();
+    expect(changeSubmit).not.toHaveBeenCalled();
+    expect(inboxCaptureDone).toHaveBeenCalledWith(RETRO);
+  });
+});
+
 describe("one step", () => {
   it("drafts the sure ones and opens the meeting screen at the first unsure one", async () => {
     meetingTranscripts.mockResolvedValue([transcript(MAYA), transcript(STEERCO, { dateCheck: true })]);
@@ -161,7 +225,7 @@ describe("one step", () => {
     expect(trashMove).not.toHaveBeenCalled();
     ingestRunEnded(run({ id: "i1", kind: "ingest", status: "done" }));
     await flush();
-    expect(trashMove).toHaveBeenCalledWith(MAYA);
+    expect(trashMove).toHaveBeenCalledWith(MAYA, "Meeting notes");
     expect(toast).toHaveBeenLastCalledWith(expect.stringContaining("ingested; the transcript is in the Trash"), expect.anything(), "ok");
   });
 
@@ -261,7 +325,7 @@ describe("a transcript in the Inbox", () => {
       ["wiki/entities/Maya.md"],
       false,
     );
-    expect(trashMove).toHaveBeenCalledWith(MAYA);
+    expect(trashMove).toHaveBeenCalledWith(MAYA, "Meeting notes");
     // With no note given, the one its name says, if it's in the vault; with none, it's only trashed.
     healthLinkGhost.mockClear();
     meetingTranscripts.mockResolvedValue([transcript(MAYA, { exists: true })]);
@@ -285,7 +349,7 @@ describe("after the window reloads", () => {
     ingestRunEnded(first, [first, meeting]);
     await flush();
     expect(inboxCaptureDone).toHaveBeenCalledWith(MAYA);
-    expect(trashMove).toHaveBeenCalledWith(MAYA);
+    expect(trashMove).toHaveBeenCalledWith(MAYA, "Meeting notes");
     vi.clearAllMocks();
     const again = ing("i10", "2026-10-12T11:00:00");
     ingestRunEnded(again, [again, first, meeting]);

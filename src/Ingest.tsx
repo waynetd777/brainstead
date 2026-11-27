@@ -337,7 +337,7 @@ function FollowUpDialog({ f }: { f: FollowUpOffer }) {
     close();
     if (ing) ingest([f.note]);
     if (trash)
-      await trashTranscript(f.transcript, f.note)
+      await trashTranscript(f.transcript, f.note, "After the note")
         .then(() => toast("Transcript moved to the Trash", { label: "Open Trash", run: () => nav.go("trash") }))
         .catch(reportEditError);
   };

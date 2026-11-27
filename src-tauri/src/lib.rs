@@ -752,7 +752,8 @@ async fn switchover_retire(app: AppHandle) -> Result<String, edits::EditError> {
         let mut done = Vec::new();
         for rel in [".claude/skills", "scripts"] {
             if root.join(rel).is_dir() {
-                brainstead_core::trash::move_to_trash(&root, rel, "folder")?;
+                let e = brainstead_core::trash::move_to_trash(&root, rel, "folder")?;
+                changes::record_trash(&app, rel, &e.id, "Moving over");
                 done.push(format!("{rel}/"));
             }
         }

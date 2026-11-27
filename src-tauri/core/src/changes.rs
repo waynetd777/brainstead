@@ -393,6 +393,39 @@ impl Change {
     }
 }
 
+/// The origin kind of a move to the Trash the user made on one of the app's screens (the Inbox,
+/// the file menu, Sources, Wiki health…) rather than through a change: its label names the screen.
+pub const BY_USER: &str = "user";
+
+/// A move to the Trash already made from a screen (`screen`: "Inbox", "File menu"), not through a
+/// change, recorded as applied so Changes, and an assistant reading list_changes, can see what
+/// became of the file. Revert restores its Trash entry (`entry`), as a trash_note change's does.
+pub fn trashed_from_screen(page: &str, entry: &str, screen: &str) -> Change {
+    let screen = screen.trim();
+    let label = if screen.is_empty() { "Brainstead" } else { screen };
+    let origin = Origin { kind: BY_USER.into(), label: Some(label.into()), ..Default::default() };
+    let name = crate::filename::stem(page.trim_end_matches('/'));
+    let mut c = Change::new(page, Kind::Trash, &format!("Move {name} to the Trash"), "", origin, None, Instruction::Trash);
+    c.trash = Some(entry.to_string());
+    c.status = Status::Applied;
+    c.decided = Some(proposals::now_local());
+    c
+}
+
+/// The applied moves to the Trash whose entry (`entry`) has just been put back another way (the
+/// Trash screen, a toast's Undo, restore_from_trash), marked reverted: their Revert has nothing
+/// left to restore.
+pub fn restored_another_way(list: Vec<Change>, entry: &str) -> Vec<Change> {
+    list.into_iter()
+        .filter(|c| c.status == Status::Applied && matches!(c.instruction, Instruction::Trash) && c.trash.as_deref() == Some(entry))
+        .map(|mut c| {
+            c.status = Status::Reverted;
+            c.decided = Some(proposals::now_local());
+            c
+        })
+        .collect()
+}
+
 /// Whether it came from a scheduled run (or a terminal session that said it's unattended),
 /// rather than something the user started.
 pub fn scheduled(o: &Origin) -> bool {
@@ -1418,6 +1451,24 @@ mod tests {
         for s in ["Templates./Meeting.md", "Templates /Meeting.md", "Templates::$INDEX_ALLOCATION/Meeting.md"] {
             assert!(crate::paths::vault_rel(d.path(), s).is_err(), "{s}");
         }
+    }
+
+    #[test]
+    fn a_move_from_a_screen_is_recorded_and_a_restore_another_way_reverts_it() {
+        let c = trashed_from_screen("sources/Teams. Transcript. Orbit App steerco - 2026-10-02.md", "t1", "Inbox");
+        assert_eq!((c.kind, c.status, c.trash.as_deref()), (Kind::Trash, Status::Applied, Some("t1")));
+        assert_eq!((c.origin.kind.as_str(), c.origin.label.as_deref()), (BY_USER, Some("Inbox")));
+        assert_eq!(c.title, "Move Teams. Transcript. Orbit App steerco - 2026-10-02 to the Trash");
+        assert!(c.decided.is_some() && c.instruction.moves());
+        // A folder (Moving over's), and no screen named.
+        let f = trashed_from_screen("scripts/", "t2", " ");
+        assert_eq!((f.title.as_str(), f.origin.label.as_deref()), ("Move scripts to the Trash", Some("Brainstead")));
+        let mut other = trashed_from_screen("Idea. Pricing.md", "t1", "File menu");
+        other.status = Status::Reverted;
+        let back = restored_another_way(vec![c.clone(), f, other], "t1");
+        assert_eq!(back.len(), 1);
+        assert_eq!((back[0].id.as_str(), back[0].status), (c.id.as_str(), Status::Reverted));
+        assert!(restored_another_way(back, "t1").is_empty(), "a reverted one isn't reverted again");
     }
 
     #[test]
