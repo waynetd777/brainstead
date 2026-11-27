@@ -256,7 +256,7 @@ pub async fn rename_commit(app: AppHandle, plan: RenamePlan) -> Res<String> {
 }
 
 /// A screen's Move to the Trash (`from` names it: "Inbox", "File menu", "Sources"…), recorded in
-/// Changes as the user's own move, with Revert, so the changes tool's list shows what became of the file.
+/// Changes as the user's own move, with Revert, so list_changes shows what became of the file.
 #[tauri::command]
 pub async fn trash_move(app: AppHandle, path: String, from: Option<String>) -> Res<TrashEntry> {
     let e = trash_move_as(app.clone(), path.clone(), true).await?;

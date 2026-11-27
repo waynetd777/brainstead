@@ -1054,10 +1054,10 @@ describe("MCP actions", () => {
         },
       ];
       expect(await run("health.lint")).toContain(
-        "- [[Northwind]] (in the Trash since 2026-10-02: trash restore with id t1 puts wiki/entities/Northwind.md back) Did you mean Northwnd?",
+        "- [[Northwind]] (in the Trash since 2026-10-02: restore_from_trash with id t1 puts wiki/entities/Northwind.md back) Did you mean Northwnd?",
       );
       expect(await run("health.issue", { action: "create", item: "[[Northwind]]" })).toMatch(
-        /^wiki\/entities\/Northwind\.md has been in the Trash since 2026-10-02, so there's no Create: trash restore with id t1 puts it back, or health_issue link_to with to: wiki\/entities\/Northwnd\.md/,
+        /^wiki\/entities\/Northwind\.md has been in the Trash since 2026-10-02, so there's no Create: restore_from_trash with id t1 puts it back, or health_issue link_to with to: wiki\/entities\/Northwnd\.md/,
       );
       expect(calls.some(([c]) => c === "health_create_page")).toBe(false);
     });
@@ -3064,7 +3064,7 @@ describe("MCP actions", () => {
       settings.update({ meetingIngest: undefined, meetingTrash: undefined });
     });
 
-    it("trashes a transcript for trash add with its links pointed at its note first, as the assistant's changes", async () => {
+    it("trashes a transcript for trash_note with its links pointed at its note first, as the assistant's changes", async () => {
       const path = "sources/Teams. Transcript. Offsite - 2026-10-06.md";
       answers.meeting_transcripts = () => [
         { path, done: null, inferred: { type: "Meeting", name: "Offsite", date: "2026-10-06", exists: true, dateCheck: false, ask: [] } },
@@ -3313,7 +3313,7 @@ describe("MCP actions", () => {
       await run("settings", { action: "set", key: "jobEffort.weekprep", value: null });
       expect(settings.get().jobEffort).toEqual({});
       // A model the job inherits (new chats', or the summaries' for weekprep) moving to an assistant
-      // without its level sets it aside: settings' list says what the screen shows, and it comes back.
+      // without its level sets it aside: list_settings says what the screen shows, and it comes back.
       settings.update({ askModel: "claude:opus", jobModels: {}, jobEffort: { find: "max", weekprep: "max" } });
       await run("settings", { action: "set", key: "jobModels.summaries", value: "gpt-5" });
       expect(await run("settings", { action: "set", key: "askModel", value: "gpt-5" })).not.toMatch(/went back to Default/);
@@ -3482,7 +3482,7 @@ describe("MCP actions", () => {
     it("gives a day's files, and points to Changes for what Brainstead changed that day", async () => {
       answers.activity_day = () => [{ path: "wiki/entities/Orbit App.md", title: "Orbit App", mtime: 0 }];
       expect(await run("activity", { date: "2026-10-02" })).toBe(
-        "What assistants and Brainstead's runs changed that day, and the vault's log.md: changes with date 2026-10-02.\n1 file changed on 2026-10-02:\n- wiki/entities/Orbit App.md",
+        "What assistants and Brainstead's runs changed that day, and the vault's log.md: list_changes with date 2026-10-02.\n1 file changed on 2026-10-02:\n- wiki/entities/Orbit App.md",
       );
     });
 

@@ -69,7 +69,7 @@ An assistant can read what the screens show:
 - Ask's chats, your settings, the assistants found, and whether the app is running;
 - this help.
 
-Most of these are tools of their own, marked as only reading, so you can let an assistant use them without asking you first. To keep the list of tools short, the ones that list a thing and change it are one tool each, which lists by default: Changes, the Trash, bookmarks, saved searches, Ask's chats, contradictions, Find tasks and projects' suggestions, Moving over, your tools that start sessions, Tasks' saved lists, settings and a note's own look. An assistant asks before using one of those, since the same tool can change things. Their older names, such as `list_changes` and `trash_note`, still work.
+Reading is kept apart from changing: each of these is a tool of its own, marked as only reading, so you can let an assistant use them without asking you first.
 
 Two things stay with you on the [Trash](app:trash) screen: **Empty the Trash** and **Delete forever**. They can't be undone, so no assistant can do them.
 

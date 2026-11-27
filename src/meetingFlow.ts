@@ -332,7 +332,7 @@ export interface TrashBy {
  *  first pointed at its meeting note, with the claims made from it, so trashing it leaves no
  *  missing page behind. Every way a transcript is trashed goes through here: this flow, the
  *  meeting screen, the Inbox, its Still in the Inbox strip, the after-the-note offer, the file
- *  menu (and so Sources and the command palette) and the trash tool's add. `note` left out is the
+ *  menu (and so Sources and the command palette) and the trash_note tool. `note` left out is the
  *  one its name says, if that's in the vault; null is none. With `by`, every write is recorded as
  *  that assistant's: the link rewrites unattended when it is, and the move as its change in
  *  Changes (`outcome`). Without it the move is the user's, from the screen `by` names ("Inbox",

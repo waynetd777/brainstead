@@ -86,13 +86,7 @@ fn speaks_the_protocol() {
     assert_eq!(hint("search", "readOnlyHint"), true);
     assert_eq!(hint("edit_task", "readOnlyHint"), false);
     assert_eq!(hint("changes", "destructiveHint"), true);
-    // The merged tools' old names are hidden aliases: callable, but not listed.
-    for a in brainstead_core::ask::MCP_ALIASES {
-        assert!(!names.contains(&a), "{a} is listed");
-        let r = rpc(&f.ctx, 11, "tools/call", json!({"name": a, "arguments": "not an object"}));
-        assert!(r.get("error").is_none(), "{a} isn't callable: {r}");
-    }
-    assert!(names.len() < 80, "{} tools", names.len());
+    assert_eq!(hint("list_changes", "readOnlyHint"), true);
     assert_eq!((hint("stop_run", "destructiveHint"), hint("stop_run", "idempotentHint")), (json!(true), json!(true)));
     // Every list_* tool only reads.
     for t in list["result"]["tools"].as_array().unwrap() {
@@ -791,18 +785,16 @@ fn moving_over_and_starting_the_review_over_go_to_the_app() {
         ok(&f.ctx, tool_name, args);
         assert_eq!(app.join().unwrap().action, action);
     }
-    // The checklist is moving_over's list, its default, and its old name's.
-    for tool_name in ["moving_over", "list_moving_over"] {
-        let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Moving over…"), error: None });
-        ok(&f.ctx, tool_name, json!({"item": "otherStopped"}));
-        let req = app.join().unwrap();
-        assert_eq!((req.action.as_str(), req.args["action"].as_str(), req.args.get("item")), ("moving_over", Some("list"), None));
-    }
+    // The checklist is a read of its own; ticking is moving_over's.
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Moving over…"), error: None });
+    ok(&f.ctx, "list_moving_over", json!({"item": "otherStopped"}));
+    let req = app.join().unwrap();
+    assert_eq!((req.action.as_str(), req.args["action"].as_str(), req.args.get("item")), ("moving_over", Some("list"), None));
     let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("Ticked."), error: None });
     ok(&f.ctx, "moving_over", json!({"action": "tick", "item": "otherStopped"}));
     assert_eq!(app.join().unwrap().args["item"], "otherStopped");
     assert!(refused(&f.ctx, "list_moving_over", json!({"action": "retire"})).contains("which tool does that"));
-    assert!(refused(&f.ctx, "moving_over", json!({"action": "nope"})).contains("one of list, tick"));
+    assert!(refused(&f.ctx, "moving_over", json!({})).contains("Give action"));
 }
 
 #[test]
@@ -912,7 +904,7 @@ fn listings_give_their_rows_as_data() {
         result: json!({"text": "The Trash is empty.", "structured": {"total": 0, "items": []}}),
         error: None,
     });
-    let r = rpc(&f.ctx, 3, "tools/call", json!({"name": "trash", "arguments": {}}));
+    let r = rpc(&f.ctx, 3, "tools/call", json!({"name": "list_trash", "arguments": {}}));
     let req = app.join().unwrap();
     assert_eq!((req.action.as_str(), req.args["action"].as_str()), ("trash", Some("list")));
     assert_eq!(r["result"]["content"][0]["text"], "The Trash is empty.");
@@ -922,8 +914,8 @@ fn listings_give_their_rows_as_data() {
 #[test]
 fn a_read_tool_never_changes_anything() {
     let f = fixture();
-    // Each old list_* tool, now a hidden alias, keeps to its own actions; asking it to change
-    // something is refused here, before the app hears of it.
+    // Each list_* tool keeps to its own actions; asking it to change something is refused here,
+    // before the app hears of it.
     for (tool_name, args) in [
         ("list_changes", json!({"action": "revert", "id": "1"})),
         ("list_chats", json!({"action": "trash", "chat": "x"})),
@@ -934,60 +926,31 @@ fn a_read_tool_never_changes_anything() {
     ] {
         assert!(refused(&f.ctx, tool_name, args).contains("which tool does that"), "{tool_name}");
     }
-    // A merged tool lists when no action is given, and refuses an action it hasn't.
-    assert!(refused(&f.ctx, "changes", json!({"action": "nope"})).contains("changes's action is one of list, show"));
-    assert!(refused(&f.ctx, "bookmarks", json!({"action": "delete"})).contains("one of list"));
-    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
-    ok(&f.ctx, "changes", json!({}));
-    let req = app.join().unwrap();
-    assert_eq!((req.action.as_str(), req.args["action"].as_str()), ("changes", Some("list")));
-    // history reads without days or mb, and sets with them.
-    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
-    ok(&f.ctx, "changes", json!({"action": "history", "days": 90, "page": "x.md"}));
-    let req = app.join().unwrap();
-    assert_eq!((req.args["action"].as_str(), req.args["days"].as_i64(), req.args.get("page")), (Some("history"), Some(90), None));
-    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
-    ok(&f.ctx, "changes", json!({"action": "history"}));
-    assert_eq!(app.join().unwrap().args["action"], "history");
-    // Bookmarks: nothing given lists them; page, remove or keep changes one.
-    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
-    ok(&f.ctx, "bookmarks", json!({}));
-    let req = app.join().unwrap();
-    assert_eq!((req.action.as_str(), req.args.get("action")), ("bookmarks", None));
+    // And a change tool gives no list.
+    assert!(refused(&f.ctx, "changes", json!({"action": "list"})).contains("not list"));
+    assert!(refused(&f.ctx, "changes", json!({"action": "history"})).contains("list_changes history reads it"));
+    assert!(refused(&f.ctx, "bookmarks", json!({})).contains("list_bookmarks"));
     let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
     ok(&f.ctx, "bookmarks", json!({"remove": "Gone note"}));
     assert_eq!(app.join().unwrap().args["remove"], "Gone note");
     let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
-    ok(&f.ctx, "bookmarks", json!({"action": "list", "remove": "Gone note"}));
+    ok(&f.ctx, "list_bookmarks", json!({"remove": "Gone note"}));
     assert!(app.join().unwrap().args.get("remove").is_none());
-    // Settings: a key sets it, none lists them (the app's get), with what only set takes dropped.
+    // The read tool sends the app's own action, with what only the change tool takes dropped.
     let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
-    ok(&f.ctx, "settings", json!({}));
+    ok(&f.ctx, "list_settings", json!({"key": "theme"}));
     let req = app.join().unwrap();
-    assert_eq!((req.action.as_str(), req.args["action"].as_str()), ("settings", Some("get")));
-    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
-    ok(&f.ctx, "settings", json!({"action": "list", "key": "theme"}));
-    let req = app.join().unwrap();
-    assert_eq!((req.args["action"].as_str(), req.args.get("key")), (Some("get"), None));
+    assert_eq!((req.action.as_str(), req.args["action"].as_str(), req.args.get("key")), ("settings", Some("get"), None));
     let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
     ok(&f.ctx, "settings", json!({"key": "theme", "value": "dark"}));
     assert_eq!(app.join().unwrap().args["action"], "set");
-    // Saved searches: list's query is its filter, so it reaches the app; the saving arguments don't.
+    // list_saved_searches' query is its filter, so it reaches the app; the saving arguments don't.
     let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
-    ok(&f.ctx, "saved_searches", json!({"action": "list", "query": "launch", "name": "x", "delete": true}));
+    ok(&f.ctx, "list_saved_searches", json!({"query": "launch", "name": "x", "delete": true}));
     let req = app.join().unwrap();
     assert_eq!((req.args["query"].as_str(), req.args.get("name"), req.args.get("delete")), (Some("launch"), None, None));
-    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
-    ok(&f.ctx, "saved_searches", json!({"action": "delete", "name": "Launch"}));
-    let req = app.join().unwrap();
-    assert_eq!((req.args["delete"].as_bool(), req.args.get("action")), (Some(true), None));
-    assert!(refused(&f.ctx, "saved_searches", json!({"action": "save", "name": "Launch"})).contains("Give query"));
-    // The old names still work, as before.
-    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
-    ok(&f.ctx, "list_saved_searches", json!({"query": "launch", "name": "x"}));
-    assert!(app.join().unwrap().args.get("name").is_none());
-    // triage_bookmarks only asks the model: the list is bookmarks'.
-    assert!(refused(&f.ctx, "triage_bookmarks", json!({})).contains("from bookmarks"));
+    // triage_bookmarks only asks the model: the list is list_bookmarks'.
+    assert!(refused(&f.ctx, "triage_bookmarks", json!({})).contains("list_bookmarks"));
     let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
     ok(&f.ctx, "triage_bookmarks", json!({"items": [{"target": "a", "path": "a.md"}]}));
     assert_eq!(app.join().unwrap().action, "triage.suggest");
@@ -1006,20 +969,17 @@ fn rebuilding_the_index_and_pinning_a_chat_go_to_the_app() {
     ok(&f.ctx, "chats", json!({"action": "pin", "chat": "Orbit App plan"}));
     let req = app.join().unwrap();
     assert_eq!((req.action.as_str(), req.args["action"].as_str()), ("chats", Some("pin")));
-    // A chat's effort is chats' effort, and still chat_effort's, which takes no other action.
-    for (tool_name, args) in [
-        ("chats", json!({"action": "effort", "chat": "Orbit App plan", "effort": "high", "title": "x"})),
-        ("chat_effort", json!({"chat": "Orbit App plan", "effort": "high", "action": "trash"})),
-    ] {
-        let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("High"), error: None });
-        ok(&f.ctx, tool_name, args);
-        let req = app.join().unwrap();
-        assert_eq!(
-            (req.action.as_str(), req.args["action"].as_str(), req.args["effort"].as_str(), req.args.get("title")),
-            ("chats", Some("effort"), Some("high"), None),
-            "{tool_name}"
-        );
-    }
+    // A chat's effort is a change of its own, not under chats' Trash.
+    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("High"), error: None });
+    ok(&f.ctx, "chat_effort", json!({"chat": "Orbit App plan", "effort": "high", "action": "trash"}));
+    let req = app.join().unwrap();
+    assert_eq!((req.action.as_str(), req.args["action"].as_str(), req.args["effort"].as_str()), ("chats", Some("effort"), Some("high")));
+    assert!(refused(&f.ctx, "chats", json!({"action": "effort", "chat": "Orbit App plan", "effort": "high"})).contains("not effort"));
+    let effort = tools().into_iter().find(|t| t["name"] == "chat_effort").unwrap();
+    assert_eq!(
+        (effort["annotations"]["destructiveHint"].as_bool(), effort["annotations"]["readOnlyHint"].as_bool()),
+        (Some(false), Some(false))
+    );
     // The new arguments are in the schemas, so a client can pass them.
     let list = tools();
     let props = |n: &str| list.iter().find(|t| t["name"] == n).unwrap()["inputSchema"]["properties"].clone();
@@ -1028,7 +988,7 @@ fn rebuilding_the_index_and_pinning_a_chat_go_to_the_app() {
         ("list_tasks", "group"),
         ("list_inbox", "suggest"),
         ("fix_name", "files"),
-        ("changes", "view"),
+        ("list_changes", "view"),
         ("open", "transcript"),
         ("open", "thread"),
         ("open", "document"),
@@ -1117,8 +1077,8 @@ fn the_re_audits_tools_and_arguments_go_to_the_app() {
         ("list_transcripts", "show"),
         ("pending_sources", "status"),
         ("search", "order"),
-        ("changes", "type"),
-        ("changes", "date"),
+        ("list_changes", "type"),
+        ("list_changes", "date"),
         ("create_note", "test_run"),
         ("move_task", "project"),
         ("provenance", "source"),
@@ -1179,11 +1139,7 @@ fn a_notes_own_look_goes_to_the_app_with_its_action() {
         }
     }
     assert!(refused(&f.ctx, "list_note_looks", json!({"action": "set"})).contains("list_note_looks does list"));
-    // note_look without an action lists, as the old read did.
-    let app = fake_app(f.ctx.data.clone(), |_| bridge::Reply { ok: true, result: json!("ok"), error: None });
-    ok(&f.ctx, "note_look", json!({"page": "Orbit App", "theme": "modern"}));
-    let req = app.join().unwrap();
-    assert_eq!((req.args["action"].as_str(), req.args.get("theme")), (Some("list"), None));
+    assert!(refused(&f.ctx, "note_look", json!({"page": "Orbit App"})).contains("Give action"));
 }
 
 #[test]

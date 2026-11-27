@@ -7,7 +7,7 @@
 // stands for a change Changes still has is left out: it's shown once, as the change. What's left
 // of log.md is what Changes doesn't hold: lines older than its history, lines from another
 // computer, the previous app or a terminal, and Brainstead's own writes that aren't changes (the
-// weekly review, Fix name, safe fixes, the catalogue). The screen and the changes tool's list share this.
+// weekly review, Fix name, safe fixes, the catalogue). The screen and list_changes share this.
 
 import type { ChangeRow, LogEntry } from "./api";
 import { actionLabel, filterLog } from "./activityModel";

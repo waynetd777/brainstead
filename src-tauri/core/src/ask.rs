@@ -107,7 +107,7 @@ impl Cli {
 /// The MCP server's name, as each CLI is told it.
 pub const MCP_NAME: &str = "brainstead";
 /// Its tools, for the CLIs that list each one (Copilot).
-pub const MCP_TOOLS: [&str; 79] = [
+pub const MCP_TOOLS: [&str; 93] = [
     "search",
     "read_section",
     "backlinks",
@@ -139,9 +139,14 @@ pub const MCP_TOOLS: [&str; 79] = [
     "create_note",
     "add_image",
     "rename_note",
-    "trash",
+    "trash_note",
+    "list_trash",
+    "restore_from_trash",
+    "list_bookmarks",
     "bookmarks",
+    "list_saved_searches",
     "saved_searches",
+    "list_changes",
     "changes",
     "start_run",
     "run_status",
@@ -152,11 +157,14 @@ pub const MCP_TOOLS: [&str; 79] = [
     "weekly_start_over",
     "weekly_step",
     "save_chat",
+    "list_chats",
     "chats",
+    "chat_effort",
     "list_transcripts",
     "fix_health",
     "ignore_issue",
     "health_issue",
+    "list_contradictions",
     "contradictions",
     "page_shape",
     "reshape_pages",
@@ -169,11 +177,17 @@ pub const MCP_TOOLS: [&str; 79] = [
     "activity",
     "sync_activity",
     "graph",
+    "list_suggestions",
     "suggestions",
+    "list_moving_over",
     "moving_over",
+    "list_automated_tools",
     "automated_tools",
+    "list_task_lists",
     "task_lists",
+    "list_settings",
     "settings",
+    "list_note_looks",
     "note_look",
     "import_sources",
     "create_template",
@@ -187,25 +201,6 @@ pub const MCP_TOOLS: [&str; 79] = [
     "list_assistants",
     "rebuild_index",
     "check_updates",
-];
-/// The tools merged into one with an action (D-20261127-16), still callable by these names but not
-/// in the server's tools/list, so prompts and skills written for them keep working.
-pub const MCP_ALIASES: [&str; 15] = [
-    "trash_note",
-    "list_trash",
-    "restore_from_trash",
-    "list_bookmarks",
-    "list_saved_searches",
-    "list_changes",
-    "list_chats",
-    "chat_effort",
-    "list_contradictions",
-    "list_suggestions",
-    "list_moving_over",
-    "list_automated_tools",
-    "list_task_lists",
-    "list_settings",
-    "list_note_looks",
 ];
 
 /// How to start Brainstead's MCP server (stage 7a): the app's own binary with `--mcp …`.
@@ -528,7 +523,7 @@ pub fn job_run_model(ui: &Ui, job: &str, scheduled: bool) -> String {
 }
 
 /// The job's own effort (`jobEffort.<job>`) while its model's assistant offers it, else None, as
-/// Models by job and the settings tool's list show it (src/askState.ts `jobOwnEffort`).
+/// Models by job and list_settings show it (src/askState.ts `jobOwnEffort`).
 pub fn job_own_effort<'a>(ui: &'a Ui, job: &str) -> Option<&'a str> {
     let cli = Cli::route(&job_model(ui, job));
     text(ui.get("jobEffort").and_then(|m| m.get(job))).filter(|e| cli.efforts().contains(e))
@@ -580,7 +575,7 @@ Tasks are `- [ ]` lines with dates as emoji: 📅 due, ⏳ scheduled (deferred u
 {can}\n\
 Link notes you mention as [[wikilinks]] with the note's file name without `.md`, so the app can open them. Answer plainly and briefly unless asked for depth; say when the vault has nothing on a point rather than guessing.",
         can = if tools {
-            "You can't change files in the vault yourself (you may keep your own memory up to date: it lives outside the vault); Brainstead's tools do what its screens do. Read with search, read_section, backlinks, resolve_entity, lint, list_tasks, list_inbox and list_projects. When the user asks, the tools make the change straight away, each recorded in Brainstead's Changes screen where the user can revert it: task changes (edit_task, move_task), clarifying the Inbox, projects, and prose, renames and deletes: edit_page (any page, or a new wiki page), create_note, create_task, rename_note, trash (action add), delete_task. Runs (start_run: ingest, summaries, the daily check, contradictions, meeting notes) record their own changes there. Wiki health's safe fixes (fix_health) and a name fixed everywhere (fix_name) are recorded there too. Bookmarks and saved searches are made at once, undoable with ⌘Z in the app rather than in Changes. A change to a template (Templates/, or renaming or trashing one), one that adds or changes code that runs (a script, a Tasks function, a Templater tag), or one that changes a system note's header is held for the user, and only they can accept it, in the app: you can't. Change only what the user asked for. Quote the sources a change rests on word for word: a quote that isn't in its source is flagged to the user. changes lists what was changed and what's held for the user, and with action revert reverts one when the user asks. Say what you changed."
+            "You can't change files in the vault yourself (you may keep your own memory up to date: it lives outside the vault); Brainstead's tools do what its screens do. Read with search, read_section, backlinks, resolve_entity, lint, list_tasks, list_inbox and list_projects. When the user asks, the tools make the change straight away, each recorded in Brainstead's Changes screen where the user can revert it: task changes (edit_task, move_task), clarifying the Inbox, projects, and prose, renames and deletes: edit_page (any page, or a new wiki page), create_note, create_task, rename_note, trash_note, delete_task. Runs (start_run: ingest, summaries, the daily check, contradictions, meeting notes) record their own changes there. Wiki health's safe fixes (fix_health) and a name fixed everywhere (fix_name) are recorded there too. Bookmarks and saved searches are made at once, undoable with ⌘Z in the app rather than in Changes. A change to a template (Templates/, or renaming or trashing one), one that adds or changes code that runs (a script, a Tasks function, a Templater tag), or one that changes a system note's header is held for the user, and only they can accept it, in the app: you can't. Change only what the user asked for. Quote the sources a change rests on word for word: a quote that isn't in its source is flagged to the user. list_changes lists what was changed and what's held for the user, and changes reverts one when the user asks. Say what you changed."
         } else {
             "You can read and search the vault, and nothing else: you can't change any file in it (your own memory, outside the vault, you may keep up to date). If asked to change something, say what you would change and where, so the user can do it."
         }
@@ -852,7 +847,7 @@ pub fn args(cli: Cli, r: &Request) -> Result<Launch, String> {
                 let cfg =
                     serde_json::json!({"mcpServers": {MCP_NAME: {"type": "local", "command": m.command, "args": m.args, "tools": ["*"]}}});
                 a.extend([s("--additional-mcp-config"), cfg.to_string(), format!("--allow-tool={MCP_NAME}")]);
-                for t in MCP_TOOLS.iter().chain(&MCP_ALIASES) {
+                for t in MCP_TOOLS {
                     tools.push_str(&format!(",{MCP_NAME}-{t}"));
                 }
             }
@@ -1505,11 +1500,9 @@ mod tests {
         let tools = p.iter().find(|x| x.starts_with("--available-tools=")).unwrap();
         assert!(
             tools.starts_with("--available-tools=view,grep,glob,brainstead-search,")
-                && tools.contains(
-                    ",brainstead-glance,brainstead-app_status,brainstead-list_assistants,brainstead-rebuild_index,brainstead-check_updates,"
+                && tools.ends_with(
+                    ",brainstead-glance,brainstead-app_status,brainstead-list_assistants,brainstead-rebuild_index,brainstead-check_updates"
                 )
-                // The merged tools' old names too, so a prompt that names one still works.
-                && tools.ends_with(",brainstead-list_task_lists,brainstead-list_settings,brainstead-list_note_looks")
         );
         // Antigravity doesn't take it: the app doesn't pass one, and the system prompt says so.
         assert!(!Cli::Antigravity.takes_mcp());

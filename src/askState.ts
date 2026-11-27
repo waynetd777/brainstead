@@ -145,7 +145,7 @@ export function scheduledFallback(job: string, s: Settings = settings.get()): st
 }
 
 /** The job's own effort (`jobEffort.<job>`) while its model's assistant offers it (unchecked while
- *  the assistants aren't found yet), else null: what Models by job and the settings tool's list show.
+ *  the assistants aren't found yet), else null: what Models by job and list_settings show.
  *  brainstead_core::ask::job_own_effort is the same rule. */
 export function jobOwnEffort(job: string, s: Settings = settings.get()): string | null {
   const level = s.jobEffort?.[job];

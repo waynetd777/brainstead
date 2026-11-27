@@ -51,7 +51,7 @@ A change writes its line when it's made, so in **All** that line isn't listed ag
 
 In **All**, the chips under the search keep one type, such as **Ingested**, or **Summary** for a daily or weekly summary; **All types** shows every type. A day picked on [Activity](app:activity) (**Changes that day**) shows as a chip of its own; click it to show every day again.
 
-An assistant reads the same list, with the same tabs, types and day, with the `changes` tool.
+An assistant reads the same list, with the same tabs, types and day, with the `list_changes` tool.
 
 ## Revert a change
 **Revert** undoes a change on the page as it is now, keeping later edits. It works on any change in the history, not just the last. If the change's lines have since been edited, or appear in more than one place, it says so and shows the page as it was before, to copy from. A reverted change is marked **Reverted**; `⌘Z` straight after undoes the revert.

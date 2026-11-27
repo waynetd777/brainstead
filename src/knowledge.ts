@@ -66,7 +66,7 @@ export function originLabel(c: ChangeRow): string {
 }
 
 /** What searching Changes looks in: its title, page (and where it moved to), origin and model. The
- *  screen's search box and the changes tool's query both match on this. */
+ *  screen's search box and list_changes' query both match on this. */
 export const changeText = (c: ChangeRow) => [c.title, c.page, c.to, originLabel(c), c.model].filter(Boolean).join(" ");
 
 /** Has every word of `q` in its search text (an empty query matches everything). */
