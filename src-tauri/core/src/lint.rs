@@ -25,7 +25,7 @@ const LOG: &str = "log.md";
 /// A wiki page unchanged this long, that other notes link to, is worth a look.
 pub const STALE_DAYS: i64 = 90;
 /// Checks that are worth a look but aren't problems: not counted as needing a decision.
-pub const ADVISORY: [&str; 3] = ["stale-pages", "uncited-claims", "no-current-state"];
+pub const ADVISORY: [&str; 4] = ["stale-pages", "uncited-claims", "no-current-state", "current-state-behind"];
 /// Checks whose issues are acted on in the Inbox (Captures), not counted as needing a decision
 /// here as well (D-20261119-04). Kept beside src/knowledge.ts IN_INBOX.
 pub const IN_INBOX: [&str; 1] = ["uningested-sources"];
@@ -611,6 +611,23 @@ fn run_with(root: &Path, today: NaiveDate, dismissed: &HashSet<String>, zone: Zo
         .map(|(f, _)| Item { text: format!("{}: no Current state", f.rel), page: Some(f.rel.clone()), ..Default::default() })
         .collect();
     checks.push(Check { id: "no-current-state", title: "Pages with no Current state", classic: false, ignored: 0, items });
+    // Pages whose Current state is older than their newest Timeline entry: Refresh Current state rewrites it.
+    let items = md
+        .iter()
+        .filter(|(f, t)| crate::pageshape::shaped(&f.rel) && crate::pageshape::current_state_behind(t))
+        .map(|(f, t)| {
+            let (cs, e) = (crate::pageshape::current_state_as_of(t), crate::pageshape::newest_entry(t));
+            let detail =
+                format!("as of {}, newest entry {}", cs.map_or_else(String::new, |d| d.iso()), e.map_or_else(String::new, |d| d.iso()));
+            Item {
+                text: format!("{}: Current state {detail}", f.rel),
+                page: Some(f.rel.clone()),
+                detail: Some(detail),
+                ..Default::default()
+            }
+        })
+        .collect();
+    checks.push(Check { id: "current-state-behind", title: "Current state behind the Timeline", classic: false, ignored: 0, items });
 
     // Initiatives' actions and decisions (D-20261118-08): lines that don't read, and quotes that
     // aren't in the note or source they cite (only those Brainstead has the text of: markdown).
@@ -1033,6 +1050,26 @@ mod tests {
         assert_eq!(safe, [true, false, true]);
         // Counted: nothing fixes it but an edit, so it needs a decision.
         assert!(!ADVISORY.contains(&"broken-properties") && !IN_INBOX.contains(&"broken-properties"));
+    }
+
+    #[test]
+    fn lists_a_current_state_behind_its_timeline() {
+        let t = tempfile::tempdir().unwrap();
+        let w = |rel: &str, text: &str| {
+            let p = t.path().join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, text).unwrap();
+        };
+        let tl = "## Timeline\n\n### 2026-10-02 — Steerco\n\nLaunch moves.\n\n### 2026-09-28 — Pilot\n\nDone.\n";
+        w("wiki/entities/Orbit App.md", &format!("# Orbit App\n\n## Current state\n\nAs of September 2026, piloting.\n\n{tl}"));
+        w("wiki/entities/Acme Pilot.md", &format!("# Acme Pilot\n\n## Current state\n\nAs of 2 October 2026, live.\n\n{tl}"));
+        w("wiki/entities/Maya.md", &format!("# Maya\n\n## Current state\n\nLeads the app.\n\n{tl}"));
+        let r = run_in(t.path(), today(), &HashSet::new(), fixture::zone());
+        let c = r.check("current-state-behind").unwrap();
+        let pages: Vec<&str> = c.items.iter().filter_map(|i| i.page.as_deref()).collect();
+        assert_eq!(pages, ["wiki/entities/Orbit App.md"]);
+        assert_eq!(c.items[0].detail.as_deref(), Some("as of 2026-09, newest entry 2026-10-02"));
+        assert!(ADVISORY.contains(&"current-state-behind"));
     }
 
     #[test]

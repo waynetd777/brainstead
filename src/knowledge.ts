@@ -117,7 +117,7 @@ export const OWN_ACTIONS = new Set(["missing-pages", "duplicates", "unreferenced
 
 /** Checks that are worth a look but aren't problems: not counted as needing a decision. Kept
  *  beside core/src/lint.rs ADVISORY. */
-export const ADVISORY = new Set(["stale-pages", "uncited-claims", "no-current-state"]);
+export const ADVISORY = new Set(["stale-pages", "uncited-claims", "no-current-state", "current-state-behind"]);
 
 /** Checks whose issues are acted on in the Inbox, not Wiki health: sources no page cites wait in
  *  Inbox › Captures to be ingested or kept, so they aren't counted to decide here as well (one

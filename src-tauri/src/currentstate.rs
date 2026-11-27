@@ -6,6 +6,9 @@
 //! cheap model writes one from the page's opening and newest entries only (core pageshape), each
 //! checked and made as a change in one Changes run, with one `log.md` line for the run. A sample
 //! of a few pages first, then the rest; it runs in the background, four pages at once, and can be stopped.
+//! Refresh Current state (D-20261127-11) is the same run on pages whose Current state is out of date (core
+//! `pageshape::current_state_behind`, or the pages named, `wants_refresh`): rewritten from the same
+//! text, dated as of the newest entry, and left alone when there's nothing new.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -44,6 +47,8 @@ pub struct Last {
     pub failed: Vec<String>,
     pub error: Option<String>,
     pub model: String,
+    /// Refresh Current state: rewriting out-of-date ones rather than writing missing ones.
+    pub refresh: bool,
 }
 
 /// Whether Write Current state is going.
@@ -80,22 +85,34 @@ fn model(app: &AppHandle, unattended: bool) -> String {
     }
 }
 
+/// Whether the run does the page: with `refresh`, one whose Current state is behind its Timeline
+/// (or, named, one not shown to be up to date); else one with a Timeline and no Current state.
+fn wanted(text: &str, refresh: bool, named: bool) -> bool {
+    match (refresh, named) {
+        (false, _) => pageshape::wants_current_state(text),
+        (true, false) => pageshape::current_state_behind(text),
+        (true, true) => pageshape::wants_refresh(text),
+    }
+}
+
 /// Starts a run on `pages` (by path or name), or on every page that wants one, at most `limit`
 /// of them; false when one is going already. Unattended, a change that fails a check is held.
-pub fn start(app: &AppHandle, pages: Option<Vec<String>>, limit: Option<usize>, unattended: bool) -> Res<bool> {
+/// With `refresh`, Refresh Current state.
+pub fn start(app: &AppHandle, pages: Option<Vec<String>>, limit: Option<usize>, unattended: bool, refresh: bool) -> Res<bool> {
     writable(&app.state::<AppState>())?;
     let root = app.state::<VaultService>().root().ok_or("No vault is open.".to_string())?;
     if RUNNING.swap(true, Ordering::SeqCst) {
         return Ok(false);
     }
     STOP.store(false, Ordering::SeqCst);
+    let named = pages.is_some();
     let mut todo: Vec<String> = pageshape::vault_files(&root)
         .into_iter()
         .filter(|p| pageshape::shaped(p))
         .filter(|p| {
             pages.as_ref().is_none_or(|ps| ps.iter().any(|x| x == p || brainstead_core::filename::stem(p).eq_ignore_ascii_case(x.trim())))
         })
-        .filter(|p| std::fs::read_to_string(root.join(p)).is_ok_and(|t| pageshape::wants_current_state(&t)))
+        .filter(|p| std::fs::read_to_string(root.join(p)).is_ok_and(|t| wanted(&t, refresh, named)))
         .collect();
     todo.sort();
     if let Some(n) = limit {
@@ -106,6 +123,7 @@ pub fn start(app: &AppHandle, pages: Option<Vec<String>>, limit: Option<usize>, 
         run: format!("{RUN}{}", proposals::new_id()),
         total: todo.len(),
         model: model(app, unattended),
+        refresh,
         ..Default::default()
     };
     save(app, &l);
@@ -124,9 +142,10 @@ pub fn start(app: &AppHandle, pages: Option<Vec<String>>, limit: Option<usize>, 
                     }
                     let Some(page) = queue.lock().unwrap().pop() else { break };
                     // A panic on one page fails that page: the worker goes on, and the run ends.
-                    let got =
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| one(&app, &root, &page, &run, &model, w, unattended)))
-                            .unwrap_or_else(|_| Err("something went wrong; Brainstead's log has the details".into()));
+                    let got = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        one(&app, &root, &page, &run, &model, w, unattended, refresh, named)
+                    }))
+                    .unwrap_or_else(|_| Err("something went wrong; Brainstead's log has the details".into()));
                     let mut l = last.lock().unwrap();
                     match got {
                         Ok(true) => l.written += 1,
@@ -147,7 +166,8 @@ pub fn start(app: &AppHandle, pages: Option<Vec<String>>, limit: Option<usize>, 
         }
         if l.written > 0 {
             let n = l.written;
-            let detail = format!("wrote Current state on {n} page{}", if n == 1 { "" } else { "s" });
+            let detail =
+                format!("{} Current state on {n} page{}", if refresh { "refreshed" } else { "wrote" }, if n == 1 { "" } else { "s" });
             let entry = brainstead_core::reviews::log_entry("lint-fix", "Wiki health", Some(&detail), chrono::Local::now().naive_local());
             if let Err(e) = crate::edits::add_log(&root, &entry) {
                 crate::applog!("current state log line: {e}");
@@ -162,7 +182,8 @@ pub fn start(app: &AppHandle, pages: Option<Vec<String>>, limit: Option<usize>, 
 }
 
 /// One page: asks the model, checks its answer and makes the change. False when the model had
-/// nothing to say about how things stand now.
+/// nothing to say about how things stand now (or, refreshing, nothing new).
+#[allow(clippy::too_many_arguments)]
 fn one(
     app: &AppHandle,
     root: &std::path::Path,
@@ -171,16 +192,21 @@ fn one(
     model: &str,
     worker: usize,
     unattended: bool,
+    refresh: bool,
+    named: bool,
 ) -> Result<bool, String> {
     let before = std::fs::read_to_string(root.join(page)).map_err(|e| e.to_string())?;
-    if !pageshape::wants_current_state(&before) {
+    // Read again: it may have changed since the run started.
+    if !wanted(&before, refresh, named) {
         return Ok(false);
     }
+    let prompt =
+        if refresh { pageshape::refresh_prompt(page, &before, BUDGET) } else { pageshape::current_state_prompt(page, &before, BUDGET) };
     let out = crate::ask::run(
         app,
         Job::Contradictions,
         &format!("current-state-{worker}"),
-        &pageshape::current_state_prompt(page, &before, BUDGET),
+        &prompt,
         model,
         None,
         &brainstead_core::ask::system_prompt(&crate::ask::today(), false),
@@ -193,15 +219,22 @@ fn one(
     let files = pageshape::vault_files(root);
     let names: std::collections::HashSet<String> = files.iter().map(|f| brainstead_core::links::key(f)).collect();
     let exists = |t: &str| names.contains(&brainstead_core::links::key(t));
-    let text = match pageshape::current_state_answer(&before, &out.text, &exists) {
+    let answer = if refresh {
+        pageshape::refreshed_answer(&before, &out.text, &exists)
+    } else {
+        pageshape::current_state_answer(&before, &out.text, &exists)
+    };
+    let text = match answer {
         Ok(t) => t,
         Err(why) if why.starts_with("the model found nothing") => return Ok(false),
         Err(why) => return Err(why),
     };
-    let after = pageshape::with_current_state(&before, &text);
+    let after = if refresh { pageshape::with_current_state_text(&before, &text)? } else { pageshape::with_current_state(&before, &text) };
+    let (label, title) =
+        if refresh { ("Refresh Current state", "Refreshed the Current state") } else { ("Write Current state", "Wrote a Current state") };
     let origin = Origin {
         kind: "lint".into(),
-        label: Some("Write Current state".into()),
+        label: Some(label.into()),
         run: Some(run.into()),
         trigger: unattended.then(|| "scheduled".into()),
         ..Default::default()
@@ -209,7 +242,7 @@ fn one(
     let mut s = crate::changes::Submit::new(
         page,
         Kind::Edit,
-        "Wrote a Current state",
+        title,
         "Written by the model from the page's opening and newest Timeline entries only.",
         origin,
         brainstead_core::changes::from_texts(Some(&before), &after),
@@ -230,9 +263,15 @@ pub fn stop(app: &AppHandle) {
 }
 
 #[tauri::command]
-pub async fn current_state_start(app: AppHandle, pages: Option<Vec<String>>, limit: Option<usize>, unattended: Option<bool>) -> Res<bool> {
+pub async fn current_state_start(
+    app: AppHandle,
+    pages: Option<Vec<String>>,
+    limit: Option<usize>,
+    unattended: Option<bool>,
+    refresh: Option<bool>,
+) -> Res<bool> {
     // Off the main thread: finding the pages that want one reads every shaped page.
-    crate::blocking(move || start(&app, pages, limit, unattended.unwrap_or(false))).await
+    crate::blocking(move || start(&app, pages, limit, unattended.unwrap_or(false), refresh.unwrap_or(false))).await
 }
 
 #[tauri::command]

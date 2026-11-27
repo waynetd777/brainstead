@@ -2326,10 +2326,13 @@ async function reshapePages(a: Args): Promise<string> {
     .join(" ");
 }
 
-/** write_current_state: Wiki health's Write Current state run: start it, or its status, or stop it. */
+/** write_current_state: Wiki health's Write Current state run: start it, or its status, or stop it.
+ *  With refresh, Refresh Current state, as the Current state behind the Timeline and stale pages checks do. */
 async function writeCurrentState(a: Args): Promise<string> {
   const said = (r: CurrentStateRun) =>
-    `${r.running ? "Running" : "Last run"}: ${r.done} of ${r.total} pages done, ${r.written} written, ${r.nothing} with nothing current to say${r.failed.length ? `; couldn't: ${r.failed.join("; ")}` : ""}${r.run ? ` (run group ${r.run}; changes revert_run undoes it)` : ""}.`;
+    `${r.running ? "Running" : "Last run"}${r.refresh ? " (Refresh Current state)" : ""}: ${r.done} of ${r.total} pages done, ${r.written} ${r.refresh ? "refreshed" : "written"}, ${r.nothing} with nothing ${r.refresh ? "new" : "current"} to say${r.failed.length ? `; couldn't: ${r.failed.join("; ")}` : ""}${r.run ? ` (run group ${r.run}; changes revert_run undoes it)` : ""}.`;
+  const refresh = a.refresh === true;
+  const name = refresh ? "Refresh Current state" : "Write Current state";
   if (a.stop === true) {
     await api.currentStateStop();
     return "Stopping after the page it's on.";
@@ -2337,9 +2340,9 @@ async function writeCurrentState(a: Args): Promise<string> {
   if (a.status === true) return said(await api.currentStateStatus());
   const pages = Array.isArray(a.pages) ? (a.pages as unknown[]).map(String).filter((p) => p.trim()) : null;
   const limit = typeof a.limit === "number" && a.limit > 0 ? Math.floor(a.limit) : null;
-  const ok = await api.currentStateStart(pages?.length ? pages : null, limit, a.unattended === true);
+  const ok = await api.currentStateStart(pages?.length ? pages : null, limit, a.unattended === true, refresh);
   if (!ok) return `Write Current state is running already. ${said(await api.currentStateStatus())}`;
-  told("started Write Current state");
+  told(`started ${name}`);
   const r = await api.currentStateStatus();
   return `Started on ${r.total} page${r.total === 1 ? "" : "s"} with ${r.model}; each is a change in Changes. Ask with status for progress.`;
 }
