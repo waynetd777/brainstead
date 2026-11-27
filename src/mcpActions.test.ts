@@ -1087,6 +1087,44 @@ describe("MCP actions", () => {
       expect(calls.find(([c]) => c === "health_ignore")![1]).toEqual({ check: "orphans", text: "Lena" });
     });
 
+    it("never trashes an image that only starts like the one named, refuses an ambiguous one, and records the move as the assistant's", async () => {
+      const img = (page: string) => ({ text: page, page, safe: false });
+      answers.health_report = () => ({
+        report: {
+          checks: [
+            {
+              id: "unreferenced-images",
+              title: "Unused images",
+              classic: true,
+              items: [img("images/plan.png.bak"), img("images/plan.png"), img("images/plan v2.png")],
+            },
+          ],
+        },
+        history: [],
+        ranAt: null,
+      });
+      answers.health_trash_image = () => "t1";
+      const origin = { kind: "chat", chat: "chat-1", run: "chat-1" };
+      await run("health.issue", { action: "move_to_trash", item: "images/plan.png", origin });
+      expect(calls.filter(([c]) => c === "health_trash_image").map(([, a]) => a)).toEqual([{ path: "images/plan.png", origin }]);
+      // "images/plan" is none of them; "images/plan v2.png (unused)" is the one with lint's note after it.
+      expect(await run("health.issue", { action: "move_to_trash", item: "images/plan" })).toMatch(/isn't an issue/);
+      await run("health.issue", { action: "move_to_trash", item: "images/plan v2.png (unused)" });
+      expect(calls.filter(([c]) => c === "health_trash_image").length).toBe(2);
+      expect(calls.filter(([c]) => c === "health_trash_image")[1][1]).toMatchObject({ path: "images/plan v2.png" });
+      answers.health_report = () => ({
+        report: {
+          checks: [{ id: "unreferenced-images", title: "Unused images", classic: true, items: [img("images/a b"), img("images/a b c")] }],
+        },
+        history: [],
+        ranAt: null,
+      });
+      await expect(run("health.issue", { action: "move_to_trash", item: "images/a b c d" })).rejects.toThrow(
+        /any of 2 issues.*images\/a b; images\/a b c/,
+      );
+      expect(calls.filter(([c]) => c === "health_trash_image").length).toBe(2);
+    });
+
     it("finds link_to's issue by its link target, or by lint's line with the Trash note after it", async () => {
       const missing = "[[Orbit Beta]]  — linked from 2 wiki page(s)";
       answers.health_report = () => ({

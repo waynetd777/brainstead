@@ -3483,14 +3483,25 @@ async function healthLint(a: Args): Promise<string> {
 }
 
 /** The issues an assistant means by `given`: the one whose text it is as lint gives it, also with
- *  what lint adds after it (the Trash note, Did you mean…); with `named`, otherwise the ones whose
- *  link target it is, with or without [[ ]] (a missing page, or a broken source's file, once per
- *  page citing it). */
+ *  what lint adds after it (the Trash note, Did you mean…, after a space); with `named`, otherwise
+ *  the ones whose link target it is, with or without [[ ]] (a missing page, or a broken source's
+ *  file, once per page citing it). Never a near miss: text that only starts like an item's
+ *  (`images/a.png` for `images/a.png.bak`) isn't it, and text that could be more than one item
+ *  is refused, naming them, so the wrong one is never acted on. */
 export function findIssues<I extends { text: string; name?: string }>(items: I[], given: string, named: boolean): I[] {
   const g = given.trim();
   if (!g) return [];
-  const exact = items.find((i) => i.text === g) ?? items.find((i) => g.startsWith(i.text.trimEnd()));
+  const exact = items.find((i) => i.text.trim() === g);
   if (exact) return [exact];
+  const withNote = items.filter((i) => {
+    const t = i.text.trim();
+    return !!t && g.startsWith(t) && /\s/.test(g.charAt(t.length));
+  });
+  if (withNote.length > 1)
+    throw new Error(
+      `That could be any of ${withNote.length} issues: give one's text exactly, as lint gives it: ${withNote.map((i) => i.text.trim()).join("; ")}.`,
+    );
+  if (withNote.length) return withNote;
   if (!named) return [];
   const linked = /^\[\[([^\]|#]+)/.exec(g)?.[1] ?? g;
   const key = linked.trim().toLowerCase();
