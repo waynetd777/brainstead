@@ -798,6 +798,26 @@ fn moving_over_and_starting_the_review_over_go_to_the_app() {
 }
 
 #[test]
+fn a_long_text_reads_in_parts_from_a_start() {
+    let text = (1..=4_000).map(|i| format!("Maya — 00:{i:05}\nLine {i} of the transcript.\n")).collect::<String>();
+    let mut at = 0;
+    let mut read = String::new();
+    loop {
+        let p = part(&text, at);
+        let (head, body) = p.split_once("]\n\n").unwrap();
+        assert!(p.chars().count() <= MAX_CHARS, "a part fits");
+        read.push_str(body);
+        if head.ends_with("the end.") {
+            break;
+        }
+        at = head.rsplit("continue at start ").next().unwrap().trim_end_matches('.').parse().unwrap();
+        assert!(body.ends_with('\n'), "parts end at a line's end");
+    }
+    assert_eq!(read, text, "every character, once, in order");
+    assert!(part(&text, text.chars().count() + 5).starts_with("[Nothing from start"));
+}
+
+#[test]
 fn a_long_page_or_section_is_shown_in_part() {
     let page = format!(
         "# Orbit App\n\nThe staff app.\n\n## Current state\n\nLaunch 28 November.\n\n{}## Oct 2026\n\nRecon moves to 16 Oct.\n",

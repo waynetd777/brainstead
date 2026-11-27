@@ -413,8 +413,8 @@ pub fn tools() -> Vec<Value> {
                 "detail": detail
             }), &["query"])),
         tool("read_section", "Read a page", Read,
-            "Reads a page, or one section of it by heading (to the next heading of the same level). A long page without a heading lists its headings, so read it a section at a time. For a PDF or Office source, heading picks a page (page=6), slide (Slide 2) or sheet by name.",
-            schema(json!({"page": page, "heading": {"type": "string", "description": "The section's heading text (Current state), or for a PDF or Office file a page, slide or sheet. The whole page when left out."}}), &["page"])),
+            "Reads a page, or one section of it by heading (to the next heading of the same level). A long page or section is shown in part, its sections by heading; start reads it all instead, as it is, a part at a time: give start 0, then the start each part says to continue at, until it says it's the end. For a PDF or Office source, heading picks a page (page=6), slide (Slide 2) or sheet by name.",
+            schema(json!({"page": page, "heading": {"type": "string", "description": "The section's heading text (Current state), or for a PDF or Office file a page, slide or sheet. The whole page when left out."}, "start": {"type": "integer", "minimum": 0, "description": "Read the page (or the section) as it is, from this character on, a part at a time: 0 for the beginning, then the start the last part said to continue at."}}), &["page"])),
         tool("backlinks", "Pages linking here", Read,
             "The notes and pages that link to a page, each with the line its link is on. Use it to see where something is mentioned before renaming or changing it, or to find the notes about an entity. Links are resolved as the app resolves them: by name, alias or path.",
             schema(json!({"page": page}), &["page"])),
@@ -2148,6 +2148,7 @@ fn read_text(ctx: &Ctx, rel: &str) -> Result<String, String> {
 struct ReadArgs {
     page: String,
     heading: Option<String>,
+    start: Option<usize>,
 }
 
 fn headings(text: &str) -> Vec<(usize, usize, String)> {
@@ -2175,7 +2176,27 @@ fn fit(text: &str, len: usize, has_headings: bool) -> String {
     } else {
         (brainstead_core::pageview::excerpt(text, budget), "The middle isn't shown: search for words in it to find what you need.")
     };
-    format!("[{len} characters in all, so shown in part. {how}]\n\n{shown}")
+    format!("[{len} characters in all, so shown in part. {how} Or read all of it, as it is, a part at a time with start 0.]\n\n{shown}")
+}
+
+/// One part of a long text, as it is, from `start` (in characters): as much as fits, ending at a
+/// line's end where there is one, and saying where the next part starts.
+fn part(text: &str, start: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len();
+    if start >= len {
+        return format!("[Nothing from start {start}: it has {len} characters.]");
+    }
+    let budget = MAX_CHARS - 2_000;
+    let mut end = (start + budget).min(len);
+    if end < len {
+        if let Some(nl) = chars[start..end].iter().rposition(|c| *c == '\n').filter(|i| *i > 0) {
+            end = start + nl + 1;
+        }
+    }
+    let body: String = chars[start..end].iter().collect();
+    let tail = if end < len { format!("continue at start {end}") } else { "the end".to_string() };
+    format!("[Characters {start} to {end} of {len}: {tail}.]\n\n{body}")
 }
 
 fn read_section(ctx: &Ctx, a: ReadArgs) -> Result<String, String> {
@@ -2188,6 +2209,7 @@ fn read_section(ctx: &Ctx, a: ReadArgs) -> Result<String, String> {
     let hs = headings(&text);
     let list = || hs.iter().map(|(_, n, t)| format!("{}{t}", "  ".repeat(n.saturating_sub(1)))).collect::<Vec<_>>().join("\n");
     match a.heading.as_deref().map(|h| h.trim().trim_start_matches('#').trim()).filter(|h| !h.is_empty()) {
+        None if a.start.is_some() => Ok(format!("{rel}\n\n{}", part(&text, a.start.unwrap_or(0)))),
         None => Ok(format!("{rel}\n\n{}", fit(&text, text.chars().count(), !hs.is_empty()))),
         Some(h) => {
             let Some(at) = hs.iter().position(|(_, _, t)| t.eq_ignore_ascii_case(h)) else {
@@ -2196,9 +2218,12 @@ fn read_section(ctx: &Ctx, a: ReadArgs) -> Result<String, String> {
             let (start, level, _) = hs[at];
             let end = hs[at + 1..].iter().find(|(_, n, _)| *n <= level).map(|(i, _, _)| *i);
             let lines: Vec<&str> = text.split('\n').collect();
-            let part = lines[start..end.unwrap_or(lines.len())].join("\n");
+            let section = lines[start..end.unwrap_or(lines.len())].join("\n");
+            if let Some(o) = a.start {
+                return Ok(format!("{rel}\n\n{}", part(section.trim_end(), o)));
+            }
             let subs = hs[at + 1..].iter().take_while(|(_, n, _)| *n > level).count() > 0;
-            Ok(format!("{rel}\n\n{}", fit(part.trim_end(), part.chars().count(), subs).trim_end()))
+            Ok(format!("{rel}\n\n{}", fit(section.trim_end(), section.chars().count(), subs).trim_end()))
         }
     }
 }
