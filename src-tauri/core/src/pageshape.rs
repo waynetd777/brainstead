@@ -1111,7 +1111,7 @@ fn start_key(d: Date) -> (i32, u32, i32) {
 }
 
 /// A page whose Current state is behind its Timeline: it says when it's from, and the newest
-/// Timeline entry is later than that (D-20261127-11). What Refresh Current state does on its own.
+/// Timeline entry is later than that (D-20261127-13). What Refresh Current state does on its own.
 pub fn current_state_behind(page: &str) -> bool {
     match (current_state_as_of(page), newest_entry(page)) {
         (Some(cs), Some(e)) => end_key(cs) < start_key(e),

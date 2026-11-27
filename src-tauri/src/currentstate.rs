@@ -6,7 +6,7 @@
 //! cheap model writes one from the page's opening and newest entries only (core pageshape), each
 //! checked and made as a change in one Changes run, with one `log.md` line for the run. A sample
 //! of a few pages first, then the rest; it runs in the background, four pages at once, and can be stopped.
-//! Refresh Current state (D-20261127-11) is the same run on pages whose Current state is out of date (core
+//! Refresh Current state (D-20261127-13) is the same run on pages whose Current state is out of date (core
 //! `pageshape::current_state_behind`, or the pages named, `wants_refresh`): rewritten from the same
 //! text, dated as of the newest entry, and left alone when there's nothing new.
 
