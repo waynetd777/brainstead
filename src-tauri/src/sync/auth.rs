@@ -21,8 +21,9 @@ use crate::platform;
 
 /// The Keychain account the sign-in is kept under.
 const ACCOUNT: &str = "teams-sign-in";
-/// A token with less than this many seconds left is obtained afresh.
-const MARGIN_SECS: i64 = 5 * 60;
+/// A token with less than this many seconds left is treated as run out. The extensions reload their
+/// tab 4 minutes before a token runs out, so a fresh one arrives before this.
+const MARGIN_SECS: i64 = 2 * 60;
 
 /// The services the sync reads from, each with the scope its token is requested for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

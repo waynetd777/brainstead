@@ -120,10 +120,27 @@ describe("a hand-over", () => {
     expect(st.storage.last.notes.join()).toContain("turned down: mail; reloaded");
   });
 
-  it("reloads the tab before a token runs out", async () => {
-    const { st, go } = setUp({ ok: true }, ["chats"]);
+  it("reloads the tab when a token is within four minutes of running out, or missing", async () => {
+    const now = Date.now() / 1000;
+    let { st, go } = setUp({ ok: true }, [{ name: "chats", expires: now + 200 }]);
     await go();
     expect(st.reloaded).toEqual([7]);
+    ({ st, go } = setUp({ ok: true }, [{ name: "chats", expires: null }]));
+    await go();
+    expect(st.reloaded).toEqual([7]);
+  });
+
+  it("sets an alarm to reload four minutes before a token runs out, not sooner: the page would reuse it", async () => {
+    const now = Date.now() / 1000;
+    const { st, go } = setUp({ ok: true }, [
+      { name: "transcripts", expires: now + 13 * 60 },
+      { name: "chats", expires: now + 20 * 60 },
+    ]);
+    await go();
+    expect(st.reloaded).toEqual([]);
+    const when = st.alarms["brainstead-test-renew"].when / 1000;
+    expect(Math.abs(when - (now + 9 * 60))).toBeLessThan(5);
+    expect(st.storage.last.notes.join()).toMatch(/due: transcripts, chats; reloading at \d\d:\d\d/);
   });
 
   it("reloads a tab Chrome put to sleep or froze", async () => {
@@ -137,7 +154,7 @@ describe("a hand-over", () => {
     expect(st.reloaded).toEqual([7]);
   });
 
-  it("never reloads a tab you're looking at or one in a call, and at most once in 45 minutes", async () => {
+  it("never reloads a tab you're looking at or one in a call, and at most once in 20 minutes", async () => {
     let { st, go } = setUp({ ok: true, renew: ["chats"] });
     st.tabs[0].active = true;
     st.focused = true;
@@ -151,7 +168,7 @@ describe("a hand-over", () => {
     await go();
     await go();
     expect(st.reloaded).toEqual([7]);
-    expect(st.storage.last.notes.join()).toContain("reloaded in the last 45 minutes");
+    expect(st.storage.last.notes.join()).toContain("reloaded in the last 20 minutes");
   });
 
   it("says when Brainstead couldn't be reached, or there was nothing to send", async () => {
@@ -186,13 +203,27 @@ describe("due", () => {
 
   it("names a token that runs out within a whole hand-over plus Brainstead's margin, or has run out", () => {
     const next = fresh.map((a) => (a.target.includes("spaces") ? at(a.target, 20) : a));
-    expect(H.due(next, now, TEAMS)).toEqual(["chats"]);
+    expect(H.due(next, now, TEAMS)).toEqual([{ name: "chats", expires: now + 20 * 60 }]);
     const gone = fresh.map((a) => (a.target.includes("outlook") ? at(a.target, -30) : a));
-    expect(H.due(gone, now, MAIL)).toEqual(["mail"]);
+    expect(H.due(gone, now, MAIL)).toEqual([{ name: "mail", expires: now - 30 * 60 }]);
   });
 
   it("goes by the longest-lived token, and counts a missing one as due", () => {
     expect(H.due([...fresh, at("https://api.spaces.skype.com//x", -100)], now, TEAMS)).toEqual([]);
-    expect(H.due([], now, TEAMS)).toEqual(["chats", "transcripts"]);
+    expect(H.due([], now, TEAMS).map((e) => e.name)).toEqual(["chats", "transcripts"]);
+  });
+
+  it("reloads four minutes before the first runs out, or now when one is missing or nearly out", () => {
+    expect(
+      H.renewAt(
+        [
+          { name: "a", expires: now + 600 },
+          { name: "b", expires: now + 900 },
+        ],
+        now,
+      ),
+    ).toBe(now + 600 - H.RENEW_SECS);
+    expect(H.renewAt([{ name: "a", expires: now + 100 }], now)).toBe(now);
+    expect(H.renewAt([{ name: "a", expires: null }], now)).toBe(now);
   });
 });

@@ -13,10 +13,13 @@
 // - Chrome is kept from putting the tab to sleep, and a tab asleep, or one that doesn't answer
 //   within 20 seconds (frozen), is reloaded;
 // - the tab is reloaded when Brainstead says a sign-in was turned down and the tab has nothing
-//   newer (`renew` in its answer), and when a token the sync uses runs out within 25 minutes;
+//   newer (`renew` in its answer), and before a token the sync uses runs out: a hand-over that sees
+//   one running out within 25 minutes sets an alarm to reload 4 minutes before it does, since the
+//   page reuses a cached token until it's within 5 minutes of running out (a reload earlier than
+//   that fetches nothing new);
 // - a reload is handed over a minute later, once the page has fetched fresh tokens;
 // - never a tab the user is looking at or one playing sound (a call), and at most one reload in
-//   45 minutes, so a page that doesn't renew on load can't cause a loop;
+//   20 minutes, so a page that doesn't renew on load can't cause a loop;
 // - what the last hand-over did is kept in chrome.storage.local, never a token.
 //
 // Loaded into the service worker with importScripts, so it hangs its functions on
@@ -26,12 +29,16 @@
   /** How long reading a tab or Brainstead's answer may take: a tab Chrome has frozen never answers. */
   const STEP_MS = 20_000;
   /** At most one reload in this long. */
-  const RELOAD_GAP_MS = 45 * 60 * 1000;
+  const RELOAD_GAP_MS = 20 * 60 * 1000;
   const LAST_RELOAD_KEY = "signin-last-reload";
   /** How soon before a token runs out the tab is reloaded, in seconds: longer than the 15 minutes
    *  between hand-overs plus the 5 minutes' margin Brainstead keeps, so the hand-over before a
    *  token runs out always sees it coming. */
   const SOON_SECS = 25 * 60;
+  /** How long before a token runs out the reload is made: inside the 5 minutes in which the page
+   *  renews a token rather than reuse it, with time for the hand-over a minute later. Brainstead
+   *  uses a token until 2 minutes before it runs out. */
+  const RENEW_SECS = 4 * 60;
 
   /** `p`, or a rejection saying `what` took too long. */
   function inTime(p, what, ms = STEP_MS) {
@@ -54,12 +61,20 @@
     });
   }
 
-  /** The services whose token is missing or runs out within SOON_SECS of `nowSecs`. */
+  /** The services whose token is missing or runs out within SOON_SECS of `nowSecs`, each with
+   *  when it does (null when missing). */
   function due(ats, nowSecs, services) {
-    return expiries(ats, services)
-      .filter((e) => e.expires === null || e.expires < nowSecs + SOON_SECS)
-      .map((e) => e.name);
+    return expiries(ats, services).filter((e) => e.expires === null || e.expires < nowSecs + SOON_SECS);
   }
+
+  /** When to reload for the `soon` tokens (seconds since 1970): now (`nowSecs`) once one is
+   *  missing or within RENEW_SECS of running out, otherwise RENEW_SECS before the first does. */
+  function renewAt(soon, nowSecs) {
+    const first = Math.min(...soon.map((e) => (e.expires === null ? nowSecs : e.expires)));
+    return Math.max(nowSecs, first - RENEW_SECS);
+  }
+
+  const clock = (secs) => new Date(secs * 1000).toTimeString().slice(0, 5);
 
   /** Reloads a background tab so the page fetches a fresh sign-in, then hands it over a minute
    *  later (`after`, an alarm's name). Says what it did. */
@@ -70,7 +85,7 @@
       if (win?.focused) return "not reloaded: you're looking at it";
     }
     const last = (await chrome.storage.local.get(LAST_RELOAD_KEY))[LAST_RELOAD_KEY] || 0;
-    if (Date.now() - last < RELOAD_GAP_MS) return "not reloaded: reloaded in the last 45 minutes";
+    if (Date.now() - last < RELOAD_GAP_MS) return "not reloaded: reloaded in the last 20 minutes";
     await chrome.storage.local.set({ [LAST_RELOAD_KEY]: Date.now() });
     try {
       await chrome.tabs.reload(tab.id);
@@ -93,11 +108,13 @@
    * - `all`: gather every tab's answer (Slack, one tab per workspace) rather than the first usable;
    * - `send(pages)`: hands the answers over; resolves to Brainstead's answer `{ ok, message?,
    *   renew? }`, or `{ outcome }` when there was nothing to send, with `extra` for the record;
-   * - `due(page, nowSecs)`: optional, the services whose token in the page runs out soon.
+   * - `due(page, nowSecs)`: optional, the services whose token in the page runs out soon, as
+   *   `due()` gives them.
    */
   function start(o) {
     const alarm = `brainstead-${o.name}-handover`;
     const after = `brainstead-${o.name}-after-reload`;
+    const timed = `brainstead-${o.name}-renew`;
 
     async function run(notes, keep) {
       let tabs;
@@ -151,9 +168,20 @@
         notes.push(`turned down: ${reply.renew.join(", ")}; ${await renew(tab, after)}`);
         return outcome;
       }
-      // About to run out: reload before it does, since a page only renews a token when it next needs it.
-      const soon = o.due ? o.due(found[0].page, Date.now() / 1000) : [];
-      if (soon.length) notes.push(`due: ${soon.join(", ")}; ${await renew(tab, after)}`);
+      // About to run out: reload when the page will renew it (a page only renews a token when it
+      // next needs it, and reuses a cached one until it's nearly out), now or by an alarm.
+      const now = Date.now() / 1000;
+      const soon = o.due ? o.due(found[0].page, now) : [];
+      if (soon.length) {
+        const names = soon.map((e) => e.name).join(", ");
+        const at = renewAt(soon, now);
+        if (at <= now) {
+          notes.push(`due: ${names}; ${await renew(tab, after)}`);
+        } else {
+          chrome.alarms.create(timed, { when: at * 1000 });
+          notes.push(`due: ${names}; reloading at ${clock(at)}`);
+        }
+      }
       return outcome;
     }
 
@@ -172,12 +200,12 @@
 
     chrome.alarms.create(alarm, { periodInMinutes: o.every });
     chrome.alarms.onAlarm.addListener((a) => {
-      if (a.name === alarm || a.name === after) void handOver();
+      if (a.name === alarm || a.name === after || a.name === timed) void handOver();
     });
     chrome.runtime.onStartup.addListener(() => void handOver());
     chrome.runtime.onInstalled.addListener(() => void handOver());
     return handOver;
   }
 
-  globalThis.brainsteadHandover = { start, due, expiries, inTime, renew, STEP_MS, SOON_SECS, RELOAD_GAP_MS };
+  globalThis.brainsteadHandover = { start, due, renewAt, expiries, inTime, renew, STEP_MS, SOON_SECS, RENEW_SECS, RELOAD_GAP_MS };
 })();
