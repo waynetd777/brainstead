@@ -49,22 +49,27 @@ fn norm(h: &str) -> String {
     h.trim().trim_start_matches('#').trim().to_lowercase()
 }
 
-/// The frontmatter without its `sources:` list (a line saying how many there are instead), and the body.
+/// The frontmatter without its `sources:` list (a line saying how many there are instead, or, when
+/// the properties don't read as YAML, that and the parser's reason: a count would say 0), and the body.
 fn body(page: &str) -> (String, &str) {
     let fm = crate::frontmatter::split(page);
     if fm.body_start == 0 {
         return (String::new(), page);
     }
-    let n = crate::frontmatter::list(&fm.data, &["sources"], false).len();
+    let note = match &fm.error {
+        Some(e) => format!("sources: (not shown or counted: the properties don't read as YAML: {})", e.lines().next().unwrap_or("").trim()),
+        None => format!("sources: ({} sources, not shown)", crate::frontmatter::list(&fm.data, &["sources"], false).len()),
+    };
     let mut out = Vec::new();
     let mut skipping = false;
     for line in page[..fm.body_start].lines() {
-        if skipping && (line.starts_with(' ') || line.starts_with('\t') || line.starts_with('-')) {
+        let closing = matches!(line.trim_end(), "---" | "...");
+        if skipping && !closing && (line.starts_with(' ') || line.starts_with('\t') || line.starts_with('-')) {
             continue;
         }
         skipping = false;
         if line.starts_with("sources:") {
-            out.push(format!("sources: ({n} sources, not shown)"));
+            out.push(note.clone());
             skipping = !line.contains('[');
             continue;
         }
@@ -267,6 +272,21 @@ mod tests {
         assert!(!v.can_rewrite(&p, "May 2026 update"));
         // A section that isn't there yet can be added.
         assert!(v.can_rewrite(&p, "Nov 2026 update"));
+    }
+
+    #[test]
+    fn sources_are_counted_only_when_the_properties_read() {
+        let ok = "---\ntype: entity\nsources:\n  - \"[[A]]\"\n  - \"[[B]]\"\n  - \"[[C]]\"\n---\n# Maya\n";
+        let v = view(ok, 4_000).text;
+        assert!(v.contains("sources: (3 sources, not shown)\n---\n# Maya"), "{v}");
+        // An unclosed quote: not YAML, so no count (it would be 0), and the parser's reason instead.
+        let bad = "---\ntype: entity\nstatus: \"open\nsources:\n  - \"[[A]]\"\n---\n# Lena\n";
+        let reason = crate::frontmatter::split(bad).error.expect("doesn't parse");
+        let t = view(bad, 4_000).text;
+        assert!(t.contains("sources: (not shown or counted: the properties don't read as YAML: "), "{t}");
+        assert!(t.contains(reason.lines().next().unwrap().trim()), "{t}");
+        assert!(!t.contains("0 sources") && !t.contains("[[A]]"), "{t}");
+        assert!(t.contains("---\n# Lena"));
     }
 
     #[test]

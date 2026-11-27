@@ -818,6 +818,34 @@ fn a_long_text_reads_in_parts_from_a_start() {
 }
 
 #[test]
+fn find_gives_the_lines_their_heading_and_a_start_to_read_on_from() {
+    let mut text = String::from("# Steerco\n\n## Opening\n\nMaya opened.\n\n## Actions\n\n");
+    for i in 1..=60 {
+        text.push_str(&format!("Lena — 00:{i:02}\nThe Orbit App budget, item {i}.\n"));
+    }
+    text.push_str("Maya: ORBIT launch moves to March.\n");
+    // All the words, case aside, on one line; each start reads on from that line.
+    let f = find_lines(&text, "orbit launch").unwrap();
+    assert!(f.starts_with("[1 line with all the words “orbit launch”."), "{f}");
+    let at: usize = f.split("- start ").nth(1).unwrap().split(' ').next().unwrap().parse().unwrap();
+    assert!(f.contains(", under “Actions”): Maya: ORBIT launch moves to March."), "{f}");
+    assert!(part(&text, at).contains("]\n\nMaya: ORBIT launch moves to March."));
+    // A phrase in quotes; more than the cap is counted and cut.
+    let f = find_lines(&text, "\"orbit app budget\"").unwrap();
+    assert!(f.starts_with("[60 lines with the phrase “orbit app budget”. The first 40 are shown"), "{f}");
+    assert_eq!(f.matches("\n- start ").count(), FIND_CAP);
+    assert!(find_lines(&text, "\"app orbit\"").unwrap().starts_with("[No line has the phrase"));
+    assert!(find_lines(&text, "  ").is_err());
+
+    let f = fixture();
+    let r = ok(&f.ctx, "read_section", json!({"page": "Orbit App", "find": "PILOT"}));
+    assert!(r.contains("(line 19, under “History”): - Pilot ran in August."), "{r}");
+    let r = ok(&f.ctx, "read_section", json!({"page": "Orbit App", "heading": "Current state", "find": "soft launch"}));
+    assert!(r.contains("· Current state") && r.contains("- start 18 (line 3, under “Current state”): Soft launch"), "{r}");
+    assert!(ok(&f.ctx, "read_section", json!({"page": "Orbit App", "heading": "Current state", "find": "pilot"})).contains("No line has"));
+}
+
+#[test]
 fn a_long_page_or_section_is_shown_in_part() {
     let page = format!(
         "# Orbit App\n\nThe staff app.\n\n## Current state\n\nLaunch 28 November.\n\n{}## Oct 2026\n\nRecon moves to 16 Oct.\n",
