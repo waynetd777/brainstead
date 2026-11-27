@@ -1052,6 +1052,124 @@ pub fn wants_current_state(page: &str) -> bool {
     !p.sections.iter().any(|s| name(s.heading) == "current state") && p.sections.iter().any(|s| classify(s.heading) == Kind::Timeline)
 }
 
+/// The newest Timeline entry's date (entries are `### <ISO date> — title`).
+pub fn newest_entry(page: &str) -> Option<Date> {
+    let p = parse(page);
+    let t = p.sections.iter().find(|s| classify(s.heading) == Kind::Timeline)?;
+    timeline_parts(t.text)
+        .1
+        .iter()
+        .filter_map(|e| markdown::heading(e.lines().next().unwrap_or("")).and_then(|(_, h)| Date::parse_iso(h.trim())))
+        .max_by_key(|d| d.key())
+}
+
+/// The Current state's text, without its heading.
+fn current_state_body<'a>(p: &Page<'a>) -> Option<&'a str> {
+    p.sections.iter().find(|s| name(s.heading) == "current state").map(|s| s.text.split_once('\n').map_or("", |(_, b)| b))
+}
+
+/// When the page's Current state says it's from: the newest date it gives after "As of", else the
+/// newest date in it at all; a date with no year takes the newest Timeline entry's. None when it
+/// has none (or no Current state).
+pub fn current_state_as_of(page: &str) -> Option<Date> {
+    let p = parse(page);
+    let year = newest_entry(page).map_or_else(|| chrono::Datelike::year(&chrono::Local::now()), Date::year);
+    as_of_in(current_state_body(&p)?, year, false)
+}
+
+/// The date a Current state's text says it's from (`current_state_as_of`), `year` for a date with
+/// none; with `strict`, only a date after "As of" counts.
+fn as_of_in(body: &str, year: i32, strict: bool) -> Option<Date> {
+    let lower = body.to_ascii_lowercase();
+    let found = dates_in(body);
+    let as_of = |f: &&Found| {
+        let before = lower[..f.start].trim_end();
+        before.ends_with("as of") || before.ends_with("as of the")
+    };
+    let pick = |fs: Vec<&Found>| fs.iter().filter_map(|f| f.when.in_year(f.when.year().unwrap_or(year))).max_by_key(|d| end_key(*d));
+    pick(found.iter().filter(as_of).collect()).or_else(|| if strict { None } else { pick(found.iter().collect()) })
+}
+
+/// The last day a date covers, to compare with when an entry starts.
+fn end_key(d: Date) -> (i32, u32, i32) {
+    match d {
+        Date::Day(y, m, d) => (y, m, d as i32),
+        Date::Month(y, m) => (y, m, 31),
+        Date::Quarter(y, q) => (y, 3 * q, 31),
+        Date::Half(y, h) => (y, 6 * h, 31),
+    }
+}
+
+/// The first day a date covers.
+fn start_key(d: Date) -> (i32, u32, i32) {
+    match d {
+        Date::Day(y, m, d) => (y, m, d as i32),
+        Date::Month(y, m) => (y, m, 1),
+        Date::Quarter(y, q) => (y, 3 * q - 2, 1),
+        Date::Half(y, h) => (y, 6 * h - 5, 1),
+    }
+}
+
+/// A page whose Current state is behind its Timeline: it says when it's from, and the newest
+/// Timeline entry is later than that (D-20261127-11). What Refresh Current state does on its own.
+pub fn current_state_behind(page: &str) -> bool {
+    match (current_state_as_of(page), newest_entry(page)) {
+        (Some(cs), Some(e)) => end_key(cs) < start_key(e),
+        _ => false,
+    }
+}
+
+/// A page Refresh Current state does when it's named (from the stale pages check, or asked for):
+/// it has a Current state and a dated Timeline, and the Current state doesn't already cover the
+/// newest entry. One that says no date can't be shown to be up to date, so it's done.
+pub fn wants_refresh(page: &str) -> bool {
+    has_current_state(page) && newest_entry(page).is_some() && (current_state_as_of(page).is_none() || current_state_behind(page))
+}
+
+/// A date as a sentence says it, in a form `dates_in` reads back: `2 October 2026`, `October 2026`.
+fn spoken(d: Date) -> String {
+    const MONTHS: [&str; 12] =
+        ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    let m = |m: u32| MONTHS[(m.clamp(1, 12) - 1) as usize];
+    match d {
+        Date::Day(y, mo, d) => format!("{d} {} {y}", m(mo)),
+        Date::Month(y, mo) => format!("{} {y}", m(mo)),
+        Date::Quarter(y, q) => format!("Q{q} {y}"),
+        Date::Half(y, h) => format!("H{h} {y}"),
+    }
+}
+
+/// What a model is shown to refresh an out-of-date Current state from: the same as for writing
+/// one (only the opening and the newest Timeline entries; not the old Current state), told to
+/// say it's as of the newest entry.
+pub fn refresh_prompt(path: &str, page: &str, budget: usize) -> String {
+    let mut out = current_state_prompt(path, page, budget);
+    if let Some(d) = newest_entry(page) {
+        out = out.replacen(
+            "- Answer with the section's text only",
+            &format!("- Start with \"As of {},\" (the newest entry).\n- Answer with the section's text only", spoken(d)),
+            1,
+        );
+    }
+    out
+}
+
+/// A model's refreshed Current state, checked as `current_state_answer` checks one, and dated:
+/// when it doesn't say it's as of the newest entry, "As of …:" goes first, so the page isn't
+/// behind again. An answer the same as the page's Current state is nothing new.
+pub fn refreshed_answer(page: &str, answer: &str, exists: &dyn Fn(&str) -> bool) -> Result<String, String> {
+    let mut t = current_state_answer(page, answer, exists)?;
+    if let Some(newest) = newest_entry(page) {
+        if as_of_in(&t, newest.year(), true).is_none_or(|d| end_key(d) < start_key(newest)) {
+            t = format!("As of {}:\n\n{t}", spoken(newest));
+        }
+    }
+    if current_state_body(&parse(page)).is_some_and(|b| b.trim() == t.trim()) {
+        return Err("the model found nothing new since the Current state".into());
+    }
+    Ok(t)
+}
+
 /// What a model is shown to write a page's Current state from (D-20261006-10): the page's
 /// opening text and its newest Timeline entries, within `budget` characters, and nothing else.
 pub fn current_state_prompt(path: &str, page: &str, budget: usize) -> String {
@@ -1597,6 +1715,42 @@ mod tests {
         assert!(current_state_answer(page, "Live with [[Maya]].", &|t| t == "Maya").is_ok());
         assert!(current_state_answer(page, "Live.\n\n### More", &no).is_err());
         assert!(current_state_answer(page, &"word ".repeat(400), &no).is_err());
+    }
+
+    #[test]
+    fn a_current_state_behind_its_timeline_is_refreshed() {
+        let (page, _) = reshape(&fixture("dated-only"), &is_source);
+        assert_eq!(newest_entry(&page), Some(Date::Day(2026, 10, 2)));
+        let old = with_current_state(&page, "As of September 2026, the pilot finished [[Programme Update Steerco 2026-09-28.pdf]].");
+        assert_eq!(current_state_as_of(&old), Some(Date::Month(2026, 9)));
+        assert!(current_state_behind(&old) && wants_refresh(&old));
+        // A date after "As of" counts over a later one in the text (a launch to come).
+        let later = with_current_state(&page, "As of the 2 October steerco, launch moves to 28 November.");
+        assert_eq!(current_state_as_of(&later), Some(Date::Day(2026, 10, 2)));
+        assert!(!current_state_behind(&later) && !wants_refresh(&later));
+        // No date: not shown to be behind, but done when named.
+        let undated = with_current_state(&page, "Live with [[Lena]].");
+        assert!(!current_state_behind(&undated) && wants_refresh(&undated));
+        // No Current state, or no Timeline: neither.
+        assert!(!wants_refresh(&page) && !wants_refresh("# Orbit App\n\n## Current state\n\nLive.\n"));
+
+        let prompt = refresh_prompt("wiki/entities/Orbit App.md", &old, 6000);
+        assert!(prompt.contains("Start with \"As of 2 October 2026,\"") && !prompt.contains("the pilot finished [[Programme"), "{prompt}");
+        let no = |_: &str| false;
+        let ans =
+            refreshed_answer(&old, "As of 2 October 2026, launch moves to 28 November [[Meeting. Orbit App Steerco - 2026-10-02]].", &no)
+                .unwrap();
+        assert!(ans.starts_with("As of 2 October 2026, launch"));
+        // An answer that doesn't say when gets the newest entry's date first, so it isn't behind again.
+        let ans = refreshed_answer(&old, "- Launch moves to 28 November.", &no).unwrap();
+        assert_eq!(ans, "As of 2 October 2026:\n\n- Launch moves to 28 November.");
+        let new = with_current_state_text(&old, &ans).unwrap();
+        assert!(!current_state_behind(&new) && !wants_refresh(&new) && in_shape(&new, &is_source));
+        assert_eq!(new.matches("## Current state").count(), 1);
+        // The same again is nothing new; NONE is too; links the page lacks are made plain.
+        assert!(refreshed_answer(&new, &ans, &no).unwrap_err().contains("nothing new"));
+        assert!(refreshed_answer(&old, "NONE", &no).is_err());
+        assert!(refreshed_answer(&old, "As of 2 October 2026, with [[Theo]].", &no).unwrap().ends_with("with Theo."));
     }
 
     #[test]

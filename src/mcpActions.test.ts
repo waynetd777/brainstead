@@ -1180,7 +1180,35 @@ describe("MCP actions", () => {
       await run("health.reshape", { unattended: true });
       await run("health.current_state", { unattended: true });
       expect(calls.find(([c]) => c === "health_reshape")![1]).toEqual({ pages: null, unattended: true });
-      expect(calls.find(([c]) => c === "current_state_start")![1]).toEqual({ pages: null, limit: null, unattended: true });
+      expect(calls.find(([c]) => c === "current_state_start")![1]).toEqual({ pages: null, limit: null, unattended: true, refresh: false });
+    });
+
+    it("starts Refresh Current state on the pages named", async () => {
+      answers.current_state_start = () => true;
+      answers.current_state_status = () => ({
+        running: true,
+        run: "r",
+        total: 1,
+        done: 0,
+        written: 0,
+        nothing: 0,
+        failed: [],
+        error: null,
+        model: "m",
+        refresh: true,
+      });
+      const out = await run("health.current_state", { refresh: true, pages: ["Orbit App"] });
+      expect(calls.find(([c]) => c === "current_state_start")![1]).toEqual({
+        pages: ["Orbit App"],
+        limit: null,
+        unattended: false,
+        refresh: true,
+      });
+      expect(String(out)).toContain("Started on 1 page");
+      calls.length = 0;
+      expect(String(await run("health.current_state", { status: true }))).toContain(
+        "(Refresh Current state): 0 of 1 pages done, 0 refreshed",
+      );
     });
 
     it("lists only the contradictions to decide, the screen's first two groups, with status", async () => {

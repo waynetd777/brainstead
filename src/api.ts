@@ -1098,6 +1098,8 @@ export interface CurrentStateRun {
   failed: string[];
   error: string | null;
   model: string;
+  /** Refresh Current state: out-of-date ones rewritten rather than missing ones written. */
+  refresh?: boolean;
 }
 
 export interface ChangeRow {
@@ -1363,9 +1365,10 @@ export const api = {
   healthLinkGhost: (target: string, to: string, pages: string[], unattended = false) =>
     invoke<number>("health_link_ghost", { target, to, pages, unattended }),
   onChangesChanged: (f: () => void): Promise<UnlistenFn> => listen("changes-changed", () => f()),
-  /** Write Current state: a run in the background on the pages named, or every page that wants one, at most `limit`. False when one is going. */
-  currentStateStart: (pages: string[] | null, limit: number | null, unattended = false) =>
-    invoke<boolean>("current_state_start", { pages, limit, unattended }),
+  /** Write Current state: a run in the background on the pages named, or every page that wants one, at most `limit`. False when one is going.
+   *  With `refresh`, Refresh Current state: out-of-date ones rewritten (every page whose Current state is behind its Timeline, or the pages named). */
+  currentStateStart: (pages: string[] | null, limit: number | null, unattended = false, refresh = false) =>
+    invoke<boolean>("current_state_start", { pages, limit, unattended, refresh }),
   currentStateStatus: () => invoke<CurrentStateRun>("current_state_status"),
   currentStateStop: () => invoke<void>("current_state_stop"),
   onCurrentStateChanged: (f: (r: CurrentStateRun) => void): Promise<UnlistenFn> =>

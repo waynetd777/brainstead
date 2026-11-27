@@ -389,10 +389,13 @@ export const CHECK_TIPS: Record<string, string> = {
   "broken-properties":
     "Wiki pages whose properties don't read as YAML, so their sources, aliases and dates are lost to the other checks, search and ingest until they're fixed",
   duplicates: "Pages so alike in name or text that they may be about the same thing",
-  "stale-pages": "Pages many others link to that haven't changed in 90 days or more",
+  "stale-pages":
+    "Pages many others link to that haven't changed in 90 days or more; Refresh Current state rewrites an out-of-date Current state on them",
   "changed-sources": "Sources that changed after the pages citing them were written",
   "no-current-state":
     "Wiki pages with a Timeline but no Current state section; Write Current state has the model write one from the page's newest entries",
+  "current-state-behind":
+    "Wiki pages whose newest Timeline entry is newer than the date their Current state is as of; Refresh Current state has the model rewrite it from the page's newest entries",
   "page-shape":
     "Entity, concept and initiative pages not laid out as opening text, Current state, topics, Timeline (newest first) and See also; Reshape pages moves their sections",
   "initiative-items":
@@ -474,6 +477,10 @@ function Group({
               <div className={`ckitems ${c.id === "missing-pages" || c.id === "broken-sources" ? "ghosts" : ""}`}>
                 {c.id === "page-shape" && <ReshapeAll items={c.items} on={on} />}
                 {c.id === "no-current-state" && <WriteCurrentState n={c.items.length} />}
+                {c.id === "current-state-behind" && <WriteCurrentState n={c.items.length} refresh />}
+                {c.id === "stale-pages" && n > 0 && (
+                  <WriteCurrentState n={n} refresh pages={c.items.flatMap((i) => (i.page ? [i.page] : []))} />
+                )}
                 {IGNORE_ALL.has(c.id) && n > 0 && <IgnoreAll check={c.id} n={n} />}
                 {c.id === "orphans" && n > 0 && <OrphansFix n={n} />}
                 {c.id === "uncited-claims"
@@ -521,6 +528,8 @@ function Row({ check, i, on }: { check: string; i: LintItem; on: Handlers }) {
         return `${pageName(page ?? "")}: ${i.text.slice((page ?? "").length + 2)}`;
       case "page-shape":
         return pageName(page ?? "");
+      case "current-state-behind":
+        return `${pageName(page ?? "")} · Current state ${i.detail}`;
       case "initiative-items":
         return i.text;
       default:
@@ -833,8 +842,11 @@ function Ignored({ check, n }: { check: string; n: number }) {
 
 const SAMPLE = 5;
 
-/** Write Current state: a sample first, then the rest, with the run's progress while it goes. */
-function WriteCurrentState({ n }: { n: number }) {
+/** Write Current state: a sample first, then the rest, with the run's progress while it goes.
+ *  With `refresh`, Refresh Current state on the check's pages: `pages` when given (the stale pages
+ *  check: only those with a Current state not shown to be up to date are done), else every page
+ *  whose Current state is behind its Timeline. */
+function WriteCurrentState({ n, refresh = false, pages = null }: { n: number; refresh?: boolean; pages?: string[] | null }) {
   const [run, setRun] = useState<CurrentStateRun | null>(null);
   useEffect(() => {
     void api
@@ -849,15 +861,17 @@ function WriteCurrentState({ n }: { n: number }) {
   }, []);
   const start = (limit: number | null) =>
     api
-      .currentStateStart(null, limit)
-      .then((ok) => !ok && toast("Write Current state is running already.", undefined, "bad"))
+      .currentStateStart(pages, limit, false, refresh)
+      .then((ok) => !ok && toast(`${run?.refresh ? "Refresh" : "Write"} Current state is running already.`, undefined, "bad"))
       .catch(reportEditError);
+  const verb = refresh ? "Refresh" : "Write";
   if (run?.running)
     return (
       <div className="ckitem">
         <span className="spin" />
         <span className="grow faint small">
-          Writing Current state: {run.done} of {run.total}, {run.written} written
+          {run.refresh ? "Refreshing" : "Writing"} Current state: {run.done} of {run.total}, {run.written}{" "}
+          {run.refresh ? "refreshed" : "written"}
         </span>
         <button type="button" className="btn sm ghost" title="Stop after the page it's on" onClick={() => void api.currentStateStop()}>
           Stop
@@ -865,31 +879,50 @@ function WriteCurrentState({ n }: { n: number }) {
       </div>
     );
   const last =
-    run && run.total
-      ? `Last run: ${run.written} written${run.nothing ? `, ${run.nothing} with nothing current to say` : ""}${run.failed.length ? `, ${run.failed.length} couldn't be: ${run.failed[0]}` : ""}. `
+    run && run.total && !!run.refresh === refresh
+      ? `Last run: ${run.written} ${refresh ? "refreshed" : "written"}${run.nothing ? `, ${run.nothing} with nothing ${refresh ? "new" : "current"} to say` : ""}${run.failed.length ? `, ${run.failed.length} couldn't be: ${run.failed[0]}` : ""}. `
       : "";
+  if (refresh && pages)
+    return (
+      <div className="ckitem">
+        <span className="grow faint small" title={run?.failed.join("\n") || undefined}>
+          {last}Refresh rewrites the Current state of those listed whose newest Timeline entry is newer than it, from the page's opening and
+          newest entries; each is a change in Changes.
+        </span>
+        <button
+          type="button"
+          className="btn sm"
+          disabled={!pages.length}
+          title="Refresh the Current state of the pages listed"
+          onClick={() => void start(null)}
+        >
+          Refresh Current state
+        </button>
+      </div>
+    );
   return (
     <div className="ckitem">
       <span className="grow faint small" title={run?.failed.join("\n") || undefined}>
-        {last}The model writes each from the page's opening and newest Timeline entries; each is a change in Changes.
+        {last}The model {refresh ? "rewrites" : "writes"} each from the page's opening and newest Timeline entries; each is a change in
+        Changes.
       </span>
       <button
         type="button"
         className="btn sm"
         disabled={!n}
-        title={`Write ${Math.min(SAMPLE, n)} first, to look at in Changes`}
+        title={`${verb} ${Math.min(SAMPLE, n)} first, to look at in Changes`}
         onClick={() => void start(SAMPLE)}
       >
-        Write {Math.min(SAMPLE, n)}
+        {verb} {Math.min(SAMPLE, n)}
       </button>
       <button
         type="button"
         className="btn sm"
         disabled={!n}
-        title="Write a Current state on every page listed"
+        title={refresh ? "Refresh the Current state on every page listed" : "Write a Current state on every page listed"}
         onClick={() => void start(null)}
       >
-        Write all{n ? ` (${n})` : ""}
+        {verb} all{n ? ` (${n})` : ""}
       </button>
     </div>
   );
