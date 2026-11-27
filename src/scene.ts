@@ -301,6 +301,7 @@ export function applyScene(sc: Scene) {
       handedOver: "2026-10-28T07:00:00Z",
       stale: [],
       rejected: [],
+      fresh: [],
       extensionOutdated: null,
       extensionShipped: "1.1.16",
       teams: true,

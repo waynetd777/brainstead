@@ -12,6 +12,7 @@ const ok: SyncSignIn = {
   handedOver: "2026-10-28T07:00:00Z",
   stale: [],
   rejected: [],
+  fresh: [],
   extensionOutdated: null,
   extensionShipped: "1.1.16",
   teams: true,
@@ -33,8 +34,15 @@ describe("syncStatus", () => {
     expect(mail.tone).toBe("warn");
     expect(mail.text).toContain("Keep Outlook open");
     expect(syncStatus({ ...ok, stale: ["chats"] }).text).toContain("Keep Teams open");
-    expect(syncStatus({ ...ok, rejected: ["mail"] }).text).toContain("Signed out: mail");
+    expect(syncStatus({ ...ok, rejected: ["mail"] }).text).toContain("Turned down: mail");
     expect(syncStatus({ ...ok, extensionOutdated: "1.1.7" }).text).toContain("version 1.1.7");
+  });
+
+  it("stays quiet about a problem that hasn't lasted: it mostly clears by itself", () => {
+    expect(syncStatus({ ...ok, rejected: ["chats"], fresh: ["chats"] })).toEqual({ tone: "ok", text: "Teams and Outlook connected." });
+    expect(syncStatus({ ...ok, stale: ["transcripts"], fresh: ["transcripts"] }).tone).toBe("ok");
+    expect(syncStatus({ ...ok, stale: ["transcripts", "mail"], fresh: ["transcripts"] }).text).toContain("Gone stale: mail");
+    expect(syncStatus({ ...ok, rejected: ["channel list"] }).tone).toBe("ok");
   });
 
   it("speaks only of the services switched on, each with its own tab", () => {
@@ -51,11 +59,12 @@ describe("syncStatus", () => {
   });
 
   it("takes Slack in when its sync is on, as it does Teams and Outlook", () => {
-    const slack: SlackSignIn = { signedIn: true, workspaces: ["Acme"], rejected: [], handedOver: null };
+    const slack: SlackSignIn = { signedIn: true, workspaces: ["Acme"], rejected: [], fresh: [], handedOver: null };
     expect(syncStatus(ok, undefined, slack)).toEqual({ tone: "ok", text: "Teams, Outlook and Slack connected." });
     const refused = syncStatus(ok, undefined, { ...slack, rejected: ["Acme"] });
     expect(refused.tone).toBe("warn");
-    expect(refused.text).toContain("Signed out of Slack: Acme");
+    expect(refused.text).toContain("Slack turned down: Acme");
+    expect(syncStatus(ok, undefined, { ...slack, rejected: ["Acme"], fresh: ["Acme"] }).tone).toBe("ok");
     expect(syncStatus(null, { teams: false, mail: false }, slack)).toEqual({ tone: "ok", text: "Slack connected." });
     expect(syncStatus(null, { teams: false, mail: false }, null).tone).toBe("off");
   });

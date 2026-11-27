@@ -57,7 +57,7 @@ pub struct SignIn {
 }
 
 /// What a refused workspace's calls say.
-const LAPSED: &str = "Slack turned the sign-in down. If Slack in Chrome asks you to sign in, do so; the extension hands the new sign-in over within 10 minutes.";
+const LAPSED: &str = "Slack turned the sign-in down; it's tried again at the next sync. If Slack in Chrome asks you to sign in, do so.";
 
 static SLACK_URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^https://[a-z0-9-]+(\.enterprise)?\.slack\.com/$").unwrap());
 
@@ -85,48 +85,80 @@ pub fn from_handover(v: &Value, now: i64) -> Result<SignIn, String> {
     Ok(SignIn { workspaces, cookie: cookie.to_string(), handed_over: now, rejected: BTreeMap::new(), rejected_at: BTreeMap::new() })
 }
 
+/// What a workspace's refusal is remembered by: its token and the session cookie together, so a
+/// new cookie handed over with the same token (Slack renews the cookie) counts as a new sign-in.
+fn sign_in_id(token: &str, cookie: &str) -> String {
+    use super::refusal::fingerprint;
+    format!("{}{}", &fingerprint(cookie)[..8.min(cookie.len())], &fingerprint(token)[..8.min(token.len())])
+}
+
 /// A hand-over's sign-in with the earlier one's refusals applied: a workspace handed the same dead
-/// token again stays refused; one handed a new token is cleared.
+/// sign-in again stays refused; one handed a new token or cookie is cleared.
 fn keep_rejected(mut new: SignIn, old: Option<&SignIn>) -> SignIn {
     let (rejected, at) = old.map(|o| (o.rejected.clone(), o.rejected_at.clone())).unwrap_or_default();
-    (new.rejected, new.rejected_at) = super::refusal::still(&rejected, &at, Utc::now().timestamp(), |id| {
-        new.workspaces.iter().find(|w| w.id == id).map(|w| (w.token.as_str(), None))
-    });
+    let ids: BTreeMap<String, String> = new.workspaces.iter().map(|w| (w.id.clone(), sign_in_id(&w.token, &new.cookie))).collect();
+    (new.rejected, new.rejected_at) = super::refusal::still(&rejected, &at, |id| ids.get(id).map(|i| (i.as_str(), None)));
     new
 }
 
-/// Keeps a hand-over's sign-in (the native host calls this). Says `slack` when a workspace is still
-/// turned down, for the extension to reload the tab so Slack fetches a fresh sign-in.
+/// Runs `f` as the only one changing the stored Slack sign-in (the helper hands over while the
+/// app's sync records a refusal), as `auth::changing` does for Teams and Outlook.
+fn changing<T>(f: impl FnOnce() -> T) -> T {
+    crate::nativehost::locked_by(&crate::platform::data_dir(), "slack-sign-in.lock", f)
+}
+
+/// Whether a workspace's refusal still keeps its token from being tried ([`super::refusal`]).
+fn blocked(s: &SignIn, ws: &str) -> bool {
+    super::refusal::Refused::of(&s.rejected, &s.rejected_at, ws).blocks(Utc::now().timestamp())
+}
+
+/// Keeps a hand-over's sign-in (the native host calls this). Says `slack` while a workspace is still
+/// turned down and its token isn't to be tried yet, for the extension to reload the tab so Slack
+/// fetches a fresh sign-in.
 pub fn accept_handover(v: &Value) -> Result<Vec<String>, String> {
-    let s = keep_rejected(from_handover(v, Utc::now().timestamp())?, load().as_ref());
-    store(&s)?;
-    Ok(if s.rejected.is_empty() { vec![] } else { vec!["slack".into()] })
+    let new = from_handover(v, Utc::now().timestamp())?;
+    changing(|| {
+        let s = keep_rejected(new, super::stored::load_for_change::<SignIn>(ACCOUNT)?.as_ref());
+        store(&s)?;
+        Ok(if s.workspaces.iter().any(|w| blocked(&s, &w.id)) { vec!["slack".into()] } else { vec![] })
+    })
 }
 
 fn store(s: &SignIn) -> Result<(), String> {
-    crate::platform::secret_set(ACCOUNT, &serde_json::to_string(s).map_err(|e| e.to_string())?)
+    super::stored::store(ACCOUNT, s)
 }
 
-/// Slack turned a workspace's token down: the sync stops using it until a new one is handed over.
-fn reject(ws: &Workspace) {
-    let Some(mut s) = load() else { return };
-    if s.workspaces.iter().any(|w| w.id == ws.id && w.token == ws.token) {
-        super::refusal::record(&mut s.rejected, &mut s.rejected_at, &ws.id, &ws.token, Utc::now().timestamp());
-        let _ = store(&s);
-    }
+/// Slack turned a workspace's sign-in down: the sync stops using it until a new one is handed over,
+/// or it's tried again after a pass and works. Only when it's still the stored one.
+fn reject(ws: &Workspace, cookie: &str) {
+    changing(|| {
+        let Ok(Some(mut s)) = super::stored::load_for_change::<SignIn>(ACCOUNT) else { return };
+        if s.cookie == cookie && s.workspaces.iter().any(|w| w.id == ws.id && w.token == ws.token) {
+            super::refusal::record(&mut s.rejected, &mut s.rejected_at, &ws.id, &sign_in_id(&ws.token, cookie), Utc::now().timestamp());
+            let _ = store(&s);
+        }
+    })
 }
 
-/// The stored sign-in, with the refusals that have lapsed forgotten (the shared rule).
+/// A workspace's calls worked: a refusal it had is cleared.
+fn worked(ws: &str) {
+    changing(|| {
+        let Ok(Some(mut s)) = super::stored::load_for_change::<SignIn>(ACCOUNT) else { return };
+        if super::refusal::clear(&mut s.rejected, &mut s.rejected_at, ws) {
+            let _ = store(&s);
+        }
+    })
+}
+
+/// The stored sign-in, read steadily ([`super::stored`]).
 pub fn load() -> Option<SignIn> {
-    let mut s: SignIn = crate::platform::secret_get(ACCOUNT).and_then(|j| serde_json::from_str(&j).ok())?;
-    super::refusal::prune(&mut s.rejected, &mut s.rejected_at, Utc::now().timestamp());
-    Some(s)
+    super::stored::load(ACCOUNT)
 }
 
 /// Forgets the sign-in (Settings' Sign out).
 #[tauri::command]
 pub fn slack_sign_out() -> Result<(), String> {
-    crate::platform::secret_delete(ACCOUNT)
+    super::stored::forget(ACCOUNT)
 }
 
 /// What Settings shows about the Slack sign-in. No secret.
@@ -137,6 +169,8 @@ pub struct SignInState {
     pub workspaces: Vec<String>,
     /// The workspaces Slack turned the sign-in down for, until a new one is handed over.
     pub rejected: Vec<String>,
+    /// Of `rejected`, those not lasted long enough to tell the user about ([`super::attention`]).
+    pub fresh: Vec<String>,
     /// RFC 3339.
     pub handed_over: Option<String>,
 }
@@ -144,13 +178,17 @@ pub struct SignInState {
 #[tauri::command]
 pub fn slack_sign_in_state() -> SignInState {
     match load() {
-        Some(s) => SignInState {
-            signed_in: true,
-            workspaces: s.workspaces.iter().map(ws_name).collect(),
-            rejected: s.workspaces.iter().filter(|w| s.rejected.contains_key(&w.id)).map(ws_name).collect(),
-            handed_over: Utc.timestamp_opt(s.handed_over, 0).single().map(|t| t.to_rfc3339()),
-        },
-        None => SignInState { signed_in: false, workspaces: vec![], rejected: vec![], handed_over: None },
+        Some(s) => {
+            let rejected: Vec<String> = s.workspaces.iter().filter(|w| s.rejected.contains_key(&w.id)).map(ws_name).collect();
+            SignInState {
+                signed_in: true,
+                workspaces: s.workspaces.iter().map(ws_name).collect(),
+                fresh: super::attention::fresh("slack", &rejected, Utc::now().timestamp()),
+                rejected,
+                handed_over: Utc.timestamp_opt(s.handed_over, 0).single().map(|t| t.to_rfc3339()),
+            }
+        }
+        None => SignInState { signed_in: false, workspaces: vec![], rejected: vec![], fresh: vec![], handed_over: None },
     }
 }
 
@@ -165,7 +203,24 @@ fn ws_name(w: &Workspace) -> String {
 // ── Slack's API ────────────────────────────────────────────────────────────────────────────────
 
 /// One API call, as the web client makes it: the token in the form, the session cookie sent along.
+/// A refusal is asked again once, after a moment, before it counts (as Microsoft's 401 is).
 fn call(
+    client: &reqwest::blocking::Client,
+    ws: &Workspace,
+    cookie: &str,
+    method: &str,
+    params: &[(&str, String)],
+) -> Result<Value, String> {
+    match call_once(client, ws, cookie, method, params) {
+        Err(e) if e == LAPSED => {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            call_once(client, ws, cookie, method, params)
+        }
+        r => r,
+    }
+}
+
+fn call_once(
     client: &reqwest::blocking::Client,
     ws: &Workspace,
     cookie: &str,
@@ -452,17 +507,21 @@ pub fn sync(
     let client = super::client();
     let mut prog = progress(data);
     for ws in &sign_in.workspaces {
-        // Turned down in the last half hour: not tried again until a new sign-in is handed over or
-        // the refusal lapses.
-        if sign_in.rejected.contains_key(&ws.id) {
+        // Turned down at the last pass: not tried again until a new sign-in is handed over, or the
+        // next pass.
+        if blocked(&sign_in, &ws.id) {
             r.problems.push(format!("{}: {LAPSED}", ws_name(ws)));
             continue;
         }
-        if let Err(e) = workspace(&client, ws, &sign_in.cookie, data, vault, s, (cutoff, from), &mut prog, r) {
-            if e.contains(LAPSED) {
-                reject(ws);
+        match workspace(&client, ws, &sign_in.cookie, data, vault, s, (cutoff, from), &mut prog, r) {
+            Err(e) => {
+                if e.contains(LAPSED) {
+                    reject(ws, &sign_in.cookie);
+                }
+                r.problems.push(format!("{}: {e}", ws_name(ws)));
             }
-            r.problems.push(format!("{}: {e}", ws_name(ws)));
+            Ok(_) if sign_in.rejected.contains_key(&ws.id) => worked(&ws.id),
+            Ok(_) => {}
         }
     }
     if let Err(e) = save_progress(data, &prog) {
@@ -756,13 +815,22 @@ mod tests {
         let mut old = from_handover(&hand("xoxc-dead-0123456789abcdef"), 100).unwrap();
         // As reject() records an invalid_auth.
         let at = Utc::now().timestamp();
-        super::super::refusal::record(&mut old.rejected, &mut old.rejected_at, "T1", "xoxc-dead-0123456789abcdef", at);
+        super::super::refusal::record(
+            &mut old.rejected,
+            &mut old.rejected_at,
+            "T1",
+            &sign_in_id("xoxc-dead-0123456789abcdef", "xoxd-abc"),
+            at,
+        );
         // The same token again: still refused, so the extension is told to reload the tab.
         let again = keep_rejected(from_handover(&hand("xoxc-dead-0123456789abcdef"), 300).unwrap(), Some(&old));
         assert!(again.rejected.contains_key("T1") && again.rejected_at.get("T1") == Some(&at));
         // A new one clears it.
         let fresh = keep_rejected(from_handover(&hand("xoxc-live-0123456789abcdeX"), 400).unwrap(), Some(&again));
         assert!(fresh.rejected.is_empty() && fresh.rejected_at.is_empty());
+        // So does the same token with a new session cookie: Slack renews the cookie.
+        let cookie = json!({"cookie": "xoxd-renewed-cookie-0123", "workspaces": [{"id": "T1", "name": "Acme", "url": "https://acme.slack.com/", "token": "xoxc-dead-0123456789abcdef"}]});
+        assert!(keep_rejected(from_handover(&cookie, 500).unwrap(), Some(&again)).rejected.is_empty());
     }
 
     #[test]

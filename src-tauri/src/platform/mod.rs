@@ -952,8 +952,10 @@ pub use brainstead_core::features::{platform_features, PlatformFeatures};
 /// A secret kept for Brainstead (the Teams and Outlook sign-in, `sync/auth.rs`): the login
 /// Keychain on macOS, under the service "Brainstead" (or "Brainstead (dev)" for a dev build, so it
 /// leaves the installed app's alone). None when there's none. Elsewhere there's no store yet.
-pub fn secret_get(account: &str) -> Option<String> {
-    imp::secret_get(&secret_service(), account)
+/// Telling none (`Ok(None)`) apart from a store that couldn't say (an error): `sync::stored` reads
+/// through this.
+pub fn secret_read(account: &str) -> Result<Option<String>, String> {
+    imp::secret_read(&secret_service(), account)
 }
 
 /// Keeps `value` as the secret `account`, replacing what was there.

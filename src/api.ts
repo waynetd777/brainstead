@@ -436,16 +436,20 @@ export interface SlackSignIn {
   signedIn: boolean;
   workspaces: string[];
   rejected: string[];
+  /** Of `rejected`, those not lasted long enough to tell about (they mostly clear by themselves): the dot leaves them out. */
+  fresh: string[];
   handedOver: string | null;
 }
 
 export interface SyncSignIn {
   signedIn: boolean;
   handedOver: string | null;
-  /** What the sync can't reach while signed in, its token missing or run out: "chats", "mail", "transcripts", "channel list". */
+  /** What the sync can't reach while signed in, its token missing or run out: "chats", "mail", "transcripts". */
   stale: string[];
-  /** What Microsoft turned the sign-in down for (signed out), until a new one is handed over: "chats", "mail", … */
+  /** What Microsoft turned the sign-in down for, until a newer one is handed over or it works when tried again: "chats", "mail", … */
   rejected: string[];
+  /** Of `rejected` and `stale`, those not lasted long enough to tell about (they mostly clear by themselves): the dot leaves them out. */
+  fresh: string[];
   /** The Teams extension version Chrome is running, when older than the one this build ships ("" when too old to say). */
   extensionOutdated: string | null;
   /** The Teams extension version this build ships. */

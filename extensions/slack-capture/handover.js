@@ -18,8 +18,12 @@
 //   page reuses a cached token until it's within 5 minutes of running out (a reload earlier than
 //   that fetches nothing new);
 // - a reload is handed over a minute later, once the page has fetched fresh tokens;
-// - never a tab the user is looking at or one playing sound (a call), and at most one reload in
-//   20 minutes, so a page that doesn't renew on load can't cause a loop;
+// - never a tab the user is looking at or one playing sound (a call): another tab of the app is
+//   reloaded instead, or it's tried again in 3 minutes; at most one reload in 20 minutes for the
+//   same reason, so a page that doesn't renew on load can't cause a loop (tried again once the 20
+//   minutes are up, not before);
+// - which token is which, and which of several is the one Brainstead will use (the newest issued),
+//   is read from the token itself, as Brainstead's sync/auth.rs reads it;
 // - what the last hand-over did is kept in chrome.storage.local, never a token.
 //
 // Loaded into the service worker with importScripts, so it hangs its functions on
@@ -28,12 +32,14 @@
 (() => {
   /** How long reading a tab or Brainstead's answer may take: a tab Chrome has frozen never answers. */
   const STEP_MS = 20_000;
-  /** At most one reload in this long. */
+  /** At most one reload for the same reason (and, before a token runs out, the same services) in
+   *  this long, so a page that doesn't renew on load can't cause a loop. */
   const RELOAD_GAP_MS = 20 * 60 * 1000;
-  const LAST_RELOAD_KEY = "signin-last-reload";
-  /** How soon before a token runs out the tab is reloaded, in seconds: longer than the 15 minutes
-   *  between hand-overs plus the 5 minutes' margin Brainstead keeps, so the hand-over before a
-   *  token runs out always sees it coming. */
+  /** How soon after a reload that couldn't be made (the tab in view, a call, one made lately) it's
+   *  tried again, in minutes. */
+  const RETRY_MIN = 3;
+  /** How soon before a token runs out a hand-over starts watching it, in seconds: longer than the
+   *  15 minutes between hand-overs plus Brainstead's margin, so it's always seen coming. */
   const SOON_SECS = 25 * 60;
   /** How long before a token runs out the reload is made: inside the 5 minutes in which the page
    *  renews a token rather than reuse it, with time for the hand-over a minute later. Brainstead
@@ -49,15 +55,31 @@
     return Promise.race([p, late]).finally(() => clearTimeout(timer));
   }
 
-  /** Each service's longest-lived token expiry (seconds since 1970), or null when there's none.
-   *  `services`: `{ name, test(target) }`, target being the token's scopes, lower-cased. */
+  /** A token's claims, decoded (not verified), as Brainstead's sync/auth.rs reads them: `aud`
+   *  without a trailing slash, `scp`, `iat`, `exp`. Empty for one that isn't a JWT. */
+  function claims(secret) {
+    try {
+      const part = String(secret || "").split(".")[1] || "";
+      const c = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((part.length + 3) % 4)));
+      return { ...c, aud: String(c.aud || "").replace(/\/+$/, ""), scp: String(c.scp || "") };
+    } catch {
+      return { aud: "", scp: "" };
+    }
+  }
+
+  /** Each service's token as Brainstead will choose it: the newest issued (the longest-lived when
+   *  they don't say), and when it runs out (seconds since 1970), or null when there's none.
+   *  `services`: `{ name, test(claims) }`, matched on the token's own audience and scopes as
+   *  Brainstead matches them. */
   function expiries(ats, services) {
     return services.map((s) => {
-      const times = (ats || [])
-        .filter((a) => s.test(String(a.target || "").toLowerCase()))
-        .map((a) => Number(a.expiresOn))
-        .filter((n) => Number.isFinite(n) && n > 0);
-      return { name: s.name, expires: times.length ? Math.max(...times) : null };
+      const mine = (ats || [])
+        .map((a) => ({ c: claims(a.secret), at: Number(a.expiresOn) }))
+        .map(({ c, at }) => ({ c, exp: Number(c.exp) || at, iat: Number(c.iat) || 0 }))
+        .filter(({ c, exp }) => s.test(c) && Number.isFinite(exp) && exp > 0);
+      if (!mine.length) return { name: s.name, expires: null };
+      mine.sort((a, b) => b.iat - a.iat || b.exp - a.exp);
+      return { name: s.name, expires: mine[0].exp };
     });
   }
 
@@ -76,24 +98,39 @@
 
   const clock = (secs) => new Date(secs * 1000).toTimeString().slice(0, 5);
 
-  /** Reloads a background tab so the page fetches a fresh sign-in, then hands it over a minute
-   *  later (`after`, an alarm's name). Says what it did. */
-  async function renew(tab, after) {
-    if (tab.audible) return "not reloaded: playing sound (a call?)";
-    if (tab.active) {
-      const win = await chrome.windows.get(tab.windowId).catch(() => null);
-      if (win?.focused) return "not reloaded: you're looking at it";
+  /** Reloads one of `tabs` (the first that may be) so the page fetches a fresh sign-in, then hands
+   *  it over a minute later (`after`, an alarm's name). Never a tab playing sound (a call) or one
+   *  the user is looking at; at most once in RELOAD_GAP_MS for the same `why`. Any tab of the app
+   *  will do: they share the page's sign-in. Says what it did, and whether it reloaded. */
+  async function renew(tabs, after, why) {
+    const key = `signin-last-reload:${why}`;
+    const last = (await chrome.storage.local.get(key))[key] || 0;
+    if (Date.now() - last < RELOAD_GAP_MS) {
+      return { done: false, note: "not reloaded: reloaded for this in the last 20 minutes", wait: last + RELOAD_GAP_MS - Date.now() };
     }
-    const last = (await chrome.storage.local.get(LAST_RELOAD_KEY))[LAST_RELOAD_KEY] || 0;
-    if (Date.now() - last < RELOAD_GAP_MS) return "not reloaded: reloaded in the last 20 minutes";
-    await chrome.storage.local.set({ [LAST_RELOAD_KEY]: Date.now() });
-    try {
-      await chrome.tabs.reload(tab.id);
+    let note = "not reloaded: the tab went away";
+    for (const tab of tabs) {
+      if (tab.audible) {
+        note = "not reloaded: playing sound (a call?)";
+        continue;
+      }
+      if (tab.active) {
+        const win = await chrome.windows.get(tab.windowId).catch(() => null);
+        if (win?.focused) {
+          note = "not reloaded: you're looking at it";
+          continue;
+        }
+      }
+      try {
+        await chrome.tabs.reload(tab.id);
+      } catch {
+        continue;
+      }
+      await chrome.storage.local.set({ [key]: Date.now() });
       chrome.alarms.create(after, { delayInMinutes: 1 });
-      return "reloaded";
-    } catch {
-      return "not reloaded: the tab went away";
+      return { done: true, note: tabs.length > 1 ? `reloaded tab ${tab.id}` : "reloaded" };
     }
+    return { done: false, note, wait: RETRY_MIN * 60 * 1000 };
   }
 
   /**
@@ -115,6 +152,19 @@
     const alarm = `brainstead-${o.name}-handover`;
     const after = `brainstead-${o.name}-after-reload`;
     const timed = `brainstead-${o.name}-renew`;
+    const retry = `brainstead-${o.name}-retry`;
+
+    /** Reloads for `why`; when it couldn't, hands over again to try again: in a few minutes when the
+     *  tab was in view or in a call, when the 20 minutes are up when it was reloaded for this lately
+     *  (the earliest of any retries already set). */
+    async function reload(tabs, why) {
+      const r = await renew(tabs, after, why);
+      if (r.done) return r.note;
+      const when = Date.now() + Math.max(r.wait, 30_000);
+      const set = await chrome.alarms.get(retry).catch(() => null);
+      if (!set || set.scheduledTime > when) chrome.alarms.create(retry, { when });
+      return `${r.note}; trying again at ${clock(when / 1000)}`;
+    }
 
     async function run(notes, keep) {
       let tabs;
@@ -129,7 +179,7 @@
         // Keep Chrome's Memory Saver from putting the tab to sleep: a sleeping tab can't be read.
         chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
         if (tab.discarded) {
-          notes.push(`tab ${tab.id} asleep: ${await renew(tab, after)}`);
+          notes.push(`tab ${tab.id} asleep: ${await reload([tab], `asleep-${tab.id}`)}`);
           continue;
         }
         let page;
@@ -138,7 +188,7 @@
           page = r?.result;
         } catch (e) {
           // Still loading, not scriptable, or frozen by Chrome: a reload wakes a frozen one.
-          notes.push(`tab ${tab.id} couldn't be read: ${e?.message || e}; ${await renew(tab, after)}`);
+          notes.push(`tab ${tab.id} couldn't be read: ${e?.message || e}; ${await reload([tab], `asleep-${tab.id}`)}`);
           continue;
         }
         if (page?.seen) notes.push(`tab ${tab.id} keeps ${JSON.stringify(page.seen)}`);
@@ -162,10 +212,11 @@
       if (reply?.extra) keep(reply.extra);
       if (reply?.outcome) return reply.outcome;
       const outcome = reply?.ok ? "handed over" : `Brainstead refused: ${reply?.message || "no answer"}`;
-      const tab = found[0].tab;
+      // The tab read first, then any other awake tab of the app: they share the sign-in.
+      const candidates = [found[0].tab, ...tabs.filter((t) => t.id !== found[0].tab.id && !t.discarded)];
       // Turned down, and the tab had nothing newer: reload it so the page fetches fresh tokens.
       if (reply?.ok && reply.renew?.length) {
-        notes.push(`turned down: ${reply.renew.join(", ")}; ${await renew(tab, after)}`);
+        notes.push(`turned down: ${reply.renew.join(", ")}; ${await reload(candidates, "refused")}`);
         return outcome;
       }
       // About to run out: reload when the page will renew it (a page only renews a token when it
@@ -176,7 +227,8 @@
         const names = soon.map((e) => e.name).join(", ");
         const at = renewAt(soon, now);
         if (at <= now) {
-          notes.push(`due: ${names}; ${await renew(tab, after)}`);
+          const first = soon.filter((e) => e.expires === null || e.expires - now <= RENEW_SECS).map((e) => e.name);
+          notes.push(`due: ${names}; ${await reload(candidates, `due-${first.sort().join("+")}`)}`);
         } else {
           chrome.alarms.create(timed, { when: at * 1000 });
           notes.push(`due: ${names}; reloading at ${clock(at)}`);
@@ -200,12 +252,25 @@
 
     chrome.alarms.create(alarm, { periodInMinutes: o.every });
     chrome.alarms.onAlarm.addListener((a) => {
-      if (a.name === alarm || a.name === after || a.name === timed) void handOver();
+      if ([alarm, after, timed, retry].includes(a.name)) void handOver();
     });
     chrome.runtime.onStartup.addListener(() => void handOver());
     chrome.runtime.onInstalled.addListener(() => void handOver());
     return handOver;
   }
 
-  globalThis.brainsteadHandover = { start, due, renewAt, expiries, inTime, renew, STEP_MS, SOON_SECS, RENEW_SECS, RELOAD_GAP_MS };
+  globalThis.brainsteadHandover = {
+    start,
+    due,
+    renewAt,
+    expiries,
+    claims,
+    inTime,
+    renew,
+    STEP_MS,
+    SOON_SECS,
+    RENEW_SECS,
+    RETRY_MIN,
+    RELOAD_GAP_MS,
+  };
 })();

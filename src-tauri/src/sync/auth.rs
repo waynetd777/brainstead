@@ -116,6 +116,10 @@ pub struct SignInState {
     /// What Microsoft turned the sign-in down for (a 401), until a new sign-in is handed over:
     /// "chats", "mail", … Signing in again to Teams (or Outlook, for mail) in Chrome clears it.
     pub rejected: Vec<String>,
+    /// Of `rejected` and `stale`, those that haven't lasted long enough to tell the user about
+    /// ([`super::attention`]): the dot and the notification leave them out, as they mostly clear by
+    /// themselves.
+    pub fresh: Vec<String>,
     /// The Teams extension Chrome is running, when it's older than the one this build ships (Chrome
     /// only loads an unpacked extension's new files when it's reloaded): "" for one too old to say.
     pub extension_outdated: Option<String>,
@@ -163,26 +167,30 @@ fn issued(jwt: &str) -> Option<i64> {
     claims(jwt)["iat"].as_i64()
 }
 
-/// What the earlier sign-in had turned down for `svc` (the shared rule: [`refusal`]).
+/// What the earlier sign-in had turned down for `svc`, as a hand-over should apply it to the
+/// page's tokens (the shared rule: [`refusal`]).
 fn refused_of(old: Option<&SignIn>, svc: Service) -> Refused<'_> {
-    old.map(|o| Refused::of(&o.rejected, &o.rejected_at, svc.key(), now_secs())).unwrap_or_default()
+    old.map(|o| Refused::of(&o.rejected, &o.rejected_at, svc.key()).for_choosing(now_secs())).unwrap_or_default()
 }
 
-/// Reads the sign-in from the Keychain, with the refusals that have lapsed forgotten ([`refusal`]).
+/// Reads the sign-in from the Keychain, steadily ([`super::stored`]).
 pub fn load() -> Option<SignIn> {
-    let mut s: SignIn = platform::secret_get(ACCOUNT).and_then(|s| serde_json::from_str(&s).ok())?;
-    refusal::prune(&mut s.rejected, &mut s.rejected_at, now_secs());
-    Some(s)
+    super::stored::load(ACCOUNT)
+}
+
+/// [`load`] for a hand-over to change: an error when the Keychain couldn't say.
+pub fn load_for_change() -> Result<Option<SignIn>, String> {
+    super::stored::load_for_change(ACCOUNT)
 }
 
 /// Keeps the sign-in in the Keychain.
 pub fn store(s: &SignIn) -> Result<(), String> {
-    platform::secret_set(ACCOUNT, &serde_json::to_string(s).map_err(|e| e.to_string())?)
+    super::stored::store(ACCOUNT, s)
 }
 
-/// Forgets the sign-in (Settings › the user signs out, or the refresh token stops working).
+/// Forgets the sign-in (Settings › the user signs out).
 pub fn forget() -> Result<(), String> {
-    platform::secret_delete(ACCOUNT)
+    super::stored::forget(ACCOUNT)
 }
 
 /// Runs `f` as the only one changing the stored sign-in: the Teams host, the Outlook host and the
@@ -231,9 +239,11 @@ pub fn state() -> SignInState {
             let all = [Service::Spaces, Service::Outlook, Service::Substrate, Service::Csa];
             let rejected: Vec<String> =
                 all.into_iter().filter(|svc| s.rejected.contains_key(svc.key())).map(|svc| svc.what().to_string()).collect();
-            let stale = all
+            // The channel list is read only when its picker in Settings opens, and the page renews its
+            // token only when it needs it: one run out isn't a problem for the sync.
+            let stale: Vec<String> = all
                 .into_iter()
-                .filter(|svc| !s.rejected.contains_key(svc.key()))
+                .filter(|svc| *svc != Service::Csa && !s.rejected.contains_key(svc.key()))
                 .filter(|svc| s.tokens.get(svc.key()).is_none_or(|t| t.expires <= now + MARGIN_SECS))
                 .map(|svc| svc.what().to_string())
                 .collect();
@@ -242,9 +252,11 @@ pub fn state() -> SignInState {
             let live = |svc: Service| {
                 s.tokens.get(svc.key()).is_some_and(|t| t.expires > now + MARGIN_SECS) && !s.rejected.contains_key(svc.key())
             };
+            let troubled: Vec<String> = rejected.iter().chain(&stale).cloned().collect();
             SignInState {
                 signed_in,
                 handed_over: Some(s.handed_over),
+                fresh: super::attention::fresh("microsoft", &troubled, now),
                 stale,
                 rejected,
                 extension_outdated,
@@ -258,6 +270,7 @@ pub fn state() -> SignInState {
             handed_over: None,
             stale: Vec::new(),
             rejected: Vec::new(),
+            fresh: Vec::new(),
             extension_outdated: None,
             extension_shipped: shipped_extension_version(),
             teams: false,
@@ -291,10 +304,12 @@ pub fn from_handover_avoiding(v: &Value, old: Option<&SignIn>) -> Option<SignIn>
     let middle_tier = gtm["item"]["middleTier"].as_str().unwrap_or("").to_string();
     let csa_service = gtm["item"]["chatSvcAggAfd"].as_str().unwrap_or("").to_string();
 
-    // The page's own live access tokens, as handed over — the only tokens the sync uses.
+    // The page's own live access tokens, as handed over — the only tokens the sync uses. Not mail:
+    // its token comes only from the Outlook tab (D-20261028-02); Teams' page doesn't reliably keep
+    // one that can read mail, and taking it would swap the Outlook tab's for it every hand-over.
     let now = now_secs();
     let mut tokens = BTreeMap::new();
-    for svc in [Service::Spaces, Service::Outlook, Service::Substrate, Service::Csa] {
+    for svc in [Service::Spaces, Service::Substrate, Service::Csa] {
         if let Some(best) = best_page_token(&ats, svc, now, refused_of(old, svc)) {
             tokens.insert(svc.key().to_string(), best);
         }
@@ -347,24 +362,55 @@ pub fn with_mail_handover(old: Option<SignIn>, v: &Value) -> Option<SignIn> {
     Some(s)
 }
 
-/// Microsoft turned `svc`'s token down (a 401): remembers it, so the sync says to sign in again
-/// rather than retrying it, until a different token for `svc` is handed over or the refusal lapses.
-/// The token is kept, to be tried again then.
-pub fn reject(svc: Service) {
+/// Microsoft turned down `used`, `svc`'s token (a 401): remembers it, so the sync stops using it
+/// until a newer token is handed over or, after a pass, it's tried again and works ([`refusal`]).
+/// Only when it's still the stored one: a call made with a token a hand-over has since replaced
+/// says nothing about the new one. The token is kept, to be tried again.
+pub fn reject(svc: Service, used: &str) {
     changing(|| {
-        let Some(mut s) = load() else { return };
-        if let Some(t) = s.tokens.get(svc.key()) {
-            refusal::record(&mut s.rejected, &mut s.rejected_at, svc.key(), &t.token, now_secs());
+        let Ok(Some(mut s)) = load_for_change() else { return };
+        if refuse(&mut s, svc, used, now_secs()) {
             let _ = store(&s);
         }
     })
+}
+
+/// [`reject`] on a sign-in: records the refusal when `used` is still `svc`'s token. Says whether.
+fn refuse(s: &mut SignIn, svc: Service, used: &str, now: i64) -> bool {
+    let current = s.tokens.get(svc.key()).is_some_and(|t| t.token == used);
+    if current {
+        refusal::record(&mut s.rejected, &mut s.rejected_at, svc.key(), used, now);
+    }
+    current
+}
+
+/// A call with `svc`'s token worked: a refusal it had is cleared (it was tried again after a pass,
+/// and Microsoft takes it after all).
+pub fn worked(svc: Service) {
+    // Every successful call comes here: the sign-in just read for its token says whether there's
+    // anything to clear, without asking the Keychain again.
+    if !super::stored::peek::<SignIn>(ACCOUNT).is_some_and(|s| s.rejected.contains_key(svc.key())) {
+        return;
+    }
+    changing(|| {
+        let Ok(Some(mut s)) = load_for_change() else { return };
+        if refusal::clear(&mut s.rejected, &mut s.rejected_at, svc.key()) {
+            let _ = store(&s);
+        }
+    })
+}
+
+/// Whether `svc`'s refusal, if any, still keeps its token from being used: for the extension to
+/// reload its tab only then.
+pub fn blocked(s: &SignIn, svc: Service) -> bool {
+    Refused::of(&s.rejected, &s.rejected_at, svc.key()).blocks(now_secs())
 }
 
 /// A handed-over sign-in with what the earlier one had rejected applied: a service handed the same
 /// dead token again stays rejected; one handed a new token is cleared.
 pub fn keep_rejected(mut new: SignIn, old: Option<&SignIn>) -> SignIn {
     let (rejected, at) = old.map(|o| (o.rejected.clone(), o.rejected_at.clone())).unwrap_or_default();
-    let (still, still_at) = refusal::still(&rejected, &at, now_secs(), |k| new.tokens.get(k).map(|t| (t.token.as_str(), issued(&t.token))));
+    let (still, still_at) = refusal::still(&rejected, &at, |k| new.tokens.get(k).map(|t| (t.token.as_str(), issued(&t.token))));
     // A service still refused keeps the refused token (tried again once the refusal lapses), not
     // whatever the hand-over brought for it.
     for k in still.keys() {
@@ -378,10 +424,11 @@ pub fn keep_rejected(mut new: SignIn, old: Option<&SignIn>) -> SignIn {
     new
 }
 
-/// The longest-lived unexpired access token in the page for `svc`, leaving out the one Microsoft
-/// already turned down and any issued before it did (`refused`). The page often keeps older
-/// long-lived tokens beside the one it renewed after the refusal, and they can outlast the new one:
-/// they must not keep winning, one after another.
+/// The newest unexpired access token in the page for `svc` (the latest issued; the longest-lived
+/// when they don't say), leaving out the one Microsoft already turned down and any issued before it
+/// did (`refused`). The page often keeps older long-lived tokens beside the one it renewed after a
+/// refusal, and they can outlast the new one: chosen by expiry, a dead one would keep coming back.
+/// The extensions choose the same way (handover.js).
 fn best_page_token(ats: &[Value], svc: Service, now: i64, refused: Refused) -> Option<Token> {
     ats.iter()
         .filter_map(|a| {
@@ -399,9 +446,10 @@ fn best_page_token(ats: &[Value], svc: Service, now: i64, refused: Refused) -> O
                 Service::Csa => aud == "https://chatsvcagg.teams.microsoft.com",
             };
             let expires = jwt_expiry(&token);
-            (matches && expires > now + MARGIN_SECS).then_some(Token { token, expires })
+            (matches && expires > now + MARGIN_SECS).then_some((issued(&token), Token { token, expires }))
         })
-        .max_by_key(|t| t.expires)
+        .max_by_key(|(iat, t)| (iat.unwrap_or(0), t.expires))
+        .map(|(_, t)| t)
 }
 
 /// A valid access token for `svc` from the latest handover. The sync only ever uses the tokens the
@@ -411,17 +459,22 @@ fn best_page_token(ats: &[Value], svc: Service, now: i64, refused: Refused) -> O
 /// an error asking the user to keep Teams open so the extension hands a fresh one over.
 pub fn token(svc: Service) -> Result<String, String> {
     let s = load().ok_or("Not signed in to Teams. Open Teams in your browser so the extension hands the sign-in over.")?;
-    if s.rejected.contains_key(svc.key()) {
-        let app = if svc == Service::Outlook { "Outlook" } else { "Teams" };
-        return Err(format!(
-            "Microsoft turned down the {} sign-in. If {app} in Chrome asks you to sign in, do so; the extension hands the new sign-in over within 15 minutes.",
-            svc.what()
-        ));
+    if blocked(&s, svc) {
+        return Err(refused_message(svc));
     }
     match s.tokens.get(svc.key()) {
         Some(t) if t.expires > now_secs() + MARGIN_SECS => Ok(t.token.clone()),
         _ => Err(stale_message(svc)),
     }
+}
+
+/// Why `svc` wasn't read while its refusal blocks its token.
+pub fn refused_message(svc: Service) -> String {
+    let app = if svc == Service::Outlook { "Outlook" } else { "Teams" };
+    format!(
+        "Microsoft turned down the {} sign-in; it's tried again at the next sync. If {app} in Chrome asks you to sign in, do so.",
+        svc.what()
+    )
 }
 
 /// What to do about a token that's missing or expired: mail's comes only from the Outlook tab.
@@ -486,11 +539,12 @@ mod tests {
         assert_eq!(s.tenant, "tenant-1");
         assert_eq!(s.chat_service, "https://teams.microsoft.com/api/chatsvc/emea");
         assert_eq!(s.middle_tier, "https://teams.microsoft.com/api/mt/part/emea-02");
-        // Live Spaces and Outlook carried over; the stale Substrate and the unrelated Graph are not.
+        // Live Spaces carried over; the stale Substrate and the unrelated Graph are not, nor mail,
+        // which comes only from the Outlook tab.
         assert!(s.tokens.contains_key(Service::Spaces.key()));
-        assert!(s.tokens.contains_key(Service::Outlook.key()));
+        assert!(!s.tokens.contains_key(Service::Outlook.key()));
         assert!(!s.tokens.contains_key(Service::Substrate.key()));
-        assert_eq!(s.tokens.len(), 2);
+        assert_eq!(s.tokens.len(), 1);
     }
 
     #[test]
@@ -572,8 +626,9 @@ mod tests {
         let a = tok(now - 7200, now + 20 * 3600);
         let b = tok(now - 3600, now + 10 * 3600);
         let tab = |ts: &[&str]| json!({ "origin": "https://outlook.cloud.microsoft", "ats": ts.iter().map(|t| json!({"secret": t, "realm": "t"})).collect::<Vec<_>>() });
+        // The newest is taken, not the longest-lived: a long-lived one may be one turned down before.
         let first = with_mail_handover(None, &tab(&[&a, &b])).unwrap();
-        assert_eq!(first.tokens[Service::Outlook.key()].token, a);
+        assert_eq!(first.tokens[Service::Outlook.key()].token, b);
         // Turned down now (as reject() records it).
         let mut old = first;
         let t = old.tokens.remove(Service::Outlook.key()).unwrap();
@@ -586,6 +641,30 @@ mod tests {
         let next = keep_rejected(with_mail_handover(Some(old.clone()), &tab(&[&a, &b, &fresh])).unwrap(), Some(&old));
         assert_eq!(next.tokens[Service::Outlook.key()].token, fresh);
         assert!(next.rejected.is_empty() && next.rejected_at.is_empty());
+
+        // With nothing newer, once the refusal has stopped blocking the newest is tried again, not
+        // the dead long-lived one beside it, and the refusal still shows until a call works.
+        let mut lapsed = old.clone();
+        lapsed.tokens.insert(Service::Outlook.key().into(), t.clone());
+        lapsed.rejected_at.insert(Service::Outlook.key().into(), now - refusal::RETRY_SECS);
+        assert!(!blocked(&lapsed, Service::Outlook));
+        let retry = keep_rejected(with_mail_handover(Some(lapsed.clone()), &tab(&[&a, &b])).unwrap(), Some(&lapsed));
+        assert_eq!(retry.tokens[Service::Outlook.key()].token, b);
+        assert!(retry.rejected.contains_key(Service::Outlook.key()));
+    }
+
+    #[test]
+    fn a_401_refuses_only_the_token_it_was_made_with_not_one_handed_over_since() {
+        let now = now_secs();
+        let old = jwt("https://api.spaces.skype.com", "Authorization.ReadWrite", now + 3600);
+        let new = jwt("https://api.spaces.skype.com", "Authorization.ReadWrite", now + 7200);
+        let mut s = SignIn::default();
+        s.tokens.insert(Service::Spaces.key().into(), Token { token: new.clone(), expires: now + 7200 });
+        // A call made with the old token, answered after the hand-over: nothing recorded.
+        assert!(!refuse(&mut s, Service::Spaces, &old, now));
+        assert!(s.rejected.is_empty());
+        assert!(refuse(&mut s, Service::Spaces, &new, now));
+        assert!(blocked(&s, Service::Spaces));
     }
 
     #[test]

@@ -23,48 +23,87 @@ fn web_headers(req: reqwest::blocking::RequestBuilder) -> reqwest::blocking::Req
 /// A GET returning JSON, with the bearer token for `svc`. A non-2xx is an error carrying the status.
 pub fn get_json(client: &Client, svc: Service, url: &str) -> Result<Value, String> {
     let token = auth::token(svc)?;
-    let resp = web_headers(client.get(url).bearer_auth(token)).send().map_err(|e| e.to_string())?;
-    read(turned_down(resp, svc), url)
+    let resp = checked(svc, &token, || web_headers(client.get(url).bearer_auth(&token)).send().map_err(|e| e.to_string()))?;
+    read(resp, url)
 }
 
 /// A POST or PATCH with a JSON body and the bearer token for `svc`, returning the JSON answer. Only
 /// Draft reply's Put in Outlook uses it (D-20261120-05): it makes and fills a draft, never sends.
 pub fn write_json(client: &Client, svc: Service, method: reqwest::Method, url: &str, body: &Value) -> Result<Value, String> {
     let token = auth::token(svc)?;
-    let req = client.request(method, url).bearer_auth(token).header("Content-Type", "application/json").body(body.to_string());
-    let resp = web_headers(req).send().map_err(|e| e.to_string())?;
-    read(turned_down(resp, svc), url)
+    let resp = checked(svc, &token, || {
+        let req = client.request(method.clone(), url).bearer_auth(&token).header("Content-Type", "application/json").body(body.to_string());
+        web_headers(req).send().map_err(|e| e.to_string())
+    })?;
+    read(resp, url)
 }
 
-/// Marks `svc`'s token rejected when Microsoft answers 401 (signed out, or the session ended), so
-/// Settings says to sign in again; the response itself goes on to be read as usual.
-pub fn turned_down(resp: reqwest::blocking::Response, svc: Service) -> reqwest::blocking::Response {
+/// How long to wait before asking again after a 401, to tell a moment's refusal from a real one.
+const RECHECK: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Sends a request made with `used`, `svc`'s token, and says what Microsoft made of the token: a
+/// 401 is asked again once, after a moment, and only a second one counts as a refusal (`auth::reject`,
+/// shown to the user and the token not used until it's tried again); an answer that went through
+/// clears a refusal the token had (`auth::worked`). The response is returned either way, to be read.
+pub fn checked(
+    svc: Service,
+    used: &str,
+    send: impl Fn() -> Result<reqwest::blocking::Response, String>,
+) -> Result<reqwest::blocking::Response, String> {
+    let mut resp = send()?;
     if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
-        auth::reject(svc);
+        std::thread::sleep(RECHECK);
+        resp = send()?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            auth::reject(svc, used);
+        }
     }
-    resp
+    if resp.status().is_success() {
+        auth::worked(svc);
+    }
+    Ok(resp)
 }
 
 /// A GET on chatsvc / the middle tier, which need the Skype token alongside the Spaces bearer.
 pub fn get_chatsvc(client: &Client, url: &str) -> Result<Value, String> {
-    let spaces = auth::token(Service::Spaces)?;
-    let skype = skype_token(client, &spaces)?;
-    let resp = web_headers(client.get(url).bearer_auth(&spaces).header("Authentication", format!("skypetoken={skype}")))
-        .send()
-        .map_err(|e| e.to_string())?;
-    read(turned_down(resp, Service::Spaces), url)
+    with_skype(client, Service::Spaces, url, |spaces, skype| {
+        web_headers(client.get(url).bearer_auth(spaces).header("Authentication", format!("skypetoken={skype}")))
+            .send()
+            .map_err(|e| e.to_string())
+    })
 }
 
 /// A GET on the chat-service aggregator (teams and channels), which needs the Skype token alongside
 /// the CSA bearer.
 pub fn get_csa(client: &Client, url: &str) -> Result<Value, String> {
+    let csa = auth::token(Service::Csa)?;
+    with_skype(client, Service::Csa, url, |_, skype| {
+        web_headers(client.get(url).bearer_auth(&csa).header("Authentication", format!("skypetoken={skype}")))
+            .send()
+            .map_err(|e| e.to_string())
+    })
+}
+
+/// A call that needs the Skype token: made with the kept one, and when that's turned down, once
+/// more with a fresh one (it may simply have run out) before `svc`'s token counts as refused.
+fn with_skype(
+    client: &Client,
+    svc: Service,
+    url: &str,
+    call: impl Fn(&str, &str) -> Result<reqwest::blocking::Response, String>,
+) -> Result<Value, String> {
     let spaces = auth::token(Service::Spaces)?;
     let skype = skype_token(client, &spaces)?;
-    let csa = auth::token(Service::Csa)?;
-    let resp = web_headers(client.get(url).bearer_auth(&csa).header("Authentication", format!("skypetoken={skype}")))
-        .send()
-        .map_err(|e| e.to_string())?;
-    read(turned_down(resp, Service::Csa), url)
+    let mut resp = call(&spaces, &skype)?;
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        forget_skype();
+        let skype = skype_token(client, &spaces)?;
+        let used = if svc == Service::Spaces { spaces.clone() } else { auth::token(svc)? };
+        resp = checked(svc, &used, || call(&spaces, &skype))?;
+    } else if resp.status().is_success() {
+        auth::worked(svc);
+    }
+    read(resp, url)
 }
 
 /// Reads a response as JSON, turning a non-2xx into an error naming the endpoint and status, so a
@@ -116,16 +155,36 @@ pub fn get_picture(client: &Client, url: &str, max: u64) -> Result<(Vec<u8>, Opt
     Ok((bytes.to_vec(), kind))
 }
 
-/// Exchanges the Spaces bearer for a Skype token (authsvc), which chatsvc and the middle tier
-/// require. Short-lived, so it's fetched per sync run rather than cached.
+/// The Skype token, kept for the Spaces token it was made from until shortly before it runs out.
+struct Skype {
+    from: String,
+    token: String,
+    until: i64,
+}
+
+static SKYPE: std::sync::Mutex<Option<Skype>> = std::sync::Mutex::new(None);
+
+fn forget_skype() {
+    *SKYPE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// The Skype token chatsvc and the middle tier require, exchanged for the Spaces bearer at authsvc
+/// once and kept while it lasts (about a day), not fetched again for every call: a pass makes
+/// hundreds of calls, and one refused exchange among so many shut chats out (D-20261127-03).
 fn skype_token(client: &Client, spaces: &str) -> Result<String, String> {
-    let resp = client
-        .post("https://authsvc.teams.microsoft.com/v1.0/authz")
-        .bearer_auth(spaces)
-        .header("Content-Type", "application/json")
-        .body("{}")
-        .send()
-        .map_err(|e| e.to_string())?;
-    let body = read(turned_down(resp, Service::Spaces), "https://authsvc.teams.microsoft.com/v1.0/authz")?;
-    body["tokens"]["skypeToken"].as_str().map(str::to_string).ok_or_else(|| "The Teams auth service returned no Skype token.".into())
+    let fp = super::refusal::fingerprint(spaces);
+    let now = auth::now_secs();
+    if let Some(k) = SKYPE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|k| k.from == fp && k.until > now) {
+        return Ok(k.token.clone());
+    }
+    const AUTHZ: &str = "https://authsvc.teams.microsoft.com/v1.0/authz";
+    let resp = checked(Service::Spaces, spaces, || {
+        client.post(AUTHZ).bearer_auth(spaces).header("Content-Type", "application/json").body("{}").send().map_err(|e| e.to_string())
+    })?;
+    let body = read(resp, AUTHZ)?;
+    let token = body["tokens"]["skypeToken"].as_str().map(str::to_string).ok_or("The Teams auth service returned no Skype token.")?;
+    // It says how long it lasts; renewed five minutes early, and at least every hour.
+    let lasts = body["tokens"]["expiresIn"].as_i64().unwrap_or(3600).clamp(600, 24 * 3600);
+    *SKYPE.lock().unwrap_or_else(|e| e.into_inner()) = Some(Skype { from: fp, token: token.clone(), until: now + lasts - 300 });
+    Ok(token)
 }

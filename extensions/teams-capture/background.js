@@ -356,13 +356,12 @@ async function sendToBrainstead(message) {
 
 importScripts("handover.js", "sign-in-reader.js");
 
-/** The services the sync uses, by what the token's scopes name (Brainstead's sync/auth.rs picks
- *  the same ones by audience), for renewing before one runs out. Not mail: its token comes from the
- *  Outlook extension (D-20261028-02), and reloading Teams doesn't reliably fetch one. */
+/** The services the sync uses, by the token's audience exactly as Brainstead's sync/auth.rs picks
+ *  them, for renewing before one runs out. Not mail: its token comes from the Outlook extension
+ *  (D-20261028-02). Not the channel list: only Settings' channel picker reads it. */
 const TEAMS_SERVICES = [
-  { name: "chats", test: (t) => t.includes("api.spaces.skype.com") },
-  { name: "transcripts", test: (t) => t.includes("substrate.office.com") },
-  { name: "channel list", test: (t) => t.includes("chatsvcagg.teams.microsoft.com") },
+  { name: "chats", test: (c) => c.aud === "https://api.spaces.skype.com" },
+  { name: "transcripts", test: (c) => c.aud === "https://substrate.office.com" },
 ];
 
 globalThis.brainsteadHandover.start({

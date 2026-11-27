@@ -397,10 +397,15 @@ pub fn stamp_pdf_footer(path: &Path, title: &str) -> Result<(), String> {
     }
 }
 
-/// The login Keychain's generic password `account` of `service`, as text.
-pub fn secret_get(service: &str, account: &str) -> Option<String> {
-    let b = security_framework::passwords::get_generic_password(service, account).ok()?;
-    String::from_utf8(b).ok()
+/// The login Keychain's generic password `account` of `service`, as text: None when there's none,
+/// an error when the Keychain couldn't say (locked, busy, refused).
+pub fn secret_read(service: &str, account: &str) -> Result<Option<String>, String> {
+    match security_framework::passwords::get_generic_password(service, account) {
+        Ok(b) => String::from_utf8(b).map(Some).map_err(|e| e.to_string()),
+        // errSecItemNotFound.
+        Err(e) if e.code() == -25300 => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 pub fn secret_set(service: &str, account: &str, value: &str) -> Result<(), String> {

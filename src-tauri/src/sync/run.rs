@@ -137,6 +137,9 @@ fn run_inner(data: &Path, from: Option<NaiveDate>) -> Report {
     }
     if s.sync_enabled {
         sync_transcripts(&p, &mut st, &mut r);
+        // Transcripts are read only after a meeting, so a refused transcripts token might not be
+        // tried again for hours: it's checked on its own once it may be.
+        fetch::recheck_substrate(&p.client);
     }
 
     st.initialized = true;
@@ -764,10 +767,10 @@ pub fn watch(app: tauri::AppHandle) {
                 let s = settings::load(&data.join("settings.json"));
                 let mut now = sign_in_trouble(&auth::state(), s.sync_enabled, s.mail_on());
                 // Slack alike: a workspace it turned down (D-20261126-02).
-                let slack = if s.sync_slack { super::slack::slack_sign_in_state().rejected } else { vec![] };
+                let slack = if s.sync_slack { slack_trouble(&super::slack::slack_sign_in_state()) } else { String::new() };
                 if !slack.is_empty() {
                     let sep = if now.is_empty() { "" } else { " " };
-                    now.push_str(&format!("{sep}Signed out of Slack: {}. Sign in again in that Chrome tab.", slack.join(", ")));
+                    now.push_str(&format!("{sep}{slack}"));
                 }
                 if !now.is_empty() && now != told {
                     crate::notify::show(&app, crate::notify::Need::You, "Sync needs you", &now);
@@ -789,14 +792,20 @@ pub fn tell_replied(app: &tauri::AppHandle, r: &Report) {
 }
 
 /// What's wrong with the Teams and Outlook sign-in, for the services switched on, in words; empty
-/// when nothing is (or the sync isn't signed in at all, which Settings › Sync says).
+/// when nothing is (or the sync isn't signed in at all, which Settings › Sync says). Only what has
+/// lasted (`attention`): a problem that clears by itself within two passes is never told.
 fn sign_in_trouble(st: &auth::SignInState, teams: bool, mail: bool) -> String {
-    let on = |svc: &&String| if svc.as_str() == "mail" { mail } else { teams };
+    // The channel list is read only by Settings' picker, not the sync: never worth a notification.
+    let on =
+        |svc: &&String| (if svc.as_str() == "mail" { mail } else { teams }) && svc.as_str() != "channel list" && !st.fresh.contains(svc);
     let rejected: Vec<&str> = st.rejected.iter().filter(on).map(String::as_str).collect();
     let stale: Vec<&str> = st.stale.iter().filter(on).filter(|s| !st.rejected.contains(s)).map(String::as_str).collect();
     let mut out = Vec::new();
     if !rejected.is_empty() {
-        out.push(format!("Signed out: {}. Sign in again in that Chrome tab.", rejected.join(", ")));
+        out.push(format!(
+            "Microsoft keeps turning down the sign-in for {}. If Teams or Outlook in Chrome asks you to sign in, do so.",
+            rejected.join(", ")
+        ));
     }
     if !stale.is_empty() {
         out.push(format!("Gone stale: {}. Keep Teams (and Outlook on the web, for mail) open in Chrome.", stale.join(", ")));
@@ -805,6 +814,15 @@ fn sign_in_trouble(st: &auth::SignInState, teams: bool, mail: bool) -> String {
         return String::new();
     }
     out.join(" ")
+}
+
+/// What's wrong with the Slack sign-in that has lasted, in words; empty when nothing is.
+fn slack_trouble(st: &super::slack::SignInState) -> String {
+    let lasting: Vec<&str> = st.rejected.iter().filter(|w| !st.fresh.contains(w)).map(String::as_str).collect();
+    if lasting.is_empty() {
+        return String::new();
+    }
+    format!("Slack keeps turning down the sign-in for {}. If Slack in Chrome asks you to sign in, do so.", lasting.join(", "))
 }
 
 #[cfg(test)]
@@ -818,6 +836,7 @@ mod tests {
             handed_over: None,
             stale: vec!["mail".into(), "transcripts".into()],
             rejected: vec![],
+            fresh: vec![],
             extension_outdated: None,
             extension_shipped: String::new(),
             teams: true,
@@ -829,8 +848,25 @@ mod tests {
         );
         assert_eq!(sign_in_trouble(&st, false, false), "");
         let out = auth::SignInState { rejected: vec!["chats".into()], stale: vec!["chats".into()], ..st.clone() };
-        assert_eq!(sign_in_trouble(&out, true, false), "Signed out: chats. Sign in again in that Chrome tab.");
+        assert_eq!(
+            sign_in_trouble(&out, true, false),
+            "Microsoft keeps turning down the sign-in for chats. If Teams or Outlook in Chrome asks you to sign in, do so."
+        );
+        // Not lasted yet: mostly clears by itself, so not told.
+        let fresh = auth::SignInState { fresh: vec!["chats".into()], ..out.clone() };
+        assert_eq!(sign_in_trouble(&fresh, true, false), "");
+        let picker = auth::SignInState { rejected: vec!["channel list".into()], ..st.clone() };
+        assert_eq!(sign_in_trouble(&auth::SignInState { stale: vec![], ..picker }, true, true), "");
         assert_eq!(sign_in_trouble(&auth::SignInState { signed_in: false, ..out }, true, false), "");
+        let slack = super::super::slack::SignInState {
+            signed_in: true,
+            workspaces: vec!["Acme".into()],
+            rejected: vec!["Acme".into()],
+            fresh: vec!["Acme".into()],
+            handed_over: None,
+        };
+        assert_eq!(slack_trouble(&slack), "");
+        assert!(slack_trouble(&super::super::slack::SignInState { fresh: vec![], ..slack }).contains("Acme"));
     }
 
     #[test]

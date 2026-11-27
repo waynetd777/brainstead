@@ -86,8 +86,8 @@ globalThis.brainsteadReadSignIn = async function readSignIn() {
   }
   if (!base && out.seen.encrypted) out.seen.problems.push("no cache key cookie");
   // Teams keeps some tokens plain and some encrypted, so both go over. A plain one may be what an
-  // earlier sign-in left behind, signed out since: Brainstead picks the longest-lived token for each
-  // service (the newest), and stops using one Microsoft turns down.
+  // earlier sign-in left behind, signed out since: Brainstead picks the newest issued token for
+  // each service, and stops using one Microsoft turns down.
   out.ats.push(...plain);
   out.seen.problems = [...new Set(out.seen.problems)];
   return out;

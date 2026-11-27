@@ -7,15 +7,16 @@
 
 import type { SlackSignIn, SyncSignIn } from "./api";
 
-/** The line for when Microsoft turned the sign-in down for some services. */
+/** The line for when Microsoft turned the sign-in down for some services. It's tried again at each
+ *  sync, and the extension reloads the tab for a fresh one, so it often clears by itself. */
 export function rejectedText(rejected: string[]): string {
   const apps = [...new Set(rejected.map((r) => (r === "mail" ? "Outlook" : "Teams")))].join(" and ");
-  return `Signed out: ${rejected.join(", ")}. Microsoft turned the sign-in down; if ${apps} in Chrome asks you to sign in, do so, and it's picked up within 15 minutes.`;
+  return `Turned down: ${rejected.join(", ")}. Microsoft turned the sign-in down; it's tried again at each sync. If ${apps} in Chrome asks you to sign in, do so.`;
 }
 
 /** The line for when Slack turned the sign-in down for some workspaces (D-20261126-02). */
 export function slackRejectedText(workspaces: string[]): string {
-  return `Signed out of Slack: ${workspaces.join(", ")}. Slack turned the sign-in down; if Slack in Chrome asks you to sign in, do so, and it's picked up within 10 minutes.`;
+  return `Slack turned down: ${workspaces.join(", ")}. It's tried again at each sync. If Slack in Chrome asks you to sign in, do so.`;
 }
 
 /** The line for when the last handover came from an older Teams extension than this build ships. */
@@ -28,20 +29,22 @@ export function extensionOutdatedText(s: Pick<SyncSignIn, "extensionOutdated" | 
 /** Whether Outlook mail syncs: its own switch, or before there was one, Teams'. */
 export const mailOn = (s: { syncEnabled?: boolean; syncOutlook?: boolean }) => s.syncOutlook ?? !!s.syncEnabled;
 
-/** What Teams covers, as the sign-in state names it; mail is Outlook's. */
-const TEAMS_PARTS = ["chats", "transcripts", "channel list"];
+/** What Teams covers that the sync uses, as the sign-in state names it; mail is Outlook's. (The
+ *  channel list is read only by Settings' picker.) */
+const TEAMS_PARTS = ["chats", "transcripts"];
 
 type Status = { tone: "ok" | "warn" | "off"; text: string };
 
 /** The sync's status for the dot: about only the services switched on (Teams, Outlook mail, and
- *  Slack when `slack` is given: its sign-in, with Slack sync on). */
+ *  Slack when `slack` is given: its sign-in, with Slack sync on), and only problems that have lasted
+ *  (not those in `fresh`, which mostly clear by themselves). */
 export function syncStatus(s: SyncSignIn | null, on = { teams: true, mail: true }, slack?: SlackSignIn | null): Status {
   const ms = microsoftStatus(s, on);
   if (slack === undefined) return ms;
   const sl: Status = !slack?.signedIn
     ? { tone: "off", text: "Slack: not signed in. Open Slack in Chrome so the extension hands the sign-in over." }
-    : slack.rejected.length
-      ? { tone: "warn", text: slackRejectedText(slack.rejected) }
+    : slack.rejected.some((w) => !(slack.fresh ?? []).includes(w))
+      ? { tone: "warn", text: slackRejectedText(slack.rejected.filter((w) => !(slack.fresh ?? []).includes(w))) }
       : { tone: "ok", text: "Slack connected." };
   if (!on.teams && !on.mail) return sl;
   // The worse of the two leads; both are said.
@@ -69,7 +72,7 @@ function microsoftStatus(s: SyncSignIn | null, on: { teams: boolean; mail: boole
       text: `${names}: not signed in. Open ${names} in Chrome so the extension${on.teams && on.mail ? "s hand" : " hands"} the sign-in over.`,
     };
   }
-  const mine = (x: string) => (x === "mail" ? on.mail : on.teams && TEAMS_PARTS.includes(x));
+  const mine = (x: string) => (x === "mail" ? on.mail : on.teams && TEAMS_PARTS.includes(x)) && !(s.fresh ?? []).includes(x);
   const rejected = s.rejected.filter(mine);
   const stale = s.stale.filter(mine);
   const problems: string[] = [];

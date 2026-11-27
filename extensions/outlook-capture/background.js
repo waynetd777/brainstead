@@ -563,8 +563,9 @@ async function openRowAndSettle(convid, prevSignature, hintScrollTop) {
 
 importScripts("handover.js", "sign-in-reader.js");
 
-/** The token the sync reads mail with, for renewing it before it runs out. */
-const MAIL_SERVICES = [{ name: "mail", test: (t) => t.includes("outlook.office.com") && t.includes("mail.read") }];
+/** The token the sync reads mail with, by its audience and scopes exactly as Brainstead's
+ *  sync/auth.rs picks it, for renewing it before it runs out. */
+const MAIL_SERVICES = [{ name: "mail", test: (c) => c.aud === "https://outlook.office.com" && c.scp.includes("Mail.Read") }];
 
 globalThis.brainsteadHandover.start({
   name: "mail",

@@ -342,8 +342,8 @@ impl super::secret_chunks::Slots for Credentials<'_> {
 }
 
 #[cfg(windows)]
-pub fn secret_get(service: &str, account: &str) -> Option<String> {
-    super::secret_chunks::get(&Credentials { service, account })
+pub fn secret_read(service: &str, account: &str) -> Result<Option<String>, String> {
+    Ok(super::secret_chunks::get(&Credentials { service, account }))
 }
 
 #[cfg(windows)]
@@ -357,8 +357,8 @@ pub fn secret_delete(service: &str, account: &str) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
-pub fn secret_get(_service: &str, _account: &str) -> Option<String> {
-    None
+pub fn secret_read(_service: &str, _account: &str) -> Result<Option<String>, String> {
+    Ok(None)
 }
 
 #[cfg(not(windows))]

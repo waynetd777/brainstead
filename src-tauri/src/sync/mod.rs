@@ -11,6 +11,7 @@
 
 pub mod api;
 pub mod attachments;
+pub mod attention;
 pub mod auth;
 pub mod fetch;
 pub mod html;
@@ -23,6 +24,7 @@ pub mod run;
 pub mod skips;
 pub mod slack;
 pub mod state;
+pub mod stored;
 
 use reqwest::blocking::Client;
 use std::time::Duration;
@@ -40,11 +42,11 @@ pub fn client() -> Client {
 /// from the native host when the extension hands over.
 pub fn accept_handover(v: &serde_json::Value) -> Result<Vec<String>, String> {
     auth::changing(|| {
-        let old = auth::load();
+        let old = auth::load_for_change()?;
         let sign_in = auth::from_handover_avoiding(v, old.as_ref()).ok_or("The Teams sign-in handover had no live sign-in to use.")?;
         let s = auth::keep_rejected(auth::keep_missing(sign_in, old.clone()), old.as_ref());
         auth::store(&s)?;
-        Ok(still_refused(&s, &[auth::Service::Spaces, auth::Service::Substrate, auth::Service::Csa]))
+        Ok(still_refused(&s, &[auth::Service::Spaces, auth::Service::Substrate]))
     })
 }
 
@@ -52,11 +54,11 @@ pub fn accept_handover(v: &serde_json::Value) -> Result<Vec<String>, String> {
 /// sign-in (D-20261028-02).
 pub fn accept_mail_handover(v: &serde_json::Value) -> Result<Vec<String>, String> {
     auth::changing(|| {
-        let old = auth::load();
+        let old = auth::load_for_change()?;
         let sign_in = match auth::with_mail_handover(old.clone(), v) {
             Some(s) => s,
             // Only the token Microsoft turned down: the tab needs a fresh one.
-            None if old.as_ref().is_some_and(|o| o.rejected.contains_key(auth::Service::Outlook.key())) => {
+            None if old.as_ref().is_some_and(|o| auth::blocked(o, auth::Service::Outlook)) => {
                 return Ok(vec![auth::Service::Outlook.what().to_string()]);
             }
             None => return Err("The Outlook tab had no live mail sign-in to use.".into()),
@@ -68,9 +70,10 @@ pub fn accept_mail_handover(v: &serde_json::Value) -> Result<Vec<String>, String
 }
 
 /// Which of `of` are still turned down after a handover (the tab gave only the token Microsoft
-/// refused): the extension reloads the tab so the page fetches fresh ones (D-20261124-03).
+/// refused), while the refusal keeps the token from being tried: the extension reloads the tab so
+/// the page fetches fresh ones (D-20261124-03). Once it lapses the token is tried again instead.
 fn still_refused(s: &auth::SignIn, of: &[auth::Service]) -> Vec<String> {
-    of.iter().filter(|svc| s.rejected.contains_key(svc.key())).map(|svc| svc.what().to_string()).collect()
+    of.iter().filter(|svc| auth::blocked(s, **svc)).map(|svc| svc.what().to_string()).collect()
 }
 
 /// A meeting for the Today screen (dates as RFC 3339 strings, so no extra chrono features are needed).

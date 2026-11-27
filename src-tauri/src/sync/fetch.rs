@@ -906,6 +906,31 @@ fn meeting_chat_messages(msgs: &[ChatMessage]) -> Vec<Message> {
     out
 }
 
+/// Tries the transcripts token again once its refusal no longer blocks it, with one small query:
+/// a refusal clears only when a call with the token goes through, and transcripts are read only
+/// after a meeting, so without this a token turned down for a moment would stay shown as refused
+/// until the next one. Any answer but a 401 means Microsoft takes the token.
+pub fn recheck_substrate(client: &Client) {
+    let Some(s) = auth::load() else { return };
+    if !s.rejected.contains_key(Service::Substrate.key()) || auth::blocked(&s, Service::Substrate) {
+        return;
+    }
+    let Ok(token) = auth::token(Service::Substrate) else { return };
+    let url = "https://substrate.office.com/api/beta/me/WorkingSetFiles/?$top=1&$select=ItemId";
+    let answer = api::checked(Service::Substrate, &token, || {
+        client
+            .get(url)
+            .bearer_auth(&token)
+            .header("Accept", "application/json")
+            .header("Prefer", r#"substrate.flexibleschema,outlook.data-source="Substrate",exchange.behavior="SubstrateFiles""#)
+            .send()
+            .map_err(|e| e.to_string())
+    });
+    if answer.is_ok_and(|r| r.status() != reqwest::StatusCode::UNAUTHORIZED) {
+        auth::worked(Service::Substrate);
+    }
+}
+
 /// The transcript for a meeting thread, as a Teams transcript capture, when one exists. Best-effort:
 /// returns Ok(None) when the meeting had no transcript (not recorded, or still processing). The
 /// meeting's chat, when any, is folded in after the transcript.
@@ -921,14 +946,15 @@ pub fn transcript_capture(client: &Client, s: &SignIn, ev: &Event, pictures: Pic
     );
     // WorkingSetFiles needs the Substrate token and this Prefer header.
     let token = auth::token(Service::Substrate)?;
-    let resp = client
-        .get(&url)
-        .bearer_auth(token)
-        .header("Accept", "application/json")
-        .header("Prefer", r#"substrate.flexibleschema,outlook.data-source="Substrate",exchange.behavior="SubstrateFiles""#)
-        .send()
-        .map_err(|e| format!("Couldn't reach Substrate for a transcript: {e}"))?;
-    let resp = api::turned_down(resp, Service::Substrate);
+    let resp = api::checked(Service::Substrate, &token, || {
+        client
+            .get(&url)
+            .bearer_auth(&token)
+            .header("Accept", "application/json")
+            .header("Prefer", r#"substrate.flexibleschema,outlook.data-source="Substrate",exchange.behavior="SubstrateFiles""#)
+            .send()
+            .map_err(|e| format!("Couldn't reach Substrate for a transcript: {e}"))
+    })?;
     if !resp.status().is_success() {
         return Err(format!("substrate.office.com answered {}", resp.status().as_u16()));
     }
