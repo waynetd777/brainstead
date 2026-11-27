@@ -96,10 +96,10 @@ export function openRename(path: string): void {
 
 /** Moves a file to the vault's `.trash/`, with Undo. Leaves the document if it was open. A Teams
  *  transcript's links point at its meeting note first (trashTranscript). */
-export async function trashFile(path: string): Promise<void> {
+export async function trashFile(path: string, from = "File menu"): Promise<void> {
   try {
     const entry = await withDraftHandedOver(path, async () =>
-      isTranscriptPath(path) ? (await trashTranscript(path)).entry! : api.trashMove(path),
+      isTranscriptPath(path) ? (await trashTranscript(path, undefined, from)).entry! : api.trashMove(path, from),
     );
     const here = place.get().place;
     if (here.screen === "doc" && here.path === path) {

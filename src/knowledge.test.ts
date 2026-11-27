@@ -100,6 +100,8 @@ describe("changes", () => {
     expect(originLabel(row({}))).toBe("Ask");
     expect(originLabel(row({ origin: { kind: "lint" } }))).toBe("Wiki health");
     expect(originLabel(row({ origin: { kind: "chat", label: "Terminal session" } }))).toBe("Terminal session");
+    // The user's own move to the Trash, from a screen.
+    expect(originLabel(row({ origin: { kind: "user", label: "Inbox" } }))).toBe("You · Inbox");
     expect(originLabel(row({ origin: { kind: "review", label: "daily-summary 2026-10-02" } }))).toBe("Daily summary 2026-10-02");
     expect(originLabel(row({ origin: { kind: "review", label: "weekly-summary 2026-W40" } }))).toBe("Weekly summary 2026-W40");
     expect(runLabel(row({ origin: { kind: "contradiction", run: "contradictions-1" } }))).toBe("Contradiction check");

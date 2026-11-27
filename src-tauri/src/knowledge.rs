@@ -649,6 +649,7 @@ fn health_trash_image_now(app: AppHandle, path: String) -> Res<String> {
     }
     let root = root(&app)?;
     let e = brainstead_core::trash::move_to_trash(&root, &path, "image")?;
+    crate::changes::record_trash(&app, &path, &e.id, "Wiki health");
     written(&app, &[root.join(&path)]);
     settled(&app, |check, i| check == "unreferenced-images" && i.page.as_deref() == Some(path.as_str()));
     Ok(e.id)

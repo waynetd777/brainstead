@@ -1092,7 +1092,7 @@ export async function clarifyItem(i: InboxItem, a: Args, unattended = false): Pr
       break;
     case "delete":
       if (i.kind === "capture") {
-        await trashCapture(i.path);
+        await trashCapture(i.path, "Weekly review");
       } else await settleInboxItem(i, null);
       said = "deleted";
       break;
@@ -3335,7 +3335,7 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
     const line = (t: Transcript) =>
       `- ${t.path} · ${t.done ? `done: ${MEETING_DONE[t.done]}` : `looks like ${t.inferred.type ?? "a meeting"} ${t.inferred.name ?? t.inferred.topic ?? ""} ${t.inferred.date ?? ""}${t.inferred.dateCheck ? " (the capture day: check the meeting date)" : ""}`}${
         exists(t)
-          ? ` · note exists: ${exists(t)}${t.noteIngested ? " (ingested already: only the transcript is left, trash_note it if the user agrees)" : " (start_run meeting_note writes the note from the transcript into it, keeping what's there; with ingest_existing it's ingested as it is)"}`
+          ? ` · note exists: ${exists(t)}${t.noteIngested ? " (ingested already: only the transcript is left, which the daily check moves to the Trash by itself; trash_note it now if the user asks)" : " (start_run meeting_note writes the note from the transcript into it, keeping what's there; with ingest_existing it's ingested as it is)"}`
           : ""
       }${drafting(t) ? " · being drafted" : drafted(t) ? " · a note was drafted (see Changes)" : ""}${(t.inferred.ask ?? []).map((q) => `\n  - ${q}`).join("")}`;
     return listed(a, rows, {

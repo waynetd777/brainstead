@@ -134,7 +134,12 @@ export function ProvenanceCard({ file }: { file: FileSummary }) {
           Reveal
         </button>
         <span className="grow" />
-        <button type="button" className="btn sm ghost" title="Move the file to the vault’s Trash" onClick={() => void trashFile(file.path)}>
+        <button
+          type="button"
+          className="btn sm ghost"
+          title="Move the file to the vault’s Trash"
+          onClick={() => void trashFile(file.path, "Sources")}
+        >
           <Icon name="trash" size={12} />
           Move to the Trash
         </button>

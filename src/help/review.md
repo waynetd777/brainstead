@@ -31,6 +31,8 @@ Three kinds of change are always held, whoever started them:
 
 Renames and moves to the Trash are made at once, unless they touch a template (the note is one, the rename puts it in `Templates/`, or links it updates are in one): then they're held. An assistant's restore from the Trash is made at once too, unless it puts the file in `Templates/` or the note has code that runs. Revert renames the note back, restores it, or moves a restored one back to the Trash. An image an assistant adds to `images/`, for a note to embed, is made at once and shown here; Revert moves it to Brainstead's Trash.
 
+Your own moves to the Trash are listed too, made, with **Revert**, so you (and an assistant) can see what became of a file: from the Inbox, a Still in the Inbox strip, the file menu, Sources, the command palette, Projects, Meeting notes, Ask, Wiki health or Moving over. Their source says **You** and the screen: "You · Inbox". Revert restores the file. Restoring it another way (the Trash, the message's **Undo**) marks the move reverted here.
+
 Assistants' task, Inbox and project edits are listed and held by the same rules; your own edits on those screens aren't listed.
 
 To have the summaries always held for you, turn on **Hold the summaries for me** in [Settings › Automations](app:settings/jobs).

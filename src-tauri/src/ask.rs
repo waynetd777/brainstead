@@ -1093,7 +1093,8 @@ pub async fn chat_trash(app: AppHandle, filename: String) -> Res<()> {
         }
         writable(&app.state::<AppState>())?;
         let root = app.state::<VaultService>().root().ok_or("No vault is open.".to_string())?;
-        trash::move_to_trash(&root, &filename, "note")?;
+        let e = trash::move_to_trash(&root, &filename, "note")?;
+        crate::changes::record_trash(&app, &filename, &e.id, "Ask");
         let _ = std::fs::remove_file(pending_dir().join(&filename));
         written(&app, &[root.join(&filename)]);
         Ok(())

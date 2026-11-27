@@ -32,10 +32,15 @@ describe("Move to the Trash from the file menu", () => {
       to: "Meeting. Offsite - 2026-10-06.md",
       pages: ["wiki/entities/Offsite.md"],
     });
+    // Recorded in Changes as the user's own move, from the screen it was made on.
+    expect(invoke.mock.calls.find(([c]) => c === "trash_move")![1]).toEqual({ path: TRANSCRIPT, from: "File menu" });
     invoke.mockClear();
     await trashFile("notes/Plan.md");
     expect(invoke.mock.calls.map(([c]) => c)).not.toContain("health_link_ghost");
-    expect(invoke.mock.calls.find(([c]) => c === "trash_move")![1]).toEqual({ path: "notes/Plan.md" });
+    expect(invoke.mock.calls.find(([c]) => c === "trash_move")![1]).toEqual({ path: "notes/Plan.md", from: "File menu" });
+    invoke.mockClear();
+    await trashFile("sources/Orbit App brief.pdf", "Sources");
+    expect(invoke.mock.calls.find(([c]) => c === "trash_move")![1]).toEqual({ path: "sources/Orbit App brief.pdf", from: "Sources" });
   });
 });
 

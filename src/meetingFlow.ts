@@ -141,17 +141,21 @@ export async function makeMeetingNotes(paths: string[], auto?: { unattended: boo
     const all = await api.meetingTranscripts();
     const asked = fresh.map((p) => all.find((t) => t.path === p)).filter((t): t is Transcript => !!t);
     const sure = asked.filter(sureOf);
-    // Automatically, a transcript whose note is made and ingested already just goes to the Trash.
-    const left = auto ? asked.filter(onlyTranscriptLeft) : [];
+    // Automatically, a transcript whose note is made and ingested already just goes to the Trash,
+    // as a change in Changes, or with Move the transcript to the Trash off, just leaves the Inbox.
+    // One whose move to the Trash was reverted (or that was put back from the Trash) is kept.
+    const left = auto ? await leftovers(asked) : [];
     for (const t of left) {
       const by: TrashBy = {
         origin: { kind: "meeting", label: "Meeting notes", ...(auto?.unattended ? { trigger: "scheduled" } : {}) },
         reason: "Its meeting note is made and ingested already.",
       };
-      await trashTranscript(t.path, noteFile(specOf(t)), by).catch(() => undefined);
+      if (followThrough().trash) await trashTranscript(t.path, noteFile(specOf(t)), by).catch(() => undefined);
+      else await leaveInbox(t.path);
       starting.delete(t.path);
     }
-    const unsure = asked.filter((t) => !sureOf(t) && !left.includes(t));
+    // A leftover kept (its move reverted) isn't a note waiting for a check.
+    const unsure = asked.filter((t) => !sureOf(t) && !(auto && onlyTranscriptLeft(t)));
     // Only the sure ones run now; the rest can be pressed again once the meeting screen has asked.
     fresh.filter((p) => !sure.some((t) => t.path === p)).forEach((p) => starting.delete(p));
     if (sure.length) {
@@ -183,13 +187,28 @@ export async function makeMeetingNotes(paths: string[], auto?: { unattended: boo
   }
 }
 
-/** The daily check's catch-up, with Ingest new sources as they arrive on: every transcript still to
- *  do (one that came while Brainstead was closed, say) gets the same automatic go as one arriving. */
+/** The transcripts of `ts` with only themselves left (onlyTranscriptLeft) that may go to the Trash
+ *  by themselves: not one whose move to the Trash was reverted in Changes, or that was put back
+ *  from the Trash, which the user wants kept. */
+async function leftovers(ts: Transcript[]): Promise<Transcript[]> {
+  const left = ts.filter(onlyTranscriptLeft);
+  if (!left.length) return [];
+  const rows = await api.changesList().catch(() => [] as ChangeRow[]);
+  const kept = new Set(rows.filter((c) => c.kind === "trash" && c.status === "reverted").map((c) => c.page));
+  return left.filter((t) => !kept.has(t.path));
+}
+
+/** The daily check's catch-up. A transcript whose meeting note is made and ingested already (by
+ *  Brainstead, by hand or in a terminal; a wiki page cites the note) has only itself left: it goes
+ *  to the Trash, whatever else cites or links it, as one arriving does, since that needs no model.
+ *  With Ingest new sources as they arrive on, every other transcript still to do (one that came
+ *  while Brainstead was closed, say) gets the same automatic go as one arriving. */
 export async function catchUpMeetingNotes() {
-  if (!settings.get().ingestOnArrival) return;
-  const all = await api.meetingTranscripts().catch(() => []);
+  const all = await api.meetingTranscripts().catch(() => [] as Transcript[]);
+  const left = all.filter(onlyTranscriptLeft);
+  const todo = settings.get().ingestOnArrival ? all.filter((t) => !t.done && !onlyTranscriptLeft(t)) : [];
   await makeMeetingNotes(
-    all.filter((t) => !t.done).map((t) => t.path),
+    [...left, ...todo].map((t) => t.path),
     { unattended: true },
   );
 }
@@ -316,13 +335,14 @@ export interface TrashBy {
  *  menu (and so Sources and the command palette) and the trash_note tool. `note` left out is the
  *  one its name says, if that's in the vault; null is none. With `by`, every write is recorded as
  *  that assistant's: the link rewrites unattended when it is, and the move as its change in
- *  Changes (`outcome`) rather than the user's (`entry`). */
+ *  Changes (`outcome`). Without it the move is the user's, from the screen `by` names ("Inbox",
+ *  "File menu"; the meeting screen's when left out), recorded in Changes as theirs (`entry`). */
 export async function trashTranscript(
   transcript: string,
   note?: string | null,
-  by?: TrashBy,
+  by: TrashBy | string = "Meeting notes",
 ): Promise<{ entry?: TrashEntry; outcome?: ChangeOutcome }> {
-  const unattended = by?.origin.trigger === "scheduled";
+  const unattended = typeof by !== "string" && by.origin.trigger === "scheduled";
   const to =
     note !== undefined
       ? note
@@ -341,7 +361,7 @@ export async function trashTranscript(
     const pages = [...new Set((meta?.backlinks ?? []).map((b) => b.path))].filter((p) => p !== to);
     if (pages.length) await api.healthLinkGhost(transcript.split("/").pop()!.replace(/\.md$/, ""), to, pages, unattended).catch(() => 0);
   }
-  if (!by) return { entry: await api.trashMove(transcript) };
+  if (typeof by === "string") return { entry: await api.trashMove(transcript, by) };
   const name = (transcript.split("/").pop() ?? transcript).replace(/\.md$/, "");
   return {
     outcome: await api.changeSubmit({

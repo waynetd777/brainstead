@@ -93,7 +93,7 @@ export function StillInInbox({ path, onDone }: { path: string; onDone?: () => vo
         className="btn sm ghost"
         title="Move the file to the vault's Trash; restored from there, it's back in the Inbox"
         onClick={() =>
-          void (transcript ? trashTranscript(path) : api.trashMove(path))
+          void (transcript ? trashTranscript(path, undefined, "Inbox") : api.trashMove(path, "Inbox"))
             .then(() => {
               toast("Moved to the Trash", undefined, "ok");
               done();

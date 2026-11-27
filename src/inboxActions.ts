@@ -209,7 +209,8 @@ export async function makeTask(i: InboxItem, text: string): Promise<unknown> {
 /** Moves a capture's file to the Trash (Delete), a transcript's links first pointed at its meeting
  *  note, as every transcript trashed is (trashTranscript). It isn't marked clarified: restored
  *  from the Trash, it's back in the Inbox. */
-export const trashCapture = (path: string) => (isTranscriptPath(path) ? trashTranscript(path) : api.trashMove(path));
+export const trashCapture = (path: string, from = "Inbox") =>
+  isTranscriptPath(path) ? trashTranscript(path, undefined, from) : api.trashMove(path, from);
 
 /** A note's text with the item added as a bullet at its end, a blank line before it. The note's own
  *  ending (its trailing blank lines) is left as it was: only what's missing is added. */
