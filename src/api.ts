@@ -1356,7 +1356,8 @@ export const api = {
   /** Ignore all, on stale pages and claims with no citation: how many were ignored. */
   healthIgnoreAll: (check: string) => invoke<number>("health_ignore_all", { check }),
   /** Shows a check's ignored issues again (every check's with null); returns how many. */
-  healthUnignore: (check: string | null) => invoke<number>("health_unignore", { check }),
+  /** Show again for one check; the app refuses without one. */
+  healthUnignore: (check: string) => invoke<number>("health_unignore", { check }),
   healthTrashImage: (path: string) => invoke<string>("health_trash_image", { path }),
   healthCreatePage: (name: string, folder: "entities" | "concepts") => invoke<string>("health_create_page", { name, folder }),
   healthLinkGhost: (target: string, to: string, pages: string[], unattended = false) =>

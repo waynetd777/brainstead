@@ -115,7 +115,7 @@ Wiki health checks the wiki whenever the vault changes: missing pages and links,
 
 - Pie charts show the pages by type and by tag; a slice opens the Wiki filtered to it. **Most linked** lists the notes and pages the most others link to. They're the only charts of the vault: Activity has the heatmap.
 - **Fix safe issues** fixes the ones with one right answer (a missing link, a date, a `log.md` line, a system note's lost header), undoably.
-- **Ignore** hides an issue until its page changes (an uncited claim until its line does, an initiative's action while it's listed); **Show again** brings a check's ignored issues back. Stale pages and claims with no citation also have **Ignore all**.
+- **Ignore** hides an issue until its page changes (an uncited claim until its line does, an initiative's action while it's listed); **Show again** brings a check's ignored issues back, one check at a time (an assistant asking for every check at once is told what's ignored instead). Stale pages and claims with no citation also have **Ignore all**.
 - A fixed issue leaves the list at once, and the checks rerun within a second of any change to the vault. Checks only worth a look (stale pages, claims with no citation, pages with no Current state) have a grey icon, not amber.
 - The daily check makes Wiki health's safe fixes itself (all but a system note's header), so they don't wait for **Fix safe issues**.
 - Pages whose properties don't read as YAML are listed and counted. The common slips (a colon in a plain value, a list item put among a long item's lines) are safe fixes that repair only those lines, and an ingest repairs them before adding its source, so its change isn't held for it: until they're fixed, the page's sources, aliases and dates are lost to the other checks, search and ingest. A link to a page's alias reaches the page, so it isn't a missing page or broken source, and it counts towards the page's links (orphans, stale pages).
@@ -129,7 +129,7 @@ Wiki health checks the wiki whenever the vault changes: missing pages and links,
 
 ## Contradictions
 
-Contradictions is a tab of Wiki health. The contradictions check groups claims about the same thing on the pages that changed, and has the AI judge the ones whose values differ: **Real** (with its severity), **Newer supersedes older**, **Not a conflict** or **Unclear**. When it has a fix for a real one, the fix is made and listed in Changes. You can **Mark resolved**, **Ignore**, or **Save report as note**. The [daily check](day-to-day.md#summaries-and-jobs) runs it on each day's changed pages.
+Contradictions is a tab of Wiki health. The contradictions check groups claims about the same thing on the pages that changed, and has the AI judge the ones whose values differ: **Real** (with its severity), **Newer supersedes older**, **Not a conflict** or **Unclear**. When it has a fix for a real one, the fix is made and listed in Changes. You can **Mark resolved**, **Ignore**, or **Save report as note**. An assistant can list only the findings still to decide (real and unclear), not the settled ones. The [daily check](day-to-day.md#summaries-and-jobs) runs it on each day's changed pages.
 
 ## Graph
 

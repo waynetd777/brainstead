@@ -615,16 +615,31 @@ fn health_ignore_all_now(app: AppHandle, check: String) -> Res<usize> {
 /// The checks with Ignore all: advisory, with no fix of their own.
 pub const IGNORE_ALL: [&str; 2] = ["stale-pages", "uncited-claims"];
 
-/// Shows a check's ignored issues again (every check's when None).
-fn health_unignore_now(app: AppHandle, check: Option<String>) -> Res<usize> {
-    let n = with_kept(|k| {
-        let before = k.ignored.len();
-        match &check {
-            Some(c) => k.ignored.retain(|key, _| !key.starts_with(&format!("{c}|"))),
-            None => k.ignored.clear(),
+/// Shows one check's ignored issues again: how many there were. Without a check nothing is
+/// shown again (a slip would bring back every issue ever ignored, over a thousand in a big
+/// vault); the refusal says which checks have ignored issues, and how many each.
+fn unignore(ignored: &mut BTreeMap<String, String>, check: Option<&str>) -> Result<usize, String> {
+    let Some(c) = check.map(str::trim).filter(|c| !c.is_empty()) else {
+        let mut by: BTreeMap<&str, usize> = BTreeMap::new();
+        for key in ignored.keys() {
+            *by.entry(key.split('|').next().unwrap_or_default()).or_default() += 1;
         }
-        before - k.ignored.len()
-    });
+        return Err(if by.is_empty() {
+            "Nothing is ignored.".into()
+        } else {
+            let list: Vec<String> = by.iter().map(|(c, n)| format!("{c} {n}")).collect();
+            format!("Show again is for one check at a time: give its id. Ignored now: {}.", list.join(", "))
+        });
+    };
+    let before = ignored.len();
+    let prefix = format!("{c}|");
+    ignored.retain(|key, _| !key.starts_with(&prefix));
+    Ok(before - ignored.len())
+}
+
+/// Shows a check's ignored issues again, as its Show again button does.
+fn health_unignore_now(app: AppHandle, check: Option<String>) -> Res<usize> {
+    let n = with_kept(|k| unignore(&mut k.ignored, check.as_deref())).map_err(invalid)?;
     relint(&app);
     Ok(n)
 }
@@ -852,6 +867,30 @@ pub async fn health_link_ghost(app: AppHandle, target: String, to: String, pages
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn show_again_needs_a_check_and_says_which_have_ignored_issues() {
+        let mut ignored: BTreeMap<String, String> = [
+            lint::ignore_key("stale-pages", "[[Orbit App]] — 200 days"),
+            lint::ignore_key("stale-pages", "[[Acme]] — 190 days"),
+            lint::ignore_key("orphans", "[[Lena]]"),
+        ]
+        .into_iter()
+        .map(|k| (k, String::new()))
+        .collect();
+        // No check: refused, nothing shown again, and the checks counted.
+        for none in [None, Some(""), Some("  ")] {
+            let e = unignore(&mut ignored, none).unwrap_err();
+            assert!(e.contains("orphans 1, stale-pages 2"), "{e}");
+        }
+        assert_eq!(ignored.len(), 3);
+        // One check: only its issues come back.
+        assert_eq!(unignore(&mut ignored, Some("stale-pages")), Ok(2));
+        assert_eq!(ignored.keys().collect::<Vec<_>>(), ["orphans|[[Lena]]"]);
+        assert_eq!(unignore(&mut ignored, Some("stale-pages")), Ok(0));
+        assert_eq!(unignore(&mut ignored, Some("orphans")), Ok(1));
+        assert_eq!(unignore(&mut ignored, None).unwrap_err(), "Nothing is ignored.");
+    }
 
     #[test]
     fn an_assistants_safe_fixes_are_changes_and_a_header_put_back_is_held() {
