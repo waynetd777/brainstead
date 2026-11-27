@@ -167,9 +167,11 @@ fn refused_of(old: Option<&SignIn>, svc: Service) -> Refused<'_> {
     old.map(|o| Refused::of(&o.rejected, &o.rejected_at, svc.key(), now_secs())).unwrap_or_default()
 }
 
-/// Reads the sign-in from the Keychain.
+/// Reads the sign-in from the Keychain, with the refusals that have lapsed forgotten ([`refusal`]).
 pub fn load() -> Option<SignIn> {
-    platform::secret_get(ACCOUNT).and_then(|s| serde_json::from_str(&s).ok())
+    let mut s: SignIn = platform::secret_get(ACCOUNT).and_then(|s| serde_json::from_str(&s).ok())?;
+    refusal::prune(&mut s.rejected, &mut s.rejected_at, now_secs());
+    Some(s)
 }
 
 /// Keeps the sign-in in the Keychain.
@@ -344,12 +346,13 @@ pub fn with_mail_handover(old: Option<SignIn>, v: &Value) -> Option<SignIn> {
     Some(s)
 }
 
-/// Microsoft turned `svc`'s token down (a 401): drops it and remembers it, so the sync says to sign
-/// in again rather than retrying it, until a different token for `svc` is handed over.
+/// Microsoft turned `svc`'s token down (a 401): remembers it, so the sync says to sign in again
+/// rather than retrying it, until a different token for `svc` is handed over or the refusal lapses.
+/// The token is kept, to be tried again then.
 pub fn reject(svc: Service) {
     changing(|| {
         let Some(mut s) = load() else { return };
-        if let Some(t) = s.tokens.remove(svc.key()) {
+        if let Some(t) = s.tokens.get(svc.key()) {
             refusal::record(&mut s.rejected, &mut s.rejected_at, svc.key(), &t.token, now_secs());
             let _ = store(&s);
         }
@@ -357,12 +360,17 @@ pub fn reject(svc: Service) {
 }
 
 /// A handed-over sign-in with what the earlier one had rejected applied: a service handed the same
-/// dead token again stays rejected (and the token is dropped); one handed a new token is cleared.
+/// dead token again stays rejected; one handed a new token is cleared.
 pub fn keep_rejected(mut new: SignIn, old: Option<&SignIn>) -> SignIn {
     let (rejected, at) = old.map(|o| (o.rejected.clone(), o.rejected_at.clone())).unwrap_or_default();
     let (still, still_at) = refusal::still(&rejected, &at, now_secs(), |k| new.tokens.get(k).map(|t| (t.token.as_str(), issued(&t.token))));
+    // A service still refused keeps the refused token (tried again once the refusal lapses), not
+    // whatever the hand-over brought for it.
     for k in still.keys() {
-        new.tokens.remove(k);
+        match old.and_then(|o| o.tokens.get(k)) {
+            Some(t) => new.tokens.insert(k.clone(), t.clone()),
+            None => new.tokens.remove(k),
+        };
     }
     new.rejected = still;
     new.rejected_at = still_at;

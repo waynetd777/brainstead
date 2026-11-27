@@ -57,6 +57,13 @@ fn lapsed(at: Option<i64>, now: i64) -> bool {
     at.is_none_or(|t| now - t >= RETRY_SECS)
 }
 
+/// Forgets the refusals that have lapsed by `now`, so a sign-in read back from the store tries those
+/// tokens again at once: on the pass 20 seconds after the app starts, without waiting for a hand-over.
+pub fn prune(rejected: &mut BTreeMap<String, String>, at: &mut BTreeMap<String, i64>, now: i64) {
+    rejected.retain(|k, _| !lapsed(at.get(k).copied(), now));
+    at.retain(|k, _| rejected.contains_key(k));
+}
+
 /// Records that `key`'s token `secret` was turned down at `now`.
 pub fn record(rejected: &mut BTreeMap<String, String>, at: &mut BTreeMap<String, i64>, key: &str, secret: &str, now: i64) {
     rejected.insert(key.to_string(), fingerprint(secret));
@@ -124,5 +131,11 @@ mod tests {
         assert!(still(&rejected, &at, later, same).0.is_empty());
         // Nothing handed over: the refusal lapses all the same (the service has no token till then).
         assert!(still(&rejected, &at, later, |_| None).0.is_empty());
+        // Read back from the store: kept within the half hour, gone after.
+        let (mut r, mut a) = (rejected.clone(), at.clone());
+        prune(&mut r, &mut a, later - 1);
+        assert_eq!((r.len(), a.len()), (1, 1));
+        prune(&mut r, &mut a, later);
+        assert!(r.is_empty() && a.is_empty());
     }
 }

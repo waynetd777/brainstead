@@ -116,8 +116,11 @@ fn reject(ws: &Workspace) {
     }
 }
 
+/// The stored sign-in, with the refusals that have lapsed forgotten (the shared rule).
 pub fn load() -> Option<SignIn> {
-    crate::platform::secret_get(ACCOUNT).and_then(|j| serde_json::from_str(&j).ok())
+    let mut s: SignIn = crate::platform::secret_get(ACCOUNT).and_then(|j| serde_json::from_str(&j).ok())?;
+    super::refusal::prune(&mut s.rejected, &mut s.rejected_at, Utc::now().timestamp());
+    Some(s)
 }
 
 /// Forgets the sign-in (Settings' Sign out).
@@ -449,7 +452,8 @@ pub fn sync(
     let client = super::client();
     let mut prog = progress(data);
     for ws in &sign_in.workspaces {
-        // Turned down before: not tried again until a new sign-in is handed over.
+        // Turned down in the last half hour: not tried again until a new sign-in is handed over or
+        // the refusal lapses.
         if sign_in.rejected.contains_key(&ws.id) {
             r.problems.push(format!("{}: {LAPSED}", ws_name(ws)));
             continue;
