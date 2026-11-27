@@ -28,6 +28,7 @@ import { IMAGE_EXT } from "./md/wikilinks";
 import { TopBar } from "./TopBar";
 import { hasSync } from "./platform";
 import { mailOn } from "./syncStatus";
+import { waitJob } from "./syncJobs";
 import { Dialog, fmtBytes, fmtCount, Popover, Seg } from "./ui";
 import { TypeDot, TypePill } from "./typeTone";
 import { keyLabel } from "./platform";
@@ -693,10 +694,14 @@ function SyncNowButton() {
   if (!hasSync || !(s.syncEnabled || mailOn(s) || s.syncSlack)) return null;
   const run = () => {
     setSyncing(true);
+    // Started in the background like Settings' (src/syncJobs.ts), and followed until it's done.
     api
-      .syncNow()
-      .then((r) => {
-        if (r.blocked) return toast(r.blocked, undefined, "bad");
+      .syncStart()
+      .then((j) => waitJob(j.id))
+      .then((j) => {
+        if (!j) return;
+        if (j.status === "failed" || !j.report) return toast(j.error ?? "The sync didn't finish.", undefined, "bad");
+        const r = j.report;
         const n = r.chats + r.mail + r.transcripts;
         toast(
           n

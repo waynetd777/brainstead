@@ -475,6 +475,32 @@ export interface SyncReport {
   replied?: string[];
 }
 
+/** What an on-demand pull gathered (src-tauri/src/sync/pull.rs). */
+export interface SyncPulled {
+  items: { kind: string; title: string; date: string; path: string; alreadyHad: boolean }[];
+  problems: string[];
+  /** What wasn't read because it's on a skip list (Settings › Sync). */
+  leftOut?: string[];
+  blocked: string | null;
+}
+
+/** A sync run started by hand: Sync now, Fetch again or an assistant's pull (src-tauri/src/sync/jobs.rs). */
+export interface SyncJob {
+  id: string;
+  kind: "now" | "fetch_again" | "pull";
+  status: "running" | "done" | "failed";
+  /** Local YYYY-MM-DDTHH:MM:SS. */
+  started: string;
+  finished: string | null;
+  from: string | null;
+  query: string | null;
+  days: number | null;
+  kinds: string[];
+  report: SyncReport | null;
+  pulled: SyncPulled | null;
+  error: string | null;
+}
+
 /** One sync pass, or a run of the same blocked or failing one (src-tauri/src/sync/log.rs). */
 export interface SyncPass {
   /** When it ran (local, YYYY-MM-DDTHH:MM:SS); the first of a run of repeats. */
@@ -1537,8 +1563,6 @@ export const api = {
   syncSignInState: () => invoke<SyncSignIn>("sync_sign_in_state"),
   syncSignOut: () => invoke<void>("sync_sign_out"),
   syncSignOutOutlook: () => invoke<void>("sync_sign_out_outlook"),
-  /** One sync pass; with `from` (YYYY-MM-DD), a back-fill from that day (Settings › Sync › Fetch again). */
-  syncNow: (from?: string) => invoke<SyncReport>("sync_now", from ? { from } : {}),
   syncLog: () => invoke<SyncLog>("sync_log"),
   syncTodayMeetings: () => invoke<SyncMeeting[]>("sync_today_meetings"),
   /** The last calendar read's meetings that haven't ended — instant, no network. */
@@ -1547,14 +1571,17 @@ export const api = {
   slackSignInState: () => invoke<SlackSignIn>("slack_sign_in_state"),
   slackSignOut: () => invoke<void>("slack_sign_out"),
   slackChannels: () => invoke<{ id: string; name: string; workspace: string }[]>("slack_channels"),
-  syncPull: (query: string, days: number, kinds?: string[]) =>
-    invoke<{
-      items: { kind: string; title: string; date: string; path: string; alreadyHad: boolean }[];
-      problems: string[];
-      /** What wasn't read because it's on a skip list (Settings › Sync). */
-      leftOut?: string[];
-      blocked: string | null;
-    }>("sync_pull", { query, days, kinds }),
+  /** Sync now, or with `from` (YYYY-MM-DD) Fetch again's back-fill from that day, started in the
+   *  background: answers at once with its run (src-tauri/src/sync/jobs.rs); syncJobs reads how it
+   *  went, its report once done. Refused while a pass is going. */
+  syncStart: (from?: string) => invoke<SyncJob>("sync_start", from ? { from } : {}),
+  /** An assistant's pull of a topic's chats, mail and transcripts over the last `days` days, started
+   *  in the background: its outcome is the run's `pulled` once done. */
+  syncPullStart: (query: string, days: number, kinds?: string[]) => invoke<SyncJob>("sync_pull_start", { query, days, kinds }),
+  /** The sync runs started by hand since the app opened, newest first. */
+  syncJobs: () => invoke<SyncJob[]>("sync_jobs"),
+  /** A sync run started by hand has begun or finished (the `sync-job` event). */
+  onSyncJob: (f: (j: SyncJob) => void): Promise<UnlistenFn> => listen<SyncJob>("sync-job", (e) => f(e.payload)),
   // Dataview (src-tauri/src/dataview.rs, src/md/dataview/).
   /** Pages changed since generation `since` (0: all), and every page's path now. */
   dataviewPages: (since: number) => invoke<DvPagesDelta>("dataview_pages", { since }),

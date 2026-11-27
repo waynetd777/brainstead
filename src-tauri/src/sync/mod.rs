@@ -15,6 +15,7 @@ pub mod attention;
 pub mod auth;
 pub mod fetch;
 pub mod html;
+pub mod jobs;
 pub mod log;
 pub mod pictures;
 pub mod pull;
@@ -105,45 +106,34 @@ pub fn sync_sign_out_outlook() -> Result<(), String> {
     auth::forget_mail()
 }
 
-/// Runs one sync pass now (Settings › "Sync now"), or with `from` (`YYYY-MM-DD`) a back-fill from
-/// that day (Settings › Sync › Fetch again, D-20261118-23).
-#[tauri::command]
-pub async fn sync_now(app: tauri::AppHandle, from: Option<String>) -> Result<run::Report, String> {
-    let from = match from.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+// Sync now, Fetch again and an assistant's pull are started in the background by `jobs`
+// (D-20261127-19): nothing waits on a pass inside a command.
+
+/// Fetch again's first day, checked: a real date, not in the future; none (or blank) for a pass.
+pub fn parse_from(from: Option<String>) -> Result<Option<chrono::NaiveDate>, String> {
+    match from.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
         Some(f) => {
             let d = chrono::NaiveDate::parse_from_str(f, "%Y-%m-%d").map_err(|_| format!("{f} isn't a date (YYYY-MM-DD)."))?;
             if d > chrono::Local::now().date_naive() {
                 return Err("The day to fetch from is in the future.".into());
             }
-            Some(d)
+            Ok(Some(d))
         }
-        None => None,
-    };
-    let report = tauri::async_runtime::spawn_blocking(move || run::run_from(&platform::data_dir(), from)).await.unwrap_or_default();
-    run::tell_replied(&app, &report);
-    Ok(report)
+        None => Ok(None),
+    }
 }
 
-/// On-demand pull for an assistant: gather the chats, mail and transcripts about `query` over the
-/// last `days` days into the vault (reusing what's there) and return the source paths to read.
-#[tauri::command]
-pub async fn sync_pull(query: Option<String>, days: Option<u32>, kinds: Option<Vec<String>>) -> pull::Outcome {
-    tauri::async_runtime::spawn_blocking(move || {
-        let q = query.unwrap_or_default();
-        let want = kinds.unwrap_or_default();
-        let k = if want.is_empty() {
-            pull::Kinds::all()
-        } else {
-            pull::Kinds {
-                chats: want.iter().any(|x| x == "chats"),
-                mail: want.iter().any(|x| x == "mail"),
-                transcripts: want.iter().any(|x| x == "transcripts"),
-            }
-        };
-        pull::pull(&platform::data_dir(), &q, days.unwrap_or(7), k)
-    })
-    .await
-    .unwrap_or_default()
+/// A pull's kinds by name (chats, mail, transcripts); all three when none are named.
+pub fn kinds_of(want: &[String]) -> pull::Kinds {
+    if want.is_empty() {
+        pull::Kinds::all()
+    } else {
+        pull::Kinds {
+            chats: want.iter().any(|x| x == "chats"),
+            mail: want.iter().any(|x| x == "mail"),
+            transcripts: want.iter().any(|x| x == "transcripts"),
+        }
+    }
 }
 
 /// Draft reply's Put in Outlook / Put in Teams (D-20261120-05): the reply, unsent, as an Outlook

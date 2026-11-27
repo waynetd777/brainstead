@@ -54,6 +54,11 @@ pub struct Report {
     pub idle: bool,
 }
 
+/// Whether a pass is going now (the timer's, or one started by hand).
+pub fn running() -> bool {
+    RUNNING.load(Ordering::SeqCst)
+}
+
 /// Runs one sync pass. Safe to call from the timer or a command; overlapping calls return a
 /// `blocked` report rather than running twice.
 pub fn run_once(data: &Path) -> Report {

@@ -2,12 +2,14 @@
 // See LICENSE for the full text.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { DateField } from "./DatePicker";
 import { localToday } from "./md/taskQuery";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, AppInfo, CliInfo, CliName, Skill, SkipSuggestion, Theme } from "./api";
 import { acceptSkip, unskipChat } from "./skips";
+import { passGoing, waitJob } from "./syncJobs";
+import type { SyncJob } from "./api";
 import { extensionOutdatedText, mailOn, rejectedText, slackRejectedText } from "./syncStatus";
 import appIconDark from "../src-tauri/icons/128x128@2x.png";
 import appIconLight from "../src-tauri/icons/about-light.png";
@@ -1590,18 +1592,47 @@ function SyncPane() {
     if (v && !ignore.includes(v)) settings.update({ syncIgnoreSenders: [...ignore, v] });
     setNewIgnore("");
   };
-  const syncNow = (from?: string) => {
+  // A run started by hand goes on in the background (src/syncJobs.ts): the pane follows it, and one
+  // an assistant started, or that was going when the pane was left, shows here too.
+  // A run is followed once, however it was heard of (its own button, the `sync-job` event, or
+  // the pass going when the pane opened).
+  const followed = useRef<string | null>(null);
+  const follow = (j: SyncJob) => {
+    if (followed.current === j.id) return;
+    followed.current = j.id;
     setBusy(true);
     setReport(null);
-    api
-      .syncNow(from)
-      .then((r) => {
-        setReport(r);
-        if (r.blocked) toast(r.blocked, undefined, "bad");
+    waitJob(j.id)
+      .then((d) => {
+        if (d?.report) setReport(d.report);
+        if (d?.status === "failed" && d.error) toast(d.error, undefined, "bad");
       })
       .catch((e) => toast(String(e), undefined, "bad"))
-      .finally(() => setBusy(false));
+      .finally(() => followed.current === j.id && setBusy(false));
   };
+  const syncNow = (from?: string) => {
+    setBusy(true);
+    api
+      .syncStart(from)
+      .then(follow)
+      .catch((e) => {
+        toast(String(e), undefined, "bad");
+        setBusy(false);
+      });
+  };
+  useEffect(() => {
+    void passGoing().then((j) => j && follow(j));
+    let off: (() => void) | undefined;
+    let gone = false;
+    void api
+      .onSyncJob((j) => j.status === "running" && j.kind !== "pull" && follow(j))
+      .then((u) => (gone ? u() : (off = u)))
+      .catch(() => {});
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, []);
   const loadChannels = () => {
     setLoadingChannels(true);
     api

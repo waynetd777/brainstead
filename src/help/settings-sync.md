@@ -41,13 +41,15 @@ With **Sync Slack** on (under Slack, in this pane) and Slack open in a browser t
 A chat day or a thread that's already been ingested and then gets more messages shows as **Changed** in Sources. With **Also refresh pages whose sources changed** on (Settings › AI assistants), the wiki catches up about once a day rather than re-ingesting on every new message; otherwise ingest it when you like from Sources.
 
 ## Sync now
-The sync runs on its own every so often. **Sync now** runs a pass at once and says what it added and any problems it hit. A problem (a Microsoft service that didn't answer) is shown and the rest of the pass still runs — it never stops captures.
+The sync runs on its own every so often. **Sync now** runs a pass at once and says what it added and any problems it hit. A problem (a Microsoft service that didn't answer) is shown and the rest of the pass still runs — it never stops captures. The pass goes on in the background, so you can leave the pane while it runs: coming back, the button still shows **Syncing…** until it's done, and it does the same for a pass an assistant started. Only one pass runs at a time; starting another while one is going says so.
 
 ## Fetch again
 **Fetch again** reads further back than the sync usually does. Pick a day, and it fetches your Teams and Slack conversations from that day on, and the threads in your Outlook Inbox with a message since that day; an older message's attachments are listed by name, not brought in. A source already in Sources is topped up, not added twice, and a day the first sync skipped is written now. What it fetches waits in the Inbox: it isn't ingested as it arrives and brings no notifications, so you can try an ingest on a few first. Ingesting them for their actions only (an assistant's `start_run` with mode `auto`) reads the sources the wiki already has for their actions and decisions, without writing their pages again.
 
 ## Ask an assistant to pull a topic
 With sync on, you can ask an assistant (in Ask, or any connected assistant) to gather a topic on demand — for example, “read the last week's emails, Teams chats and meeting transcripts about the Fit programme and write a note on how it's going”. It pulls the matching sources into the vault (reusing what's already there, topping up a chat day or mail thread that has gained messages and fetching only what's missing), then reads them to write your note. A chat on **Chats to skip** and mail from a sender on **Mail to skip** are left out of this too, without being read, and the assistant is told they were. A chat it pulls that the sync hasn't seen yet still gets **History on first sync** when the sync first reads it: the days the pull wrote stay as they are, and older days aren't brought in.
+
+A pull, **Sync now** or **Fetch again** started by an assistant runs in the background like the buttons: a short one answers with what it found, and a long one (a Fetch again over weeks of mail) answers at once with its run, which the assistant follows with `run_status` until it's finished, rather than waiting and timing out.
 
 ## Turning it off
 Switch **Sync Teams** or **Sync Outlook mail** off to stop that one, or **Sign out** on its card to forget its sign-in; the other's stays. The capture extensions still work by hand either way.
