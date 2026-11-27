@@ -69,7 +69,7 @@ An assistant can list, reject or revert changes when you ask. It can do so for a
 
 **What it can read:** search, any page or section, backlinks, facts, tasks, the Inbox, projects, the summaries, the Weekly review, Changes, runs, transcripts, the Trash, Activity, Sources, Wiki health's report, provenance, contradictions, the graph, Ask's chats, settings, Glance's counts, whether the app is running, and the in-app help. Each read is its own tool, marked read-only, so you can let an assistant read without asking you.
 
-Long lists come a page at a time and say how many there are. Nothing changes while the vault is read-only. A tool that waits on a model is given up to ten minutes. A request Brainstead didn't answer in time isn't carried out later.
+Long lists come a page at a time and say how many there are. A long page or transcript is shown in part, its sections by heading; the assistant can read all of it a part at a time, or find words or a phrase in it (the lines holding them, each with its heading and where to read on from; the first 40, and how many in all). Nothing changes while the vault is read-only. A tool that waits on a model is given up to ten minutes. A request Brainstead didn't answer in time isn't carried out later.
 
 ## Sessions outside the app
 

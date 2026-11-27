@@ -74,7 +74,7 @@ Reading is kept apart from changing: each of these is a tool of its own, marked 
 Two things stay with you on the [Trash](app:trash) screen: **Empty the Trash** and **Delete forever**. They can't be undone, so no assistant can do them.
 
 ## When Brainstead isn't open
-Reading pages, search, facts, the summaries, the health report and the Page shape check work whether the app is open or not. A long page or transcript is shown in part, its sections by heading; an assistant can also read all of it, as it is, a part at a time, each part saying where the next one starts. Everything else needs the app: the assistant opens Brainstead and waits for it.
+Reading pages, search, facts, the summaries, the health report and the Page shape check work whether the app is open or not. A long page or transcript is shown in part, its sections by heading; an assistant can also read all of it, as it is, a part at a time, each part saying where the next one starts, or find words or a phrase within it, getting back the lines that hold them, the heading each is under and where to read on from. A page whose properties don't read as YAML says so, and why, rather than counting its sources. Everything else needs the app: the assistant opens Brainstead and waits for it.
 
 Updating Brainstead doesn't disconnect an assistant in a session outside the app on a Mac: its tools move to the new version by themselves, between calls, a few seconds after the update is in place. On Windows the update stops them, because Windows can't replace a program while it runs; reconnect them in the assistant afterwards (in Claude Code, `/mcp`; `claude -p` and Agent SDK sessions start Brainstead's server again at their next tool call).
 

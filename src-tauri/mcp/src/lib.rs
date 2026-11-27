@@ -413,8 +413,8 @@ pub fn tools() -> Vec<Value> {
                 "detail": detail
             }), &["query"])),
         tool("read_section", "Read a page", Read,
-            "Reads a page, or one section of it by heading (to the next heading of the same level). A long page or section is shown in part, its sections by heading; start reads it all instead, as it is, a part at a time: give start 0, then the start each part says to continue at, until it says it's the end. For a PDF or Office source, heading picks a page (page=6), slide (Slide 2) or sheet by name.",
-            schema(json!({"page": page, "heading": {"type": "string", "description": "The section's heading text (Current state), or for a PDF or Office file a page, slide or sheet. The whole page when left out."}, "start": {"type": "integer", "minimum": 0, "description": "Read the page (or the section) as it is, from this character on, a part at a time: 0 for the beginning, then the start the last part said to continue at."}}), &["page"])),
+            "Reads a page, or one section of it by heading (to the next heading of the same level). A long page or section is shown in part, its sections by heading; start reads it all instead, as it is, a part at a time: give start 0, then the start each part says to continue at, until it says it's the end. find looks within the page (or the section) instead of reading it: the lines holding every word of it, or a phrase in quotes, case aside, each with its line number, the heading it's under and its start, to read on from with start; the first 40, and how many in all. For a PDF or Office source, heading picks a page (page=6), slide (Slide 2) or sheet by name.",
+            schema(json!({"page": page, "heading": {"type": "string", "description": "The section's heading text (Current state), or for a PDF or Office file a page, slide or sheet. The whole page when left out."}, "start": {"type": "integer", "minimum": 0, "description": "Read the page (or the section) as it is, from this character on, a part at a time: 0 for the beginning, then the start the last part said to continue at."}, "find": {"type": "string", "description": "Words to find in the page (or the section) instead of reading it, case aside: the lines holding all of them, or a phrase given in double quotes. Each line found gives its start."}}), &["page"])),
         tool("backlinks", "Pages linking here", Read,
             "The notes and pages that link to a page, each with the line its link is on. Use it to see where something is mentioned before renaming or changing it, or to find the notes about an entity. Links are resolved as the app resolves them: by name, alias or path.",
             schema(json!({"page": page}), &["page"])),
@@ -2151,6 +2151,67 @@ struct ReadArgs {
     page: String,
     heading: Option<String>,
     start: Option<usize>,
+    find: Option<String>,
+}
+
+/// Lines shown by read_section's find, at most.
+const FIND_CAP: usize = 40;
+
+/// The lines of `text` (a page, or a section as read_section reads it) holding `find`, case aside:
+/// every word of it, or, in quotes, the phrase. Each with its line, the heading it's under and the
+/// character it starts at, which read_section's start reads from; the first `FIND_CAP` of them, and
+/// how many there are in all.
+fn find_lines(text: &str, find: &str) -> Result<String, String> {
+    let q = find.trim();
+    let quoted = q.strip_prefix(['"', '“']).and_then(|r| r.strip_suffix(['"', '”'])).map(str::trim);
+    let phrase = quoted.map(str::to_lowercase);
+    let q = quoted.unwrap_or(q);
+    let words: Vec<String> = match &phrase {
+        Some(p) => vec![p.clone()],
+        None => q.split_whitespace().map(str::to_lowercase).collect(),
+    };
+    if words.iter().all(|w| w.is_empty()) {
+        return Err("Give find some words to look for.".into());
+    }
+    let hs = headings(text);
+    let (mut at, mut under, mut found) = (0usize, None::<&str>, Vec::new());
+    let mut next = hs.iter().peekable();
+    for (i, line) in text.split('\n').enumerate() {
+        while let Some((_, _, t)) = next.next_if(|(n, _, _)| *n <= i) {
+            under = Some(t.as_str());
+        }
+        let low = line.to_lowercase();
+        if words.iter().all(|w| low.contains(w.as_str())) {
+            found.push((at, i + 1, under, line.trim_end_matches('\r')));
+        }
+        at += line.chars().count() + 1;
+    }
+    let how = if phrase.is_some() {
+        "the phrase"
+    } else if words.len() > 1 {
+        "all the words"
+    } else {
+        "the word"
+    };
+    if found.is_empty() {
+        return Ok(format!("[No line has {how} “{q}”.]"));
+    }
+    let more = if found.len() > FIND_CAP {
+        format!(" The first {FIND_CAP} are shown: find more words, or a phrase, to narrow it.")
+    } else {
+        String::new()
+    };
+    let mut out = format!(
+        "[{} line{} with {how} “{q}”.{more} Each says where it starts: read on from there with start.]\n",
+        found.len(),
+        if found.len() == 1 { "" } else { "s" }
+    );
+    for (at, n, under, line) in found.iter().take(FIND_CAP) {
+        let line: String = if line.chars().count() > 300 { line.chars().take(300).collect::<String>() + "…" } else { line.to_string() };
+        let under = under.map(|h| format!(", under “{h}”")).unwrap_or_default();
+        out.push_str(&format!("\n- start {at} (line {n}{under}): {line}"));
+    }
+    Ok(out)
 }
 
 fn headings(text: &str) -> Vec<(usize, usize, String)> {
@@ -2205,12 +2266,17 @@ fn read_section(ctx: &Ctx, a: ReadArgs) -> Result<String, String> {
     let ix = ctx.index()?;
     let rel = existing(ctx, &ix, &a.page)?;
     if !is_text(&rel) {
+        if a.find.is_some() {
+            return Err(format!("{rel} isn't a text page, so find can't look in it: read one part of it with heading, or use search."));
+        }
         return read_parts(ctx, &ix, &rel, a.heading.as_deref());
     }
+    let find = a.find.as_deref().map(str::trim).filter(|f| !f.is_empty());
     let text = read_text(ctx, &rel)?;
     let hs = headings(&text);
     let list = || hs.iter().map(|(_, n, t)| format!("{}{t}", "  ".repeat(n.saturating_sub(1)))).collect::<Vec<_>>().join("\n");
     match a.heading.as_deref().map(|h| h.trim().trim_start_matches('#').trim()).filter(|h| !h.is_empty()) {
+        None if find.is_some() => Ok(format!("{rel}\n\n{}", find_lines(&text, find.unwrap_or_default())?)),
         None if a.start.is_some() => Ok(format!("{rel}\n\n{}", part(&text, a.start.unwrap_or(0)))),
         None => Ok(format!("{rel}\n\n{}", fit(&text, text.chars().count(), !hs.is_empty()))),
         Some(h) => {
@@ -2221,6 +2287,9 @@ fn read_section(ctx: &Ctx, a: ReadArgs) -> Result<String, String> {
             let end = hs[at + 1..].iter().find(|(_, n, _)| *n <= level).map(|(i, _, _)| *i);
             let lines: Vec<&str> = text.split('\n').collect();
             let section = lines[start..end.unwrap_or(lines.len())].join("\n");
+            if let Some(f) = find {
+                return Ok(format!("{rel} · {}\n\n{}", hs[at].2, find_lines(section.trim_end(), f)?));
+            }
             if let Some(o) = a.start {
                 return Ok(format!("{rel}\n\n{}", part(section.trim_end(), o)));
             }
