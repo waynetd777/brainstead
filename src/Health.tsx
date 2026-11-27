@@ -77,6 +77,14 @@ function nextReport(): Promise<void> {
 }
 
 /** Runs an action with its button busy; with `recheck`, until the checks have run again. */
+
+/** What Ignore does, said for the check it's on: an uncited claim comes back when its line changes,
+ *  an initiative's action only once it's no longer listed, anything else when its page changes. */
+function ignoreTitle(check: string): string {
+  if (check === "uncited-claims") return "Stop listing this claim until its line changes";
+  if (check === "initiative-items") return "Stop listing this issue while it's listed, however often the initiative changes";
+  return "Stop listing this issue until its page changes";
+}
 export function act<T>(key: string, run: () => Promise<T>, then: (r: T) => void, recheck = true): void {
   if (busy.get().has(key)) return;
   setBusy(key, true);
@@ -633,7 +641,7 @@ function Row({ check, i, on }: { check: string; i: LintItem; on: Handlers }) {
               <BusyButton
                 id={`ignore:${check}:${i.text}`}
                 className="btn sm ghost"
-                title="Stop listing this issue until its page changes"
+                title={ignoreTitle(check)}
                 onClick={() =>
                   act(
                     `ignore:${check}:${i.text}`,
@@ -681,7 +689,7 @@ function Row({ check, i, on }: { check: string; i: LintItem; on: Handlers }) {
         <BusyButton
           id={`ignore:${check}:${i.text}`}
           className="btn sm ghost"
-          title="Stop listing this issue until its page changes"
+          title={ignoreTitle(check)}
           onClick={() =>
             act(
               `ignore:${check}:${i.text}`,

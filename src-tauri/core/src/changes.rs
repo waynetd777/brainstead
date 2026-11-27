@@ -896,7 +896,18 @@ pub fn migrate(data_dir: &Path, vault: &Path, today: chrono::NaiveDate, days: i6
 /// the properties it has now. None when a body edit isn't found, or a properties one can't be read.
 fn rebased(text: &str, edits: &[Edit]) -> Option<String> {
     let text = text.replace("\r\n", "\n");
-    let (props, body): (Vec<&Edit>, Vec<&Edit>) = edits.iter().partition(|e| properties_only(&e.find) && properties_only(&e.replace));
+    // A body line can read like a property (`Role: PM`, a list under `Related:`): an edit counts
+    // as the properties' only when its find reaches their closing `---`, or names only properties
+    // the page has. Anything else is the body's, and must be found as it was.
+    let keys: Vec<String> = page_props(&text).unwrap_or_default().into_iter().map(|(k, _)| k).filter(|k| !k.is_empty()).collect();
+    let of_properties = |find: &str| {
+        let lines: Vec<&str> = find.split('\n').collect();
+        lines.iter().any(|l| matches!(prop_line(l), PropLine::Fence))
+            || lines.iter().any(|l| matches!(prop_line(l), PropLine::Key(..)))
+                && lines.iter().all(|l| !matches!(prop_line(l), PropLine::Key(k, _) if !keys.iter().any(|x| x == k)))
+    };
+    let (props, body): (Vec<&Edit>, Vec<&Edit>) =
+        edits.iter().partition(|e| properties_only(&e.find) && properties_only(&e.replace) && of_properties(&e.find));
     if props.is_empty() {
         return None;
     }
@@ -939,7 +950,8 @@ fn prop_line(l: &str) -> PropLine<'_> {
     }
     if !t.starts_with([' ', '\t']) {
         if let Some((k, v)) = t.split_once(':') {
-            if !k.is_empty() && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
+            // `key:: value` is an inline field in the body, not a property.
+            if !k.is_empty() && !v.starts_with(':') && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
                 return PropLine::Key(k, v.trim());
             }
         }
@@ -995,6 +1007,18 @@ fn with_property_edit(text: &str, find: &str, replace: &str) -> Option<String> {
     let old = snippet_props(find);
     let new = snippet_props(replace);
     let page = page_props(text)?;
+    // It takes something out (a property, a list's item): not guessed at on a page that moved on.
+    for (key, was) in &old {
+        let now = new.iter().find(|(k, _)| k == key).map(|(_, v)| v);
+        let gone = match (was, now) {
+            (_, None) => !key.is_empty(),
+            (Value::List(a), Some(Value::List(b))) => a.iter().any(|i| !b.contains(i)),
+            _ => false,
+        };
+        if gone {
+            return None;
+        }
+    }
     let mut t = text.to_string();
     for (key, value) in &new {
         let before = old.iter().find(|(k, _)| k == key).map(|(_, v)| v);
@@ -1068,9 +1092,12 @@ fn with_list_items(text: &str, key: &str, add: &[&String]) -> Option<String> {
         Some(i) => {
             let PropLine::Key(_, v) = prop_line(&lines[i]) else { return None };
             if v.starts_with('[') {
-                let Value::List(mut items) = yaml_value(v) else { return None };
-                items.extend(add.iter().map(|s| s.to_string()));
-                lines[i] = format!("{key}: [{}]", items.iter().map(|s| quoted(s)).collect::<Vec<_>>().join(", "));
+                // The new items after the ones there, which stay exactly as written.
+                let Value::List(items) = yaml_value(v) else { return None };
+                let close = lines[i].rfind(']')?;
+                let new: Vec<String> = add.iter().map(|s| quoted(s)).collect();
+                let sep = if items.is_empty() { "" } else { ", " };
+                lines[i] = format!("{}{sep}{}{}", &lines[i][..close], new.join(", "), &lines[i][close..]);
             } else if v.is_empty() {
                 let last = (i + 1..end).take_while(|&j| matches!(prop_line(&lines[j]), PropLine::Item(_))).last().unwrap_or(i);
                 let indent = if last > i { lines[last][..lines[last].find('-').unwrap_or(0)].to_string() } else { "  ".to_string() };
@@ -1503,6 +1530,27 @@ mod tests {
         assert!(got.contains("  - \"[[D]]\"\n---"), "{got}");
         // Body lines are never taken for properties.
         assert!(!properties_only("- **2026-11-26** — met"));
+        assert!(!properties_only("status:: open"));
         assert!(properties_only("updated: 2026-11-23\n---"));
+        // A one-line list keeps its items as written; the new one goes on the end.
+        let inline = "---\ntags: [a, 'b']\n---\n";
+        assert_eq!(with_list_items(inline, "tags", &[&"c".to_string()]).unwrap(), "---\ntags: [a, 'b', \"c\"]\n---\n");
+        // A change that takes something out isn't made on a page that moved on.
+        assert!(with_property_edit(now, "sources:\n  - \"[[A]]\"\n---", "sources:\n---").is_none());
+    }
+
+    #[test]
+    fn a_body_line_that_reads_like_a_property_is_never_written_into_the_properties() {
+        // Held: the properties' date and a body line `Role: PM` → `Role: Lead`. Since then the
+        // date moved on and the body line was edited by hand.
+        let edits = vec![
+            Edit { find: "updated: 2026-11-23\n---".into(), replace: "updated: 2026-11-26\n---".into() },
+            Edit { find: "Role: PM".into(), replace: "Role: Lead".into() },
+        ];
+        let now = "---\nupdated: 2026-11-25\n---\n# Maya\n\nRole: Director\n";
+        assert!(rebased(now, &edits).is_none(), "the body's conflict refuses the change");
+        // With the body as it was, it applies, and nothing lands in the properties but the date.
+        let now = "---\nupdated: 2026-11-25\n---\n# Maya\n\nRole: PM\n";
+        assert_eq!(rebased(now, &edits).unwrap(), "---\nupdated: 2026-11-26\n---\n# Maya\n\nRole: Lead\n");
     }
 }

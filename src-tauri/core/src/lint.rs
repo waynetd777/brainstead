@@ -599,8 +599,13 @@ fn run_with(root: &Path, today: NaiveDate, dismissed: &HashSet<String>, zone: Zo
                 let target = q.source.split('#').next().unwrap_or("").trim();
                 // A PDF, Office file or picture: its own text isn't here (only its summary page,
                 // which shares its name), so the quote can't be checked against it.
-                const NOT_TEXT: [&str; 12] = ["pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", "png", "jpg", "jpeg", "gif", "webp"];
-                if target.rsplit_once('.').is_some_and(|(_, e)| NOT_TEXT.iter().any(|x| e.eq_ignore_ascii_case(x))) {
+                // Any file but a note: a real extension (letters and digits, no spaces: "Mail. Pricing"
+                // has none), other than .md.
+                let ext = target
+                    .rsplit_once('.')
+                    .map(|(_, e)| e)
+                    .filter(|e| (1..=5).contains(&e.len()) && e.bytes().all(|b| b.is_ascii_alphanumeric()));
+                if ext.is_some_and(|e| !e.eq_ignore_ascii_case("md")) {
                     continue;
                 }
                 let Some(srcs) = texts.get(&lint_key(name_of(target).trim_end_matches(".md"))) else { continue };

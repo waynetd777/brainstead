@@ -436,7 +436,16 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
         if e.file_type()?.is_dir() {
             copy_dir(&e.path(), &to.join(&name))?;
         } else {
-            std::fs::copy(e.path(), to.join(&name))?;
+            // Only what changed, each whole at once: Chrome may restart an extension's worker from
+            // this folder at any moment, and must never read a file half-written. A start with
+            // nothing new writes nothing.
+            let bytes = std::fs::read(e.path())?;
+            let dest = to.join(&name);
+            if std::fs::read(&dest).ok().as_deref() != Some(&bytes[..]) {
+                let tmp = to.join(format!(".{n}.new"));
+                std::fs::write(&tmp, &bytes)?;
+                std::fs::rename(&tmp, &dest)?;
+            }
         }
     }
     Ok(())

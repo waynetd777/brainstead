@@ -2308,7 +2308,9 @@ async function healthIgnore(a: Args): Promise<string> {
   told("ignored a Wiki health issue");
   return c.id === "uncited-claims"
     ? "Ignored: it's left out of Wiki health until its line changes. show_again lists it again."
-    : "Ignored: it's left out of Wiki health until its page changes. show_again lists it again.";
+    : c.id === "initiative-items"
+      ? "Ignored: it's left out of Wiki health while it's listed, however often the initiative page changes. show_again lists it again."
+      : "Ignored: it's left out of Wiki health until its page changes. show_again lists it again.";
 }
 
 /** reshape_pages: Reshape pages, as Wiki health's Page shape check does it. */

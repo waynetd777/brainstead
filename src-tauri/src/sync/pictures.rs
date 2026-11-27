@@ -82,7 +82,9 @@ pub fn for_day(
                 Err(e) => {
                     st.mark_attachment(&key, "");
                     problems.push(format!("Couldn't bring in a picture from a Teams chat: {e}"));
-                    p.note = Some("a picture Brainstead couldn't bring in; tried again when the chat next changes".into());
+                    // Said plainly: a chat's day is tried again when the chat next changes, but a meeting's
+                    // transcript is written once, so promising a retry would be wrong there.
+                    p.note = Some("a picture Brainstead couldn't bring in".into());
                 }
             }
         }

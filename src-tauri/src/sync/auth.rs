@@ -222,6 +222,7 @@ pub fn forget_mail() -> Result<(), String> {
         Some(mut s) => {
             s.tokens.remove(Service::Outlook.key());
             s.rejected.remove(Service::Outlook.key());
+            s.rejected_at.remove(Service::Outlook.key());
             store(&s)
         }
         None => Ok(()),
@@ -249,20 +250,26 @@ pub fn state() -> SignInState {
                 .collect();
             let shipped = shipped_extension_version();
             let extension_outdated = older(&s.extension_version, &shipped).then(|| s.extension_version.clone());
-            let live = |svc: Service| {
-                s.tokens.get(svc.key()).is_some_and(|t| t.expires > now + MARGIN_SECS) && !s.rejected.contains_key(svc.key())
-            };
             let troubled: Vec<String> = rejected.iter().chain(&stale).cloned().collect();
+            let fresh = super::attention::fresh("microsoft", &troubled, now);
+            // Signed in to a service while its tab hands a sign-in over: a token that works, or one
+            // turned down or run out only lately (most clear by themselves within a sync or two, and
+            // the dot waits, D-20261127-03). A refusal that has lasted is said as such, not as "not
+            // signed in"; only a token run out for a while, or none, is that.
+            let live = |svc: Service| {
+                s.tokens.get(svc.key()).is_some_and(|t| t.expires > now + MARGIN_SECS || fresh.iter().any(|f| f == svc.what()))
+            };
+            let (teams, outlook) = (live(Service::Spaces) || live(Service::Substrate), live(Service::Outlook));
             SignInState {
-                signed_in,
+                signed_in: signed_in || teams || outlook,
                 handed_over: Some(s.handed_over),
-                fresh: super::attention::fresh("microsoft", &troubled, now),
+                fresh,
                 stale,
                 rejected,
                 extension_outdated,
                 extension_shipped: shipped,
-                teams: live(Service::Spaces) || live(Service::Substrate),
-                outlook: live(Service::Outlook),
+                teams,
+                outlook,
             }
         }
         None => SignInState {
