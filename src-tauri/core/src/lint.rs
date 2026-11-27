@@ -275,6 +275,22 @@ fn run_with(root: &Path, today: NaiveDate, dismissed: &HashSet<String>, zone: Zo
             index.insert(lint_key(&k));
         }
     }
+    // Each note's aliases, by path: a link to an alias reaches the note, as the app resolves links
+    // (index.rs), so it isn't a missing page and counts as a link to the note.
+    let aliases: HashMap<&str, Vec<String>> = md
+        .iter()
+        .map(|(f, text)| {
+            let fm = crate::frontmatter::split(text);
+            (f.rel.as_str(), crate::frontmatter::list(&fm.data, &["aliases", "alias"], false).iter().map(|a| lint_key(a)).collect())
+        })
+        .collect();
+    index.extend(aliases.values().flatten().cloned());
+    // The keys a link to this page can use: its name and its aliases.
+    let keys_of = |rel: &str| -> Vec<String> {
+        let mut k = vec![lint_key(stem(name_of(rel)))];
+        k.extend(aliases.get(rel).into_iter().flatten().cloned());
+        k
+    };
     // Inbound links from every markdown file, by key, with the files they come from.
     let mut inbound: HashMap<String, BTreeSet<&str>> = HashMap::new();
     for (f, text) in &md {
@@ -336,7 +352,7 @@ fn run_with(root: &Path, today: NaiveDate, dismissed: &HashSet<String>, zone: Zo
     let mut items: Vec<Item> = wiki
         .iter()
         .filter(|(f, _)| !crate::initiatives::is_initiative(&f.rel))
-        .filter(|(f, _)| !inbound.contains_key(&lint_key(stem(name_of(&f.rel)))))
+        .filter(|(f, _)| !keys_of(&f.rel).iter().any(|k| inbound.contains_key(k)))
         .map(|(f, _)| Item { text: f.rel.clone(), page: Some(f.rel.clone()), ..Default::default() })
         .collect();
     sort(&mut items);
@@ -485,7 +501,25 @@ fn run_with(root: &Path, today: NaiveDate, dismissed: &HashSet<String>, zone: Zo
     sort(&mut items);
     checks.push(Check { id: "unreferenced-images", title: "Images nothing uses", classic: true, ignored: 0, items });
 
-    // Brainstead's own. Possible duplicates.
+    // Brainstead's own. Properties that don't read as YAML: until they're fixed, the page's
+    // sources, aliases and dates are lost to the other checks, to search and to ingest, which
+    // can't add a source to them.
+    let mut items = Vec::new();
+    for (f, text) in &wiki {
+        if let Some(err) = crate::frontmatter::split(text).error {
+            let why = err.lines().next().unwrap_or("").trim().to_string();
+            items.push(Item {
+                text: format!("{}: properties don't read as YAML ({why})", f.rel),
+                page: Some(f.rel.clone()),
+                detail: Some(err),
+                ..Default::default()
+            });
+        }
+    }
+    sort(&mut items);
+    checks.push(Check { id: "broken-properties", title: "Properties that don't read", classic: false, ignored: 0, items });
+
+    // Possible duplicates.
     let mut entries: Vec<(String, Vec<String>)> = Vec::new();
     for (f, text) in &wiki {
         if !crate::pageshape::shaped(&f.rel) {
@@ -512,8 +546,8 @@ fn run_with(root: &Path, today: NaiveDate, dismissed: &HashSet<String>, zone: Zo
     // Stale pages others rely on.
     let mut items = Vec::new();
     for (f, text) in &wiki {
-        let k = lint_key(stem(name_of(&f.rel)));
-        let backlinks = inbound.get(&k).map_or(0, |s| s.iter().filter(|r| **r != f.rel).count());
+        let from: BTreeSet<&str> = keys_of(&f.rel).iter().filter_map(|k| inbound.get(k)).flatten().copied().collect();
+        let backlinks = from.iter().filter(|r| **r != f.rel).count();
         if backlinks < STALE_MIN_BACKLINKS {
             continue;
         }
@@ -940,6 +974,59 @@ mod tests {
         without_ignored(&mut again, &mut ignored, &|_| Some("version-2".into()), &|_| None);
         assert!(again.check("initiative-items").unwrap().items.iter().all(|i| i.text != issue));
         assert_eq!(ignored.len(), 1, "kept while it's listed");
+    }
+
+    #[test]
+    fn a_link_to_an_alias_reaches_its_page() {
+        let t = tempfile::tempdir().unwrap();
+        let w = |rel: &str, text: &str| {
+            let p = t.path().join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, text).unwrap();
+            fixture::set_mtime(&p, "2026-01-01 12:00");
+        };
+        w("sources/Orbit brief.md", "Brief.\n");
+        w("wiki/entities/Northwind Bank.md", "---\naliases:\n  - NWB\n  - Northwind\nsources: [\"[[OB]]\"]\n---\n# Northwind Bank\n");
+        w("sources/Mail. Kickoff.md", "---\nalias: OB\n---\nKickoff.\n");
+        for n in 0..STALE_MIN_BACKLINKS {
+            w(&format!("wiki/entities/Page {n}.md"), "Works with [[NWB]] and [[northwind]].\n");
+        }
+        let r = run_in(t.path(), today(), &HashSet::new(), fixture::zone());
+        let texts = |id: &str| r.check(id).unwrap().items.iter().map(|i| i.text.clone()).collect::<Vec<_>>();
+        // Not a missing page or a broken source: the alias names a note, as the app resolves it.
+        assert!(texts("missing-pages").is_empty(), "{:?}", texts("missing-pages"));
+        assert!(texts("broken-sources").is_empty(), "{:?}", texts("broken-sources"));
+        // Linked only by its aliases, it isn't an orphan, and those links are its backlinks.
+        assert!(!texts("orphans").contains(&"wiki/entities/Northwind Bank.md".to_string()));
+        let stale =
+            r.check("stale-pages").unwrap().items.iter().find(|i| i.page.as_deref() == Some("wiki/entities/Northwind Bank.md")).cloned();
+        assert_eq!(stale.and_then(|i| i.count), Some(STALE_MIN_BACKLINKS as i64));
+    }
+
+    #[test]
+    fn lists_pages_whose_properties_do_not_read() {
+        let t = tempfile::tempdir().unwrap();
+        let w = |rel: &str, text: &str| {
+            let p = t.path().join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, text).unwrap();
+        };
+        // A list item split by a line put in the middle of it, and a colon in a plain value.
+        w(
+            "wiki/entities/Orbit App.md",
+            "---\nsources:\n  - >-\n  - \"[[Kickoff]]\"\n    [[Launch plan -\n    2026-05-07]]\n---\n# Orbit App\n",
+        );
+        w("wiki/concepts/Date for a Date.md", "---\ndescription: Estimates by horizon: a date, then a month\n---\n# Date for a Date\n");
+        w("wiki/entities/Maya.md", "---\ndescription: \"Product lead: Orbit App\"\n---\n# Maya\n");
+        // Not a wiki page: not this check's.
+        w("Meeting. Kickoff.md", "---\ntitle: Kickoff: plan\n---\nNotes.\n");
+        let r = run_in(t.path(), today(), &HashSet::new(), fixture::zone());
+        let c = r.check("broken-properties").unwrap();
+        let pages: Vec<&str> = c.items.iter().filter_map(|i| i.page.as_deref()).collect();
+        assert_eq!(pages, ["wiki/concepts/Date for a Date.md", "wiki/entities/Orbit App.md"]);
+        assert!(c.items.iter().all(|i| i.text.contains("properties don't read as YAML (") && !i.safe));
+        // Counted: nothing fixes it but an edit, so it needs a decision.
+        assert!(!ADVISORY.contains(&"broken-properties") && !IN_INBOX.contains(&"broken-properties"));
     }
 
     #[test]

@@ -386,6 +386,8 @@ export const CHECK_TIPS: Record<string, string> = {
   "unlogged-writes": "Wiki pages changed after the last entry in log.md, so the log doesn't record the change; Fix adds the log lines",
   "uningested-sources": "Files in sources/ that no wiki page cites yet",
   "unreferenced-images": "Images that no note embeds or links to",
+  "broken-properties":
+    "Wiki pages whose properties don't read as YAML, so their sources, aliases and dates are lost to the other checks, search and ingest until they're fixed",
   duplicates: "Pages so alike in name or text that they may be about the same thing",
   "stale-pages": "Pages many others link to that haven't changed in 90 days or more",
   "changed-sources": "Sources that changed after the pages citing them were written",
