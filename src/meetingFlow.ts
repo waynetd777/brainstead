@@ -82,6 +82,8 @@ interface Waiting {
   transcript: string;
   note: string;
   run: string;
+  /** The meeting run's trigger: "scheduled" when nobody was watching it. */
+  trigger?: string;
 }
 
 /** The transcript an ingest run follows through, found from the runs (`all`, newest first) when
@@ -92,7 +94,7 @@ function followedBy(r: IngestRun, all: IngestRun[]): Waiting | undefined {
   const name = r.source.split("/").pop() ?? "";
   const m = all.find((x) => x.kind === "meeting" && x.status === "done" && runNote(x) === name && x.started <= r.started);
   if (!m || !meetingNoteMade(m)) return undefined;
-  return noteIngestOf(m, all)?.id === r.id ? { transcript: m.source, note: name, run: m.id } : undefined;
+  return noteIngestOf(m, all)?.id === r.id ? { transcript: m.source, note: name, run: m.id, trigger: m.trigger } : undefined;
 }
 
 /** The ingest that follows a meeting run's note through: the first ingest of that note's file
@@ -106,14 +108,22 @@ function noteIngestOf(m: IngestRun, all: IngestRun[]): IngestRun | undefined {
  *  through leaves them alone after that, so the end of the note's ingest doesn't trash one again. */
 const handled = new Set<string>();
 let nextBatch = 1;
+/** transcript → who its follow-through's move to the Trash is recorded as: the assistant or the
+ *  automatic run that asked for the note (draftNotes' `by`). Only in memory: after a reload,
+ *  `followThroughBy` falls back on the meeting run's trigger. */
+const trashByOf = new Map<string, TrashBy>();
 
-/** Drafts these notes, as one batch: each is followed through when it's made. */
-export async function draftNotes(pairs: [string, NoteSpec][], unattended = false): Promise<string[]> {
+/** Drafts these notes, as one batch: each is followed through when it's made. `by`: who asked,
+ *  when it wasn't the user on a screen (an assistant, a transcript written up as it arrived), so
+ *  the transcript's move to the Trash afterwards is recorded in Changes as theirs. */
+export async function draftNotes(pairs: [string, NoteSpec][], unattended = false, by?: TrashBy): Promise<string[]> {
   const ids = await api.meetingDraft(pairs, unattended);
   const b = nextBatch++;
   batches.set(b, { total: pairs.length, results: [] });
   for (const [t] of pairs) {
     batchOf.set(t, b);
+    if (by) trashByOf.set(t, by);
+    else trashByOf.delete(t);
     // A new note for it (restored from the Trash, say): followed through afresh.
     handled.delete(t);
   }
@@ -162,6 +172,8 @@ export async function makeMeetingNotes(paths: string[], auto?: { unattended: boo
       await draftNotes(
         sure.map((t) => [t.path, specOf(t)]),
         auto?.unattended ?? false,
+        // Written up with nobody asked: its transcript's move to the Trash is the run's, not the user's.
+        auto ? { origin: { kind: "meeting", label: "Meeting notes", ...(auto.unattended ? { trigger: "scheduled" } : {}) } } : undefined,
       );
       const f = followThrough();
       const then = [f.ingest && "ingested", f.trash && "its transcript moved to the Trash"].filter(Boolean).join(", ");
@@ -271,9 +283,9 @@ export function meetingRunEnded(r: IngestRun, made: boolean): boolean {
   if (f.ingest)
     void api
       .ingestStart([note], r.trigger === "scheduled")
-      .then(([id]) => ingesting.set(id, { transcript: r.source, note, run: r.id }))
+      .then(([id]) => ingesting.set(id, { transcript: r.source, note, run: r.id, trigger: r.trigger }))
       .catch((e) => finish(r.source, { note, ingested: false, trashed: false, error: `couldn't ingest it: ${String(e)}` }));
-  else void trash(r.source, note, false);
+  else void trash(r.source, note, false, followThroughBy(r.source, r.id, r.trigger));
   return true;
 }
 
@@ -290,7 +302,7 @@ export async function ingestRunEnded(r: IngestRun, all: IngestRun[] = []) {
     return finish(w.transcript, { note: w.note, ingested: true, trashed: false, error: "its note was reverted in Changes" });
   void leaveInbox(w.transcript);
   if (!followThrough().trash) return finish(w.transcript, { note: w.note, ingested: true, trashed: false });
-  void trash(w.transcript, w.note, true);
+  void trash(w.transcript, w.note, true, followThroughBy(w.transcript, w.run, w.trigger));
 }
 
 /** Whether a meeting run's note has been rejected or reverted in Changes since (its change, by its
@@ -376,11 +388,24 @@ export async function trashTranscript(
   };
 }
 
-async function trash(transcript: string, note: string, ingested: boolean) {
+/** Who the follow-through's move to the Trash is recorded as: whoever asked for the note
+ *  (draftNotes' `by`), else, for a meeting run nobody was watching (`trigger` "scheduled", after
+ *  a reload say), that run, unattended; else the user, from Meeting notes. */
+export function followThroughBy(transcript: string, run: string, trigger?: string): TrashBy | undefined {
+  const by = trashByOf.get(transcript);
+  if (by) return by;
+  return trigger === "scheduled" ? { origin: { kind: "meeting", label: "Meeting notes", run, trigger: "scheduled" } } : undefined;
+}
+
+async function trash(transcript: string, note: string, ingested: boolean, by?: TrashBy) {
   if (handled.has(transcript)) return finish(transcript, { note, ingested, trashed: true });
   try {
-    await trashTranscript(transcript, note);
+    const t = await trashTranscript(transcript, note, by);
     handled.add(transcript);
+    trashByOf.delete(transcript);
+    // An unattended run's move held in Changes (a check failed): the transcript is still there.
+    if (t.outcome && !t.outcome.applied)
+      return finish(transcript, { note, ingested, trashed: false, error: "its move to the Trash is held in Changes for you" });
     finish(transcript, { note, ingested, trashed: true });
   } catch (e) {
     // Gone already (trashed another way meanwhile): that's what was wanted, not a failure.

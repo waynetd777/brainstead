@@ -721,6 +721,11 @@ fn task_inbox_and_project_edits_carry_the_session() {
         ("fix_name", "fix_name", json!({"written_as": "Lenna", "correct_spelling": "Lena", "apply": true})),
         // An accepted weekly review suggestion is the assistant's change, not the screen's own write.
         ("weekly_suggestion", "weekly.suggestion", json!({"id": "s1", "action": "accept"})),
+        // Their moves to the Trash (a chat, an unused image, the previous app's folders) are this
+        // session's in Changes, not the user's own.
+        ("chats", "chats", json!({"action": "trash", "title": "Venue"})),
+        ("health_issue", "health.issue", json!({"action": "move_to_trash", "item": "images/old.png"})),
+        ("moving_over", "moving_over", json!({"action": "retire"})),
         // Said unattended, which holds for the calls after it, so these come last.
         ("edit_task", "task.edit", json!({"task": "Me. To Do List.md:12", "text": "Call Sam", "done": true, "unattended": true})),
         // A restore and a saved contradictions report are changes too, held unattended when a check fails.

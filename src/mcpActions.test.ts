@@ -652,6 +652,8 @@ describe("MCP actions", () => {
     expect(settings.get().movingOver).toEqual({ otherStopped: true });
     expect(await run("moving_over", { action: "retire" })).toMatch(/^Retired: \.claude\/skills\//);
     expect(calls.some(([c]) => c === "switchover_retire")).toBe(true);
+    // Its moves to the Trash are recorded as the assistant's, not the user's.
+    expect(calls.find(([c]) => c === "switchover_retire")![1]).toEqual({ origin: expect.objectContaining({ kind: "chat" }) });
     expect(await run("moving_over", { action: "untick", item: "otherStopped" })).toBe("Unticked “The other app is stopped”.");
     answers.weekly_state_read = () => ({ week: "2026-W39", step: 3, done: [0, 1, 2], log: [], notes: "x", startedAt: 1 });
     const out = (await run("weekly.start_over")) as string;
@@ -1352,8 +1354,10 @@ describe("MCP actions", () => {
       );
       await run("chats", { action: "rename", chat: "local:a.json", title: "Launch" });
       expect(calls.find(([c]) => c === "chat_rename")![1]).toEqual({ filename: "local:a.json", title: "Launch" });
-      await run("chats", { action: "trash", chat: "local:a.json" });
-      expect(calls.find(([c]) => c === "chat_trash")![1]).toEqual({ filename: "local:a.json" });
+      // Recorded in Changes as the assistant's move (the origin the server gives), not the user's.
+      const origin = { kind: "chat", chat: "chat-1", run: "chat-1", trigger: "scheduled" };
+      await run("chats", { action: "trash", chat: "local:a.json", origin });
+      expect(calls.find(([c]) => c === "chat_trash")![1]).toEqual({ filename: "local:a.json", origin });
     });
 
     it("saves a task list and shows its tasks", async () => {

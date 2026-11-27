@@ -401,9 +401,9 @@ pub fn record_image(app: &AppHandle, rel: &str, reason: &str, origin: Origin, mo
 }
 
 /// A move to the Trash made on a screen (`screen` names it), not through a change: recorded as
-/// the user's own, applied, with Revert. A record that can't be saved doesn't undo the move.
-pub fn record_trash(app: &AppHandle, page: &str, entry: &str, screen: &str) {
-    match store().save(&changes::trashed_from_screen(page, entry, screen)) {
+/// the user's own (or as `by`'s, an assistant's tool or a run that made it), applied, with Revert. A record that can't be saved doesn't undo the move.
+pub fn record_trash(app: &AppHandle, page: &str, entry: &str, screen: &str, by: Option<Origin>) {
+    match store().save(&changes::trashed_from_screen(page, entry, screen, by)) {
         Ok(()) => emit_changed(app),
         Err(e) => crate::applog!("recording {page} moved to the Trash: {e}"),
     }

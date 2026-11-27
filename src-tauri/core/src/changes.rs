@@ -400,10 +400,13 @@ pub const BY_USER: &str = "user";
 /// A move to the Trash already made from a screen (`screen`: "Inbox", "File menu"), not through a
 /// change, recorded as applied so Changes, and an assistant reading list_changes, can see what
 /// became of the file. Revert restores its Trash entry (`entry`), as a trash_note change's does.
-pub fn trashed_from_screen(page: &str, entry: &str, screen: &str) -> Change {
+/// `by` is who made the move when it wasn't the user on that screen: an assistant's tool or a run
+/// (its origin, with a "scheduled" trigger when nobody's watching), so Changes doesn't list it as
+/// the user's own ("You · …").
+pub fn trashed_from_screen(page: &str, entry: &str, screen: &str, by: Option<Origin>) -> Change {
     let screen = screen.trim();
     let label = if screen.is_empty() { "Brainstead" } else { screen };
-    let origin = Origin { kind: BY_USER.into(), label: Some(label.into()), ..Default::default() };
+    let origin = by.unwrap_or_else(|| Origin { kind: BY_USER.into(), label: Some(label.into()), ..Default::default() });
     let name = crate::filename::stem(page.trim_end_matches('/'));
     let mut c = Change::new(page, Kind::Trash, &format!("Move {name} to the Trash"), "", origin, None, Instruction::Trash);
     c.trash = Some(entry.to_string());
@@ -1455,15 +1458,20 @@ mod tests {
 
     #[test]
     fn a_move_from_a_screen_is_recorded_and_a_restore_another_way_reverts_it() {
-        let c = trashed_from_screen("sources/Teams. Transcript. Orbit App steerco - 2026-10-02.md", "t1", "Inbox");
+        let c = trashed_from_screen("sources/Teams. Transcript. Orbit App steerco - 2026-10-02.md", "t1", "Inbox", None);
         assert_eq!((c.kind, c.status, c.trash.as_deref()), (Kind::Trash, Status::Applied, Some("t1")));
         assert_eq!((c.origin.kind.as_str(), c.origin.label.as_deref()), (BY_USER, Some("Inbox")));
         assert_eq!(c.title, "Move Teams. Transcript. Orbit App steerco - 2026-10-02 to the Trash");
         assert!(c.decided.is_some() && c.instruction.moves());
         // A folder (Moving over's), and no screen named.
-        let f = trashed_from_screen("scripts/", "t2", " ");
+        let f = trashed_from_screen("scripts/", "t2", " ", None);
         assert_eq!((f.title.as_str(), f.origin.label.as_deref()), ("Move scripts to the Trash", Some("Brainstead")));
-        let mut other = trashed_from_screen("Idea. Pricing.md", "t1", "File menu");
+        // An assistant's or a run's move: its own origin, not the user's.
+        let by =
+            Origin { kind: "chat".into(), label: Some("Terminal session".into()), trigger: Some("scheduled".into()), ..Default::default() };
+        let a = trashed_from_screen("images/old.png", "t3", "Wiki health", Some(by.clone()));
+        assert_eq!(a.origin, by);
+        let mut other = trashed_from_screen("Idea. Pricing.md", "t1", "File menu", None);
         other.status = Status::Reverted;
         let back = restored_another_way(vec![c.clone(), f, other], "t1");
         assert_eq!(back.len(), 1);

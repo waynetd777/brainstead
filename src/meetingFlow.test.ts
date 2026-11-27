@@ -52,6 +52,7 @@ import { settings } from "./store";
 
 const MAYA = "sources/Teams. Transcript. 11 Maya, Lena - 2026-10-01.md";
 const STEERCO = "sources/Teams. Transcript. Orbit App steerco - 2026-10-02.md";
+const ACME = "sources/Teams. Transcript. Acme sync - 2026-10-03.md";
 
 function transcript(path: string, over: Partial<Transcript["inferred"]> = {}): Transcript {
   return {
@@ -267,6 +268,34 @@ describe("one step", () => {
     await flush();
     expect(toast).toHaveBeenCalledTimes(1);
     expect(toast).toHaveBeenCalledWith("Made 2 meeting notes", expect.anything(), "ok");
+  });
+
+  it("records the transcript's move to the Trash as the assistant's who asked for the note, not the user's", async () => {
+    changeSubmit.mockResolvedValue({ id: "c1", applied: true, page: MAYA, flags: [], message: "" });
+    const origin = { kind: "chat", chat: "chat-1", run: "chat-1" };
+    await draftNotes([[MAYA, { type: "1-1", name: "Maya", date: "2026-10-01" }]], false, { origin, model: "sonnet" });
+    meetingRunEnded(run({}), true);
+    await flush();
+    ingestRunEnded(run({ id: "i1", kind: "ingest", status: "done" }));
+    for (let i = 0; i < 5; i++) await flush();
+    expect(trashMove).not.toHaveBeenCalled();
+    expect(changeSubmit).toHaveBeenCalledWith(expect.objectContaining({ page: MAYA, kind: "trash", origin, model: "sonnet" }));
+  });
+
+  it("records it as the run's, unattended, when nobody was watching the note's run (after a reload too)", async () => {
+    settings.update({ meetingIngest: false });
+    changeSubmit.mockResolvedValue({ id: "c1", applied: false, page: ACME, flags: ["held"], message: "" });
+    const note = { type: "Meeting", name: "Acme sync", date: "2026-10-03" };
+    meetingRunEnded(run({ id: "r9", source: ACME, note, trigger: "scheduled" }), true);
+    for (let i = 0; i < 5; i++) await flush();
+    expect(trashMove).not.toHaveBeenCalled();
+    expect(changeSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        page: ACME,
+        kind: "trash",
+        origin: { kind: "meeting", label: "Meeting notes", run: "r9", trigger: "scheduled" },
+      }),
+    );
   });
 });
 

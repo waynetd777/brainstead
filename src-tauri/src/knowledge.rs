@@ -656,15 +656,16 @@ fn health_dismiss_now(app: AppHandle, a: String, b: String) -> Res<()> {
     Ok(())
 }
 
-/// Moves an image nothing uses to the Trash (asked first in the window).
-fn health_trash_image_now(app: AppHandle, path: String) -> Res<String> {
+/// Moves an image nothing uses to the Trash (asked first in the window). `origin`: the assistant's
+/// (health_issue move_to_trash), so Changes records the move as theirs.
+fn health_trash_image_now(app: AppHandle, path: String, origin: Option<brainstead_core::proposals::Origin>) -> Res<String> {
     writable(&app.state::<AppState>())?;
     if !path.starts_with("images/") {
         return Err(invalid("Only images go to the Trash from here."));
     }
     let root = root(&app)?;
     let e = brainstead_core::trash::move_to_trash(&root, &path, "image")?;
-    crate::changes::record_trash(&app, &path, &e.id, "Wiki health");
+    crate::changes::record_trash(&app, &path, &e.id, "Wiki health", origin);
     written(&app, &[root.join(&path)]);
     settled(&app, |check, i| check == "unreferenced-images" && i.page.as_deref() == Some(path.as_str()));
     Ok(e.id)
@@ -850,8 +851,8 @@ pub async fn health_unignore(app: AppHandle, check: Option<String>) -> Res<usize
 }
 
 #[tauri::command]
-pub async fn health_trash_image(app: AppHandle, path: String) -> Res<String> {
-    blocking(move || health_trash_image_now(app, path)).await
+pub async fn health_trash_image(app: AppHandle, path: String, origin: Option<brainstead_core::proposals::Origin>) -> Res<String> {
+    blocking(move || health_trash_image_now(app, path, origin)).await
 }
 
 #[tauri::command]

@@ -8,7 +8,7 @@
 // (askTabs) so they come back after a restart, and writes a chat after every turn: to the app
 // data folder until Save puts it in the vault.
 
-import { api, AskDone, AskEvent, ChatItem, ChatSummary, CliInfo, CliName, SavedChat, Settings } from "./api";
+import { api, AskDone, AskEvent, ChangeOrigin, ChatItem, ChatSummary, CliInfo, CliName, SavedChat, Settings } from "./api";
 import { nav, place } from "./nav";
 import { settings, Store } from "./store";
 
@@ -706,8 +706,10 @@ export async function keepSaved(c: ChatSummary) {
   await api.chatSave(await api.chatRead(c.filename), true);
 }
 
-export async function trashSaved(c: ChatSummary) {
-  await api.chatTrash(c.filename);
+/** Moves a saved chat to the Trash. `origin`: the assistant's whose tool did it (chats' trash),
+ *  so Changes records the move as theirs; left out, it's the user's, from Ask. */
+export async function trashSaved(c: ChatSummary, origin?: ChangeOrigin) {
+  await api.chatTrash(c.filename, origin);
   const open = ask.get().chats.find((x) => x.filename === c.filename);
   if (open) closeChat(open.id);
 }

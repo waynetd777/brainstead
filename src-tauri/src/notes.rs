@@ -260,7 +260,7 @@ pub async fn rename_commit(app: AppHandle, plan: RenamePlan) -> Res<String> {
 #[tauri::command]
 pub async fn trash_move(app: AppHandle, path: String, from: Option<String>) -> Res<TrashEntry> {
     let e = trash_move_as(app.clone(), path.clone(), true).await?;
-    crate::changes::record_trash(&app, &path, &e.id, from.as_deref().unwrap_or_default());
+    crate::changes::record_trash(&app, &path, &e.id, from.as_deref().unwrap_or_default(), None);
     Ok(e)
 }
 

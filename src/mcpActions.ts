@@ -1814,7 +1814,12 @@ async function startRun(a: Args, r: McpRequest): Promise<string> {
         );
       // A note there already (the user's prep) is merged with the one written, all its text kept.
       const into = noteExists(t, edits);
-      await draftNotes([[t.path, spec]], unattended);
+      // Its follow-through (the transcript to the Trash) is recorded as this assistant's too.
+      await draftNotes([[t.path, spec]], unattended, {
+        origin: { ...originOf(a, r), ...(unattended ? { trigger: "scheduled" } : {}) },
+        reason: str(a, "reason"),
+        model: r.model,
+      });
       noted(`started a meeting note from ${t.path}`);
       const f = followThrough();
       const then = [f.ingest && "ingested", f.trash && "the transcript moved to the Trash"].filter(Boolean).join(" and ");
@@ -2188,7 +2193,7 @@ async function weeklyStartOver(): Promise<string> {
 /** Settings › General › Moving over: its checklist as the screen shows it, a tick on the lines the
  *  user ticks, and its Retire them, which waits for "The other app is stopped" as the screen's does
  *  (D-20261005-12). */
-async function movingOver(a: Args): Promise<string> {
+async function movingOver(a: Args, r: McpRequest): Promise<string> {
   const action = str(a, "action") ?? "list";
   const [st, cap] = await Promise.all([api.switchoverStatus(), api.captureStatus().catch(() => null)]);
   const s = settings.get();
@@ -2223,7 +2228,7 @@ async function movingOver(a: Args): Promise<string> {
   if (action !== "retire") throw new Error("action is list, tick, untick or retire.");
   if (isRetired(st)) return "Nothing to retire: the previous app's skills and scripts are gone already.";
   if (!ticked.otherStopped) throw new Error(`${STOP_FIRST} (moving_over tick otherStopped, once the user has stopped it.)`);
-  const said = await api.switchoverRetire();
+  const said = await api.switchoverRetire(originOf(a, r));
   noted(`retired the previous app's skills and scripts`);
   return `${said} They can be restored from there.`;
 }
@@ -3492,7 +3497,7 @@ export function findIssues<I extends { text: string; name?: string }>(items: I[]
 }
 
 /** health_issue: the buttons an issue has of its own on Wiki health. */
-async function healthIssue(a: Args): Promise<string> {
+async function healthIssue(a: Args, req: McpRequest): Promise<string> {
   const r = (await api.healthReport(true)).report;
   if (!r) throw new Error("Wiki health has no report yet; try again in a moment.");
   const action = str(a, "action");
@@ -3552,7 +3557,7 @@ async function healthIssue(a: Args): Promise<string> {
     return `${pageName(i.page)} and ${pageName(i.pages[0])} won't be listed as possible duplicates again.`;
   }
   if (!i.page) return "That image can't be found.";
-  await api.healthTrashImage(i.page);
+  await api.healthTrashImage(i.page, originOf(a, req));
   told(`moved ${i.page} to the Trash`);
   return `Moved ${i.page} to the Trash; restore_from_trash restores it.`;
 }
@@ -3704,7 +3709,7 @@ async function weeklyStep(a: Args): Promise<string> {
 
 // ---- Ask's chats
 
-async function chatsTool(a: Args): Promise<string | Listing> {
+async function chatsTool(a: Args, r: McpRequest): Promise<string | Listing> {
   const action = str(a, "action") ?? "list";
   const all = await api.chatsList();
   const saved = (c: ChatSummary) => !c.filename.startsWith("local:");
@@ -3773,7 +3778,7 @@ async function chatsTool(a: Args): Promise<string | Listing> {
     return `“${c.title}” runs at ${said} from its next message. New chats still start with the effort set in Settings › AI assistants.`;
   }
   if (action === "trash") {
-    await trashSaved(c);
+    await trashSaved(c, originOf(a, r));
     noted(`moved the chat “${c.title}” to the Trash`);
     return `Moved “${c.title}” to the Trash.`;
   }

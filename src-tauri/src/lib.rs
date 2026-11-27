@@ -743,8 +743,9 @@ fn with_agent_block(text: &str) -> String {
 /// Retires the previous app's agent files once it's stopped: `.claude/skills/` and `scripts/` go
 /// to Brainstead's Trash (restorable from there), and `CLAUDE.md` gets the block telling agents to
 /// use the MCP tools (undoable with ⌘Z). The name corrections are copied out of `scripts/` first.
+/// `origin`: the assistant's (moving_over retire), so Changes records the moves as theirs.
 #[tauri::command]
-async fn switchover_retire(app: AppHandle) -> Result<String, edits::EditError> {
+async fn switchover_retire(app: AppHandle, origin: Option<brainstead_core::proposals::Origin>) -> Result<String, edits::EditError> {
     blocking(move || {
         edits::writable(&app.state::<AppState>())?;
         let root = app.state::<VaultService>().root().ok_or("No vault is open.".to_string())?;
@@ -753,7 +754,7 @@ async fn switchover_retire(app: AppHandle) -> Result<String, edits::EditError> {
         for rel in [".claude/skills", "scripts"] {
             if root.join(rel).is_dir() {
                 let e = brainstead_core::trash::move_to_trash(&root, rel, "folder")?;
-                changes::record_trash(&app, rel, &e.id, "Moving over");
+                changes::record_trash(&app, rel, &e.id, "Moving over", origin.clone());
                 done.push(format!("{rel}/"));
             }
         }

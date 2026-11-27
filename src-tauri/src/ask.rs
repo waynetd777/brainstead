@@ -1084,9 +1084,10 @@ fn rename_chat(app: &AppHandle, filename: &str, title: &str) -> Res<String> {
     Ok(to)
 }
 
-/// Moves a chat to the vault's trash (a local one is deleted).
+/// Moves a chat to the vault's trash (a local one is deleted). `origin` is the assistant's whose
+/// tool did it (chats' trash), so Changes records the move as theirs, not the user's.
 #[tauri::command]
-pub async fn chat_trash(app: AppHandle, filename: String) -> Res<()> {
+pub async fn chat_trash(app: AppHandle, filename: String, origin: Option<brainstead_core::proposals::Origin>) -> Res<()> {
     writing(move || {
         if let Some(n) = filename.strip_prefix(LOCAL) {
             return Ok(std::fs::remove_file(local_dir().join(n)).map_err(|e| e.to_string())?);
@@ -1094,7 +1095,7 @@ pub async fn chat_trash(app: AppHandle, filename: String) -> Res<()> {
         writable(&app.state::<AppState>())?;
         let root = app.state::<VaultService>().root().ok_or("No vault is open.".to_string())?;
         let e = trash::move_to_trash(&root, &filename, "note")?;
-        crate::changes::record_trash(&app, &filename, &e.id, "Ask");
+        crate::changes::record_trash(&app, &filename, &e.id, "Ask", origin);
         let _ = std::fs::remove_file(pending_dir().join(&filename));
         written(&app, &[root.join(&filename)]);
         Ok(())

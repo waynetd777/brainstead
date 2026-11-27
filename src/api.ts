@@ -1360,7 +1360,7 @@ export const api = {
   /** Shows a check's ignored issues again (every check's with null); returns how many. */
   /** Show again for one check; the app refuses without one. */
   healthUnignore: (check: string) => invoke<number>("health_unignore", { check }),
-  healthTrashImage: (path: string) => invoke<string>("health_trash_image", { path }),
+  healthTrashImage: (path: string, origin?: ChangeOrigin) => invoke<string>("health_trash_image", { path, origin: origin ?? null }),
   healthCreatePage: (name: string, folder: "entities" | "concepts") => invoke<string>("health_create_page", { name, folder }),
   healthLinkGhost: (target: string, to: string, pages: string[], unattended = false) =>
     invoke<number>("health_link_ghost", { target, to, pages, unattended }),
@@ -1403,7 +1403,7 @@ export const api = {
   switchoverStatus: () =>
     invoke<{ automated: number | null; skills: boolean; previous?: boolean; scripts: boolean; claudeMd: boolean }>("switchover_status"),
   /** Moves the previous app's skills and scripts to the Trash and tells agents in CLAUDE.md to use the MCP tools. */
-  switchoverRetire: () => invoke<string>("switchover_retire"),
+  switchoverRetire: (origin?: ChangeOrigin) => invoke<string>("switchover_retire", { origin: origin ?? null }),
   /** Your own tools that start Claude Code sessions (automated.json), and saving them. */
   automatedList: () => invoke<Automation[]>("automated_list"),
   /** Find tasks and projects: the last scan and its suggestions, a new scan, stopping it, and accepting or skipping one. */
@@ -1639,7 +1639,7 @@ export const api = {
   /** Writes a chat where it is; `keep` saves it to the vault, where it stays. */
   chatSave: (chat: SavedChat, keep = false) => invoke<ChatSummary>("chat_save", { chat, keep }),
   chatRename: (filename: string, title: string) => invoke<string>("chat_rename", { filename, title }),
-  chatTrash: (filename: string) => invoke<void>("chat_trash", { filename }),
+  chatTrash: (filename: string, origin?: ChangeOrigin) => invoke<void>("chat_trash", { filename, origin: origin ?? null }),
   skillsList: () => invoke<Skill[]>("skills_list"),
   onAskEvent: (f: (e: { chatId: string; event: AskEvent }) => void): Promise<UnlistenFn> =>
     listen<{ chatId: string; event: AskEvent }>("ask-event", (e) => f(e.payload)),
