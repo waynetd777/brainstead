@@ -389,7 +389,7 @@ async function listTasks(a: Args): Promise<Listing> {
   const named = saved ? (settings.get().taskLists ?? []).find((l) => l.name.toLowerCase() === saved.toLowerCase()) : undefined;
   if (saved && !named)
     throw new Error(
-      `No saved list “${saved}”. list_task_lists lists them: ${(settings.get().taskLists ?? []).map((l) => l.name).join(", ") || "none"}.`,
+      `No saved list “${saved}”. task_lists lists them: ${(settings.get().taskLists ?? []).map((l) => l.name).join(", ") || "none"}.`,
     );
   if (named) a = { ...a, view: named.view, context: named.context || undefined, effort: named.effort || undefined, group: named.group };
   const asked = str(a, "view") ?? "next";
@@ -1434,7 +1434,7 @@ async function submitChanges(a: Args): Promise<string> {
  *  ingest it and move its transcript to the Trash), and what's next said for the assistant. */
 function followUpOf(note: string, transcript: string): string {
   offerFollowUp({ note, transcript });
-  return `${pageName(note)} is a meeting note: Brainstead now asks the user whether to ingest it and move its transcript (${transcript}) to the Trash, as accepting it on the Changes screen does. Leave that to them, or, if they ask you, start_run ingest with ${note} and trash_note the transcript.`;
+  return `${pageName(note)} is a meeting note: Brainstead now asks the user whether to ingest it and move its transcript (${transcript}) to the Trash, as accepting it on the Changes screen does. Leave that to them, or, if they ask you, start_run ingest with ${note} and trash add the transcript.`;
 }
 
 /** The changes tool: the feed and the held changes, one change, accept, reject, revert. */
@@ -1588,7 +1588,7 @@ async function changesTool(a: Args): Promise<string | Listing> {
   const inRun = async (group: string, status: ChangeRow["status"]) => {
     const q = (str(a, "query") ?? "").trim();
     const every = await api.changesList();
-    // A type as the log names it or as All's chip says it, as list_changes takes it.
+    // A type as the log names it or as All's chip says it, as changes' list takes it.
     const want = str(a, "type")?.toLowerCase();
     const types = typesIn(every, []);
     const type = want ? types.find((x) => x.toLowerCase() === want || actionLabel(x).toLowerCase() === want) : undefined;
@@ -1604,7 +1604,7 @@ async function changesTool(a: Args): Promise<string | Listing> {
   };
   if (action === "accept_run" || action === "reject_run") {
     const group = str(a, "group");
-    if (!group) throw new Error("Which run? Give its group from list_changes.");
+    if (!group) throw new Error("Which run? Give its group from changes' list.");
     const { todo, ids } = await inRun(group, "held");
     const m = action === "accept_run" ? await api.changesAcceptAll(group, true, ids) : await api.changesRejectAll(group, ids);
     // Nothing made and something refused is a failure, not "Accepted 0".
@@ -1625,13 +1625,13 @@ async function changesTool(a: Args): Promise<string | Listing> {
   }
   if (action === "revert_run") {
     const group = str(a, "group");
-    if (!group) throw new Error("Which run? Give its group from list_changes.");
+    if (!group) throw new Error("Which run? Give its group from changes' list.");
     const m = await api.changesRevertAll(group, (await inRun(group, "applied")).ids);
     if (!m.done && m.failed.length) throw new Error(`None reverted. Left as they are (edited since): ${m.failed.join("; ")}`);
     noted(`reverted ${m.done} change${m.done === 1 ? "" : "s"} from a run`);
     return `Reverted ${m.done}.${m.failed.length ? ` Left as they are (edited since): ${m.failed.join("; ")}` : ""}`;
   }
-  if (!id) throw new Error("Which change? Give its id from list_changes.");
+  if (!id) throw new Error("Which change? Give its id from changes' list.");
   if (action === "show") {
     const v = await api.changeGet(id);
     const changes = v.changes.map(
@@ -1747,7 +1747,7 @@ async function startRun(a: Args, r: McpRequest): Promise<string> {
     case "find_tasks":
       await api.findRun(unattended);
       noted("started looking for tasks and projects in the notes");
-      return "Reading the user's notes from the last 90 days for tasks and projects; the suggestions show at the top of Tasks and Projects, and nothing changes until the user accepts one. list_suggestions lists them; run_status shows how it's going.";
+      return "Reading the user's notes from the last 90 days for tasks and projects; the suggestions show at the top of Tasks and Projects, and nothing changes until the user accepts one. suggestions lists them; run_status shows how it's going.";
     case "weekly_prep": {
       // The review's week, as the screen's Prepare is: a paused review keeps its own.
       const { week, st } = await weeklyNow();
@@ -2462,16 +2462,16 @@ async function trash(a: Args, r: McpRequest): Promise<string | Listing> {
   }
   if (action === "restore") {
     const id = str(a, "id");
-    if (!id) throw new Error("Give id: the Trash entry to restore, from list_trash.");
+    if (!id) throw new Error("Give id: the Trash entry to restore, from trash's list.");
     const e = (await api.trashList()).find((t) => t.id === id);
-    if (!e) throw new Error(`Nothing in the Trash has the id ${id}. list_trash lists what's there.`);
+    if (!e) throw new Error(`Nothing in the Trash has the id ${id}. trash's list gives what's there.`);
     // Through Changes, so the hold rules apply: a restore into Templates/, or of code that runs, waits for the user.
     const to = str(a, "to")?.trim() || e.originalRel;
     const o = await submitAll([sub(a, r, to, "restore", `Restore ${pageName(to)} from the Trash`, { op: "restore", id })]);
     told(o.applied ? `restored ${to} from the Trash` : `held restoring ${to} from the Trash for you in Changes`);
     return o.applied ? `Restored to ${to}. Revert it in Changes.` : o.message;
   }
-  throw new Error("action is list or restore. Moving a note to the Trash is trash_note.");
+  throw new Error("action is list or restore. Moving a note to the Trash is trash add.");
 }
 
 async function bookmarks(a: Args): Promise<string | Listing> {
@@ -2505,7 +2505,7 @@ async function bookmarks(a: Args): Promise<string | Listing> {
   if (!/\.(md|txt)$/i.test(page))
     throw new Error(`${page} isn't a note: Bookmark is on notes (.md or .txt) only, as the file menu offers it.`);
   await api.docRead(page).catch(() => {
-    throw new Error(`There's no note at ${page}. A bookmark whose note is gone comes off with remove (its target, from list_bookmarks).`);
+    throw new Error(`There's no note at ${page}. A bookmark whose note is gone comes off with remove (its target, from bookmarks' list).`);
   });
   const on = await api.bookmarkToggle(page);
   told(on ? `bookmarked ${page}` : `took the bookmark off ${page}`);
@@ -2551,7 +2551,7 @@ async function savedSearches(a: Args): Promise<string> {
 
 /** Activity's heatmap: the vault's files by the day they last changed, as the screen draws it; with
  *  date, that day's files, as a day picked on the screen lists them. Brainstead's own changes and
- *  the vault's log.md are Changes › All's (list_changes), as on the screens (D-20261119-04). */
+ *  the vault's log.md are Changes › All's (changes' list), as on the screens (D-20261119-04). */
 async function activity(a: Args): Promise<Listing> {
   const date = str(a, "date");
   if (date) {
@@ -2563,7 +2563,7 @@ async function activity(a: Args): Promise<Listing> {
       line: (f) => (a.detail === true ? `- ${f.path} (${new Date(f.mtime).toTimeString().slice(0, 5)})` : `- ${f.path}`),
       item: (f) => ({ date, path: f.path }),
       empty: `No file in the vault last changed on ${date}.`,
-      before: [`What assistants and Brainstead's runs changed that day, and the vault's log.md: list_changes with date ${date}.`],
+      before: [`What assistants and Brainstead's runs changed that day, and the vault's log.md: changes with date ${date}.`],
     });
   }
   const { days } = await api.activity();
@@ -3035,7 +3035,7 @@ async function suggestions(a: Args): Promise<string> {
     ].join("\n");
   }
   const id = str(a, "id");
-  if (!id) throw new Error("Which suggestion? Give its id from list_suggestions.");
+  if (!id) throw new Error("Which suggestion? Give its id from suggestions' list.");
   if (action === "accept") {
     const edit: Record<string, unknown> = {};
     if (str(a, "text")) edit.text = str(a, "text");
@@ -3153,10 +3153,10 @@ async function saveChat(a: Args): Promise<string> {
     told(`saved the chat “${open.title}”`);
     return `Saved “${open.title}” to the vault as ${f}; it keeps up to date there as the chat goes on.`;
   }
-  if (!want) throw new Error("No chat is open in Ask: give chat, its file or title from list_chats.");
+  if (!want) throw new Error("No chat is open in Ask: give chat, its file or title from chats' list.");
   const all = await api.chatsList();
   const c = all.find((x) => x.filename === want) ?? all.find(named);
-  if (!c) throw new Error(`No chat “${want}”: list_chats gives them.`);
+  if (!c) throw new Error(`No chat “${want}”: chats' list gives them.`);
   if (isSaved(c)) return `“${c.title}” is saved already, as ${c.filename}.`;
   const saved = await api.chatSave(await api.chatRead(c.filename), true);
   told(`saved the chat “${c.title}”`);
@@ -3226,7 +3226,7 @@ async function draftReply(a: Args): Promise<string> {
   ].join("\n");
 }
 
-/** trash_note on a Teams transcript (the MCP server sends those here): its links pointed at its
+/** trash add (trash_note) on a Teams transcript (the MCP server sends those here): its links pointed at its
  *  meeting note first, as every way of trashing one does (trashTranscript), each write recorded in
  *  Changes as the assistant's. */
 async function trashTranscriptTool(a: Args, r: McpRequest): Promise<string> {
@@ -3345,7 +3345,7 @@ const ACTIONS: Record<string, (a: Args, r: McpRequest) => Promise<unknown>> = {
     const line = (t: Transcript) =>
       `- ${t.path} · ${t.done ? `done: ${MEETING_DONE[t.done]}` : `looks like ${t.inferred.type ?? "a meeting"} ${t.inferred.name ?? t.inferred.topic ?? ""} ${t.inferred.date ?? ""}${t.inferred.dateCheck ? " (the capture day: check the meeting date)" : ""}`}${
         exists(t)
-          ? ` · note exists: ${exists(t)}${t.noteIngested ? " (ingested already: only the transcript is left, which the daily check moves to the Trash by itself; trash_note it now if the user asks)" : " (start_run meeting_note writes the note from the transcript into it, keeping what's there; with ingest_existing it's ingested as it is)"}`
+          ? ` · note exists: ${exists(t)}${t.noteIngested ? " (ingested already: only the transcript is left, which the daily check moves to the Trash by itself; trash add it now if the user asks)" : " (start_run meeting_note writes the note from the transcript into it, keeping what's there; with ingest_existing it's ingested as it is)"}`
           : ""
       }${drafting(t) ? " · being drafted" : drafted(t) ? " · a note was drafted (see Changes)" : ""}${(t.inferred.ask ?? []).map((q) => `\n  - ${q}`).join("")}`;
     return listed(a, rows, {
@@ -3427,7 +3427,7 @@ async function ghostsOf(r: LintReport): Promise<Map<string, GhostHelp>> {
 function ghostNote(g: GhostHelp | undefined): string {
   if (!g) return "";
   const trashed = g.inTrash
-    ? ` (in the Trash since ${g.inTrash.deletedAt.slice(0, 10)}: restore_from_trash with id ${g.inTrash.id} puts ${g.inTrash.originalRel} back)`
+    ? ` (in the Trash since ${g.inTrash.deletedAt.slice(0, 10)}: trash restore with id ${g.inTrash.id} puts ${g.inTrash.originalRel} back)`
     : "";
   const near = g.near ? ` Did you mean ${pageName(g.near)}? (health_issue link_to with to: ${g.near})` : "";
   return `${trashed}${near}`;
@@ -3527,7 +3527,7 @@ async function healthIssue(a: Args): Promise<string> {
     // A file in the Trash isn't a page to write: the screen offers Restore or Link to it instead of Create.
     const g = (await ghostsOf(r)).get(`${c.id}:${i.text}`);
     if (g?.inTrash)
-      return `${g.inTrash.originalRel} has been in the Trash since ${g.inTrash.deletedAt.slice(0, 10)}, so there's no Create: restore_from_trash with id ${g.inTrash.id} puts it back${g.near ? `, or health_issue link_to with to: ${g.near} points the links at the note it most likely became` : ", or health_issue link_to points the links at another page"}.`;
+      return `${g.inTrash.originalRel} has been in the Trash since ${g.inTrash.deletedAt.slice(0, 10)}, so there's no Create: trash restore with id ${g.inTrash.id} puts it back${g.near ? `, or health_issue link_to with to: ${g.near} points the links at the note it most likely became` : ", or health_issue link_to points the links at another page"}.`;
     // As the screen's Create: an entity page (a concept page is edit_page's, in wiki/concepts/).
     const p = await api.healthCreatePage(i.name!, "entities");
     told(`made the page ${pageName(p)}`);
@@ -3554,7 +3554,7 @@ async function healthIssue(a: Args): Promise<string> {
   if (!i.page) return "That image can't be found.";
   await api.healthTrashImage(i.page);
   told(`moved ${i.page} to the Trash`);
-  return `Moved ${i.page} to the Trash; restore_from_trash restores it.`;
+  return `Moved ${i.page} to the Trash; trash restore restores it.`;
 }
 
 /** contradictions: Wiki health's Contradictions tab's findings, its Mark resolved and Ignore, and Save report as note. */
@@ -3582,7 +3582,7 @@ async function contradictionsTool(a: Args, r: McpRequest): Promise<string> {
   if (action === "mark") {
     const id = str(a, "id");
     const as = str(a, "as");
-    if (!id || !rep.items.some((i) => i.id === id)) throw new Error("Give id: a finding's id from list_contradictions.");
+    if (!id || !rep.items.some((i) => i.id === id)) throw new Error("Give id: a finding's id from contradictions' list.");
     if (as !== "resolved" && as !== "ignored") throw new Error("as is resolved (Mark resolved) or ignored (Ignore).");
     await api.contradictionsMark(id, as);
     noted(`marked a contradiction ${as}`);
@@ -3724,9 +3724,9 @@ async function chatsTool(a: Args): Promise<string | Listing> {
     );
   }
   const want = str(a, "chat")?.trim();
-  if (!want) throw new Error("Give chat: its file or title, from list_chats.");
+  if (!want) throw new Error("Give chat: its file or title, from chats' list.");
   const c = all.find((x) => x.filename === want) ?? all.find((x) => x.title.toLowerCase() === want.toLowerCase());
-  if (!c) throw new Error(`No chat “${want}”: list_chats gives them.`);
+  if (!c) throw new Error(`No chat “${want}”: chats' list gives them.`);
   if (action === "read") {
     const full = await api.chatRead(c.filename);
     const turns = full.transcript.filter((t) => t.role === "user" || t.role === "assistant");
@@ -3845,7 +3845,7 @@ async function modelChoices(): Promise<[string, string][]> {
   return found.filter((c) => c.path).flatMap((c) => c.models.map((m) => [m.id, modelLabel(m.id, found)] as [string, string]));
 }
 
-/** Settings as list_settings shows them; a function, so the platform's defaults are the ones in force. */
+/** Settings as settings' list shows them; a function, so the platform's defaults are the ones in force. */
 const settingRows = (): SettingRow[] => [
   ["ownerName", "General", "Your name", "text", ""],
   ["theme", "General", "Appearance (system, light or dark)", "theme", "system"],
@@ -4085,7 +4085,7 @@ async function settingsTool(a: Args): Promise<string> {
     const label = "Settings › General › Appearance › Pane widths";
     if (key === "paneWidths") {
       if (a.value !== null)
-        throw new Error("paneWidths takes null, to put every pane back; set one pane as paneWidths.<pane> (list_settings names them).");
+        throw new Error("paneWidths takes null, to put every pane back; set one pane as paneWidths.<pane> (settings' list names them).");
       resetPaneWidths();
       await settings.flush();
       noted("put every pane back to its usual width");
@@ -4115,7 +4115,7 @@ async function settingsTool(a: Args): Promise<string> {
         ? "Accent colour is offered only on Windows, which has a system accent colour to follow."
         : key === "openAtLogin"
           ? `Open at login can't be changed for this copy of Brainstead (${isMac ? "macOS" : "the system"} manages it only for the installed app).`
-          : `Not a setting this tool changes: ${key}. list_settings lists them; the vault, Read-only and the folders left out are the user's, in the app.`,
+          : `Not a setting this tool changes: ${key}. settings' list gives them; the vault, Read-only and the folders left out are the user's, in the app.`,
     );
   const [, pane, label, kind, , choices, none] = row;
   // The screen shows Only in the menu bar… only while Show in the menu bar is on.
@@ -4171,7 +4171,7 @@ async function settingsTool(a: Args): Promise<string> {
     const hit = cs.find(([id, name]) => id.toLowerCase() === want || name.toLowerCase() === want);
     if (!hit)
       throw new Error(
-        `${key} is one of: ${cs.map(([id]) => id).join(", ") || "none here"}${none ? `, or null for ${none}` : ""}. list_settings lists them.`,
+        `${key} is one of: ${cs.map(([id]) => id).join(", ") || "none here"}${none ? `, or null for ${none}` : ""}. settings' list gives them.`,
       );
     v = hit[0];
   } else if (key === "templateScripts") {

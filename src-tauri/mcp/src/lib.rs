@@ -30,12 +30,12 @@ const TODO_LIST: &str = "Me. To Do List.md";
 /// What every session is told first. Clients cut it short (Claude Code at about 2,000 characters),
 /// so it stays under that; each tool's description says the rest.
 const INSTRUCTIONS: &str = "Brainstead's tools over the user's vault (notes, a wiki in wiki/, sources in sources/), doing what the app's screens do. \
-The list_* tools and the others marked read-only only read; help answers questions about the app itself. \
-Every change to a note (tasks, the Inbox, projects, edit_page, create_note, add_image, rename_note, trash_note, fix_health, fix_name) is made at once and recorded in Brainstead's Changes, where the user can revert it. \
+The list_* tools and the others marked read-only only read; a tool that lists a thing and changes it (trash, changes, chats, settings…) only reads with action list, its default. help answers questions about the app itself. \
+Every change to a note (tasks, the Inbox, projects, edit_page, create_note, add_image, rename_note, trash, fix_health, fix_name) is made at once and recorded in Brainstead's Changes, where the user can revert it. \
 A change to Templates/, one that adds or changes code that runs (a script, a Tasks function, a Templater tag) or one that changes a system note's header is always held for the user to accept in the app. \
 Other tools change things at once; each one's description says how it's undone. \
 Change only what the user asked for. While the vault is read-only (app_status says) every change is refused. \
-In a session nobody is watching (a loop, a scheduled agent), pass unattended: true: from the first call that does, every call in the session is taken as unattended, so a change that fails a check is held for the user, nothing held can be accepted, and weekly_start_over and moving_over are refused. \
+In a session nobody is watching (a loop, a scheduled agent), pass unattended: true: from the first call that does, every call in the session is taken as unattended, so a change that fails a check is held for the user, nothing held can be accepted, and weekly_start_over and moving_over's changes are refused. \
 changes accepts a held change only while the user is there, and only one held because a check failed. \
 Quote sources word for word in edit_page's quotes: a quote that isn't in its source is flagged. \
 Tools marked as needing the app open Brainstead when it isn't running. \
@@ -365,7 +365,8 @@ const EDIT_PAGE: &str = "Changes one page (a note, a wiki page, a project: any p
 
 /// The tools, as `tools/list` gives them. Those marked "needs the app" run in Brainstead itself
 /// (the server opens it when it isn't running), so they behave as the screens do. What only reads
-/// is a tool of its own (list_changes beside changes…), so a client can let it run unasked.
+/// is a tool of its own, except where one tool lists a thing and changes it, with an action (trash,
+/// changes…; D-20261127-16), so the list stays short.
 pub fn tools() -> Vec<Value> {
     use Effect::*;
     let page = json!({"type": "string", "description": "A page's name (Orbit App), its [[link]], or its path in the vault (wiki/entities/Orbit App.md)."});
@@ -469,10 +470,10 @@ pub fn tools() -> Vec<Value> {
             "Files in sources/ with their Status, as the Sources screen gives it: New (no wiki page cites it yet in its sources: property), Changed (changed since the pages citing it) or Ingested. Without status, the ones still to ingest, New and Changed: notes, PDFs, Office files and images (whose text is read from the picture), each path ready to pass to start_run's ingest (a Teams transcript is written up with start_run meeting_note instead); a file an ingest can't read is never listed as one to ingest, and status all marks it. An empty list means the wiki is up to date with Sources. In the app, the New ones not yet dealt with wait in Inbox › Captures, where the user ingests them or keeps them in Sources (list_inbox lists them, clarify_inbox acts on them); Wiki health only counts them there.",
             schema(json!({"status": {"type": "string", "enum": ["all", "new", "changed", "ingested"], "description": "The Sources screen's Status: only New, Changed or Ingested sources, or all; New and Changed when left out."}}), &[])),
         tool("provenance", "A source's provenance", Read,
-            "A source's Provenance card, as Sources and the source's own page show it (needs the app): whether it's ingested and by which run (when, its status and model), its size and when it changed, what the search index holds of it (passages indexed, its SHA-256), and the wiki pages that cite it with the passages they quote from it (three a page, as the card shows). Re-ingest is start_run ingest; Move to the Trash is trash_note.",
+            "A source's Provenance card, as Sources and the source's own page show it (needs the app): whether it's ingested and by which run (when, its status and model), its size and when it changed, what the search index holds of it (passages indexed, its SHA-256), and the wiki pages that cite it with the passages they quote from it (three a page, as the card shows). Re-ingest is start_run ingest; Move to the Trash is trash add.",
             schema(json!({"source": {"type": "string", "description": "The source, by its path in the vault (sources/…), as pending_sources gives it."}}), &["source"])),
         tool("lint", "Wiki health report", Read,
-            "Wiki health's checks on the wiki, as its screen lists them when Brainstead is open (ignored issues and pairs marked not duplicates left out, and the checks only the app runs: claims with no citation and system notes missing their header), else from the vault. Each check says whether it's counted (the grey ones, only worth a look, aren't, nor sources not yet ingested, which the Inbox's Captures counts and acts on) and each item marked [safe fix] can be fixed with fix_health. Only counted issues need a decision, and only they (or a held change) turn a page's Health amber in the Wiki list: Held, Stale (a source it cites changed since) or Check; a page with only safe fixes says Safe fix there in grey, one with only grey checks Worth a look, and one line above the list counts the safe fixes. Wiki checks: missing pages (a link to a page's alias reaches it), broken sources, orphan pages, missing cross-links, stale updated: dates, unlogged writes, sources not yet ingested and images nothing uses. More checks: pages whose properties don't read as YAML, possible duplicates, stale pages others rely on, sources changed since they were cited, pages not in the page shape (reshape_pages) and pages with no Current state (write_current_state) and pages whose Current state is behind their Timeline (write_current_state with refresh). For one page when given. With the app, the whole report starts with the screen's summary card: how many Need a decision, how many more are safe to fix, and the trend (the first and last day's count, and the highest). With the app, a missing page or broken source also says, as its row does, when the file it names is in the Trash (since when, and the id for restore_from_trash) and Did you mean, the note it most likely meant (the meeting note a trashed transcript became, or one a slip away), for health_issue link_to. Missing pages, broken sources (link_to), duplicates, unused images and orphan pages (add_to_index) have health_issue for their buttons.",
+            "Wiki health's checks on the wiki, as its screen lists them when Brainstead is open (ignored issues and pairs marked not duplicates left out, and the checks only the app runs: claims with no citation and system notes missing their header), else from the vault. Each check says whether it's counted (the grey ones, only worth a look, aren't, nor sources not yet ingested, which the Inbox's Captures counts and acts on) and each item marked [safe fix] can be fixed with fix_health. Only counted issues need a decision, and only they (or a held change) turn a page's Health amber in the Wiki list: Held, Stale (a source it cites changed since) or Check; a page with only safe fixes says Safe fix there in grey, one with only grey checks Worth a look, and one line above the list counts the safe fixes. Wiki checks: missing pages (a link to a page's alias reaches it), broken sources, orphan pages, missing cross-links, stale updated: dates, unlogged writes, sources not yet ingested and images nothing uses. More checks: pages whose properties don't read as YAML, possible duplicates, stale pages others rely on, sources changed since they were cited, pages not in the page shape (reshape_pages) and pages with no Current state (write_current_state) and pages whose Current state is behind their Timeline (write_current_state with refresh). For one page when given. With the app, the whole report starts with the screen's summary card: how many Need a decision, how many more are safe to fix, and the trend (the first and last day's count, and the highest). With the app, a missing page or broken source also says, as its row does, when the file it names is in the Trash (since when, and the id for trash restore) and Did you mean, the note it most likely meant (the meeting note a trashed transcript became, or one a slip away), for health_issue link_to. Missing pages, broken sources (link_to), duplicates, unused images and orphan pages (add_to_index) have health_issue for their buttons.",
             schema(json!({"page": page}), &[])),
         tool("help", "Brainstead's help", Read,
             "Brainstead's own help: how the app works and how to use it (screens, settings, shortcuts, getting-started guides). For questions about the app itself, not the vault. No arguments lists the topics; `topic` reads one (and `section` one part of it); `query` finds the best matching sections.",
@@ -491,7 +492,7 @@ pub fn tools() -> Vec<Value> {
                 "effort": {"type": "integer", "enum": [15, 30, 60], "description": "Only tasks of this many minutes or less, as the Tasks screen's effort filter (15 min or less, 30 min or less, 1 hour or less); any effort when left out."},
                 "group": {"type": "string", "enum": ["none", "project", "context", "due"], "description": "Group by, as the Tasks screen does: under each project, context or due date (Overdue, Today, This week, Later, No due date). Default none."},
                 "detail": {"type": "boolean", "description": "Also the heading, effort, created and done dates."},
-                "list": {"type": "string", "description": "A saved list's name (list_task_lists): its view, context, effort and grouping, instead of view, context, effort and group."}
+                "list": {"type": "string", "description": "A saved list's name (task_lists): its view, context, effort and grouping, instead of view, context, effort and group."}
             }), &[])),
         tool("edit_task", "Change a task", Change,
             "Changes a task, as the task screens do (needs the app): made straight away and recorded in Changes, where the user can revert it (⌘Z undoes it too). Give only the fields to change; several at once is fine, made as one change. Ticking a recurring task adds its next occurrence, as in the app.",
@@ -633,62 +634,46 @@ pub fn tools() -> Vec<Value> {
                 "preview": {"type": "boolean", "description": "Only list the links that would be rewritten, file by file, as the Rename box does; nothing is renamed."},
                 "reason": reason
             }), &["page", "title"])),
-        tool("trash_note", "Move a note to the Trash", Destroy,
-            "Moves a note or page to Brainstead's Trash (needs the app), only when the user asks. A Teams transcript's links are first pointed at its meeting note, when it has one, as the app does. It can be put back with restore_from_trash or reverted in Changes. To see what's in the Trash, use list_trash.",
-            schema(json!({"page": page, "reason": reason}), &["page"])),
-        tool("list_trash", "What's in the Trash", Read,
-            "Lists what's in Brainstead's Trash, newest first, with how many items it holds and their size as the Trash screen gives it (needs the app). Each row has its id for restore_from_trash. Moving something to the Trash is trash_note. Every move to the Trash, the user's from a screen too, is also in list_changes, with who made it.",
-            schema(json!({}), &[])),
-        tool("restore_from_trash", "Restore from the Trash", Change,
-            "Puts an entry from Brainstead's Trash back where it was, as the Trash's Restore does (needs the app). When something is at that path already, give to for another path, as Restore as… does. The id comes from list_trash. It's a change in Changes, with Revert (back to the Trash); a restore into Templates/, or of a note with code that runs, is held for the user to accept in the app.",
+        tool("trash", "The Trash", Destroy,
+            "Brainstead's Trash (needs the app). list (the default) gives what's in it, newest first, each entry with its id, and how many it holds and their size as the Trash screen says them. add moves page there, only when the user asks; a Teams transcript's links are first pointed at its meeting note, when it has one, as the app does. restore puts entry id back where it was, as Restore does, or under to when something is at that path, as Restore as… does; a restore into Templates/, or of a note with code that runs, is held for the user to accept in the app. add and restore are changes in Changes, with Revert. Every move to the Trash, the user's from a screen too, is in changes' list, with what moved it.",
             schema(json!({
-                "id": {"type": "string", "description": "The entry's id from list_trash."},
-                "to": {"type": "string", "description": "The vault path to put it back under, instead of where it was."}
-            }), &["id"])),
-        tool("list_bookmarks", "Bookmarks", Read,
-            "Lists the bookmarks as the sidebar shows them (needs the app): each one's title and the note it points at, or missing when that note is gone; one whose note hasn't changed in two weeks (and wasn't kept) says untouched N days, as Triage flags it. Bookmark, unbookmark or keep one with bookmarks; triage_bookmarks asks the model what to do with the ones given.",
-            schema(json!({}), &[])),
-        tool("bookmarks", "Bookmark a note", Destroy,
-            "With page, bookmarks a note or takes its bookmark off (needs the app), as a note's Bookmark does (a note, .md or .txt, that's there); with remove, takes a bookmark off by its target, as Triage's Archive and Remove do (one whose note is gone too); with keep, keeps a bookmark as triage's Keep does, so it won't need triage for two weeks. Undoable with ⌘Z in the app. Only as the user asked; list_bookmarks lists them.",
-            schema(json!({"page": {"type": "string", "description": "A note's path to bookmark, or unbookmark when it has one."}, "remove": {"type": "string", "description": "A bookmark's target to take off, from list_bookmarks."}, "keep": {"type": "string", "description": "A bookmark's target to keep: it won't need triage for two weeks."}}), &[])),
-        tool("list_saved_searches", "Saved searches", Read,
-            "Lists the saved searches, as Search's sidebar shows them (needs the app): each one's name, query and the layers it searches (all when none are given). Run one with search, its query and those layers, as clicking it does; save or delete one with saved_searches.",
-            schema(json!({}), &[])),
-        tool("saved_searches", "Save or delete a search", Destroy,
-            "With name and query, saves a search as Search's Save search does (a name that's taken, or a query saved already, is refused; layers are notes, wiki and sources, as Search's filters); with name and delete, deletes one, as its x does (needs the app). Undoable with ⌘Z in the app. Only as the user asked; list_saved_searches lists them.",
+                "action": {"type": "string", "enum": ["list", "add", "restore"], "description": "Default list."},
+                "page": {"type": "string", "description": "For add: the note or page to move to the Trash, by name, [[link]] or path."},
+                "id": {"type": "string", "description": "For restore: the entry's id from list."},
+                "to": {"type": "string", "description": "For restore: the vault path to put it back under, instead of where it was."},
+                "reason": reason
+            }), &[])),
+        tool("bookmarks", "Bookmarks", Destroy,
+            "The bookmarks, as the sidebar shows them (needs the app). list (the default, when nothing else is given) gives each one's title and the note it points at, or missing when that note is gone; one whose note hasn't changed in two weeks (and wasn't kept) says untouched N days, as Triage flags it. page bookmarks a note (.md or .txt) or takes its bookmark off, as a note's Bookmark does; remove takes one off by its target, as Triage's Archive and Remove do (one whose note is gone too); keep keeps one, as Triage's Keep does, so it won't need triage for two weeks. Undoable with ⌘Z in the app. Change them only as the user asked; triage_bookmarks asks the model what to do with the ones given.",
+            schema(json!({"action": {"type": "string", "enum": ["list"], "description": "list; left out, page, remove or keep says what to do."}, "page": {"type": "string", "description": "A note's path to bookmark, or unbookmark when it has one."}, "remove": {"type": "string", "description": "A bookmark's target to take off, from list."}, "keep": {"type": "string", "description": "A bookmark's target to keep: it won't need triage for two weeks."}}), &[])),
+        tool("saved_searches", "Saved searches", Destroy,
+            "The saved searches, as Search's sidebar shows them (needs the app). list (the default without name) gives each one's name, query and the layers it searches (all when none are given); run one with search, its query and those layers. save, with name and query, saves one as Save search does (a name that's taken, or a query saved already, is refused; layers are notes, wiki and sources, as Search's filters); delete, with name, deletes one, as its x does. Undoable with ⌘Z in the app. Save or delete only as the user asked.",
             schema(json!({
-                "name": {"type": "string", "description": "The saved search's name."},
-                "query": {"type": "string", "description": "To save: the search, as search's query takes it."},
-                "delete": {"type": "boolean", "description": "Delete the saved search called name."},
+                "action": {"type": "string", "enum": ["list", "save", "delete"], "description": "Default list, or save when name is given."},
+                "name": {"type": "string", "description": "For save and delete: the saved search's name."},
+                "query": {"type": "string", "description": "For save: the search, as search's query takes it. For list: only the saved searches with all of these words."},
+                "delete": {"type": "boolean", "description": "The same as action delete."},
                 "layers": layers
-            }), &["name"])),
+            }), &[])),
         // What agents changed.
-        tool("list_changes", "What assistants changed", Read,
-            "What assistants and Brainstead's runs changed, and the changes held for the user, as the Changes screen shows them (needs the app). Every move to the Trash is one, the user's own from a screen included (its origin You · and the screen: You · Inbox, You · File menu), so a file gone from the vault shows here with what moved it; Revert restores it. list gives them as one list, a page at a time (limit, offset and query page through the whole list), grouped by run, each with its id and its run's group. view picks Changes' tab: all (the default) has the held ones first, then those made with the vault's log.md lines that aren't a change (older than Changes' history, from another computer, the previous app or a terminal, or Brainstead's own writes that aren't changes: what the user accepts in the weekly review, and Fix name and safe fixes made on their screens), newest first, as All shows them; held has the held ones only. With view all, type keeps one type, as All's chips do, and date one day, as Activity's Changes that day opens it. show gives one change's diff, quotes and flags; history says how long Changes keeps its history. detail adds each change's kind, who made it and why, and each log.md line's time and what it says. Act on them with changes.",
+        tool("changes", "What assistants changed", Destroy,
+            "What assistants and Brainstead's runs changed, and the changes held for the user, as the Changes screen shows them (needs the app), and acting on them. Every move to the Trash is one, the user's own from a screen included (its origin You · and the screen: You · Inbox, You · File menu), so a file gone from the vault shows here with what moved it. list (the default) gives them a page at a time (limit, offset, query), grouped by run, each with its id and its run's group. view picks Changes' tab: all (the default) has the held ones first, then those made with the vault's log.md lines that aren't a change (older than Changes' history, from another computer, the previous app or a terminal, or Brainstead's own writes such as what the weekly review accepts and Fix name), newest first; held has the held ones only. With view all, type keeps one type, as All's chips do, and date one day. show gives one change's diff, quotes and flags; detail adds each change's kind, who made it and why. accept makes a held change (a meeting note's follow-up, ingesting it and trashing its transcript, is then offered to the user in the app) and reject turns it down; accept_run and reject_run do every held change in a run (group), or with query, type or date those these leave (Accept all, Reject all); revert undoes a change that was made, also after later edits, and says when its lines were edited since; revert_run reverts a run's changes, or those query, type or date leave (Revert all). history says how long Changes keeps its history, and with days or mb sets it. accept and accept_run work only while the user is there (never with unattended) and only for a change held because a check failed: one held because it changes a template, adds or changes code that runs, changes a system note's header, renames or trashes a template (or rewrites links in one), or comes from a job set to hold its changes is the user's to accept, in the app. Accept, reject, revert or change the history only as the user asked.",
             schema(json!({
-                "action": {"type": "string", "enum": ["list", "show", "history"], "description": "Default list."},
+                "action": {"type": "string", "enum": ["list", "show", "accept", "reject", "accept_run", "reject_run", "revert", "revert_run", "history"], "description": "Default list."},
                 "view": {"type": "string", "enum": ["all", "held"], "description": "For list: Changes' tab, All (the default) or Held."},
-                "type": {"type": "string", "description": "For list with view all: only changes and log.md lines of this type, as the log names it or All's chip does: ingest, update, create, lint-fix, review, weekly-review…"},
-                "date": day("for list with view all, only that day's changes and log.md lines."),
-                "id": {"type": "string", "description": "For show: the change's id from list."},
+                "type": {"type": "string", "description": "For list with view all, and the _run actions: only changes (and log.md lines) of this type, as All's chips name them: ingest, update, create, lint-fix, review, weekly-review…"},
+                "date": day("for list with view all, only that day's changes and log.md lines; for the _run actions, only the run's changes made that day."),
+                "id": {"type": "string", "description": "For show, accept, reject and revert: the change's id from list."},
+                "group": {"type": "string", "description": "For accept_run, reject_run and revert_run: the run's group from list."},
+                "query": {"type": "string", "description": "For list and the _run actions: only the changes with every word of this in their title, page, the page it moved to, origin or model (Changes' search)."},
                 "page": {"type": "string", "description": "For list: only this page's changes, by its path (no log.md lines)."},
+                "days": {"type": "integer", "enum": [30, 90, 180, 365], "description": "For history: keep this many days."},
+                "mb": {"type": "integer", "enum": [100, 250, 500, 1000, 2000], "description": "For history: keep at most this many MB."},
                 "detail": detail
             }), &[])),
-        tool("changes", "Accept, reject or revert changes", Destroy,
-            "Decides on what assistants and runs changed (needs the app); list_changes lists them. accept makes a held change (on the page as it is now; a meeting note's follow-up, ingesting it and trashing its transcript, is then offered to the user in the app, as the screen's Accept does, and the reply says so) and reject turns it down; accept_run and reject_run do every held change in a run (its group), and with query, type or date only those of them these leave, as Changes' Accept all and Reject all do with its search, a type or a day on; revert undoes a change that was made, also after later edits, and says when its lines have been edited since; revert_run reverts every change a run made, or with query, type or date those these leave (Changes' Revert all); history with days or mb sets how long Changes keeps its history. accept and accept_run work only while the user is there (never with unattended) and only for a change held because a check failed: one held because it changes a template, adds or changes code that runs, changes a system note's header, renames or trashes a template (or rewrites links in one), or comes from a job set to hold its changes is the user's to accept, in the app. Accept, reject, revert or change the history only as the user asked.",
-            schema(json!({
-                "action": {"type": "string", "enum": ["accept", "reject", "accept_run", "reject_run", "revert", "revert_run", "history"]},
-                "id": {"type": "string", "description": "For accept, reject and revert: the change's id from list_changes."},
-                "group": {"type": "string", "description": "For accept_run, reject_run and revert_run: the run's group from list_changes."},
-                "query": {"type": "string", "description": "For accept_run, reject_run and revert_run: only the run's changes with every word of this in their title, page, the page it moved to, origin or model (Changes' search)."},
-                "type": {"type": "string", "description": "For accept_run, reject_run and revert_run: only the run's changes of this type, as list_changes names them or All's chip does: ingest, update, create, lint-fix, review."},
-                "date": day("for accept_run, reject_run and revert_run, only the run's changes made that day."),
-                "days": {"type": "integer", "enum": [30, 90, 180, 365], "description": "For history: keep this many days."},
-                "mb": {"type": "integer", "enum": [100, 250, 500, 1000, 2000], "description": "For history: keep at most this many MB."}
-            }), &["action"])),
         // Runs and the wiki.
         tool("start_run", "Start a run", Run,
-            "Starts work Brainstead does with a model on the user's account, as its screens do (needs the app): ingest sources into the wiki (notes, PDFs, Office files or images; their changes are made and recorded in Changes), the daily check, the daily or weekly summary (daily_summary, weekly_summary; date picks the day or week; summary reads them), the daily brief (daily_brief: themes of what came in, the user's actions, waiting-fors and what can be archived, as Briefs/Brief YYYY-MM-DD.md; date picks the day, today by default; summary kind brief reads it), the weekly review's preparation (weekly_prep: suggestions for each step of the review's week, a paused review's own as on the screen, nothing changed until one is accepted; weekly_review lists them), a look through the last 90 days of notes for tasks and projects (find_tasks; list_suggestions lists what it found), a contradictions check, or a meeting note from a Teams transcript (list_transcripts; once made, the note is ingested and the transcript moved to the Trash, as the user's settings say; with ingest_existing, the note that's there already is kept as it is instead and followed through the same way, as the card's Ingest the existing note does). Write Current state has its own tool, write_current_state. It returns once started; run_status shows progress and stop_run stops it.",
+            "Starts work Brainstead does with a model on the user's account, as its screens do (needs the app): ingest sources into the wiki (notes, PDFs, Office files or images; their changes are made and recorded in Changes), the daily check, the daily or weekly summary (daily_summary, weekly_summary; date picks the day or week; summary reads them), the daily brief (daily_brief: themes of what came in, the user's actions, waiting-fors and what can be archived, as Briefs/Brief YYYY-MM-DD.md; date picks the day, today by default; summary kind brief reads it), the weekly review's preparation (weekly_prep: suggestions for each step of the review's week, a paused review's own as on the screen, nothing changed until one is accepted; weekly_review lists them), a look through the last 90 days of notes for tasks and projects (find_tasks; suggestions lists what it found), a contradictions check, or a meeting note from a Teams transcript (list_transcripts; once made, the note is ingested and the transcript moved to the Trash, as the user's settings say; with ingest_existing, the note that's there already is kept as it is instead and followed through the same way, as the card's Ingest the existing note does). Write Current state has its own tool, write_current_state. It returns once started; run_status shows progress and stop_run stops it.",
             schema(json!({
                 "run": {"type": "string", "enum": ["ingest", "daily_check", "daily_summary", "weekly_summary", "daily_brief", "weekly_prep", "find_tasks", "contradictions", "meeting_note"], "description": "Which run."},
                 "sources": {"type": "array", "items": {"type": "string"}, "description": "For ingest: vault paths to ingest, in sources/ or notes (pending_sources lists those not yet ingested): notes and text, PDFs, Office files and images; anything else is refused. All are checked before any is queued. Every ingest waits in one queue with the app's own, one at a time, oldest source first (by the date in its name, else the file's), so the order given and how many calls make no difference."},
@@ -700,7 +685,7 @@ pub fn tools() -> Vec<Value> {
                 "date": {"type": "string", "pattern": DATE, "description": "For meeting_note: the meeting's day, YYYY-MM-DD; needed when list_transcripts says the date is only the capture day (ask the user). For daily_summary: the day to summarise (default yesterday); for weekly_summary: a day in a week that has ended (default the week just ended, as Run now; this week is refused)."}
             }), &["run"])),
         tool("run_status", "How runs are going", Read,
-            "How Brainstead's runs are going (needs the app): ingests running and lately done, the daily check, the daily and weekly summaries, the weekly review's preparation, Find tasks and projects, the contradictions check, meeting notes being written and Write Current state. Each says whether it's running, done or failed, with its progress; ingests and meeting notes give their ids, for stop_run, the meeting notes lately finished or failed are listed with the note made, and an ingest or meeting note says what the checks left out of it and why. Then the last eight summary runs, as Settings › Automations' Recent runs lists them: kind, day, when, how it was started, its status and its note, and the id of its change in Changes (changes revert with that id undoes it, as Recent runs' Undo does). A summary run and the weekly review's last preparation give their chat with the model (Automations' Open), which list_chats with action read and that chat reads. With query, the ingests listed are those the Sources screen's Ingest runs search finds (every word in the source or meeting note's name, its state, model or day), up to 20. Use it after start_run, rather than starting a run again; stop_run stops one.",
+            "How Brainstead's runs are going (needs the app): ingests running and lately done, the daily check, the daily and weekly summaries, the weekly review's preparation, Find tasks and projects, the contradictions check, meeting notes being written and Write Current state. Each says whether it's running, done or failed, with its progress; ingests and meeting notes give their ids, for stop_run, the meeting notes lately finished or failed are listed with the note made, and an ingest or meeting note says what the checks left out of it and why. Then the last eight summary runs, as Settings › Automations' Recent runs lists them: kind, day, when, how it was started, its status and its note, and the id of its change in Changes (changes revert with that id undoes it, as Recent runs' Undo does). A summary run and the weekly review's last preparation give their chat with the model (Automations' Open), which chats with action read and that chat reads. With query, the ingests listed are those the Sources screen's Ingest runs search finds (every word in the source or meeting note's name, its state, model or day), up to 20. Use it after start_run, rather than starting a run again; stop_run stops one.",
             schema(json!({"query": {"type": "string", "description": "Words to find ingest runs by, as the Ingest runs pane's search box: Steerco failed."}}), &[])),
         tool("stop_run", "Stop a run", Destroy,
             "Stops a run that's going, or an ingest or meeting note waiting its turn (needs the app), as its Stop button does. What it already changed stays, listed in Changes; the part not yet done is dropped, so start it again with start_run to finish. Stopping a run that isn't going does nothing. Only when the user asks.",
@@ -737,27 +722,16 @@ pub fn tools() -> Vec<Value> {
         tool("save_chat", "Save an Ask chat", Change,
             "Saves one of Brainstead's Ask chats to the vault as a note (needs the app): an open one as Ask's Save does, after which it stays up to date there as the chat goes on, or a closed one as History's Save does. Unsaved chats stay in Brainstead's app data, and closed ones that aren't saved or pinned are deleted once 20 newer ones are in History. Save only when the user asks.",
             schema(json!({
-                "chat": {"type": "string", "description": "The chat's file or title, from list_chats. The chat open in Ask when left out."}
+                "chat": {"type": "string", "description": "The chat's file or title, from chats. The chat open in Ask when left out."}
             }), &[])),
-        tool("list_chats", "Ask's chats", Read,
-            "Brainstead's Ask chats (needs the app): list gives them, newest first, with each one's file, whether it's saved in the vault and whether it's pinned; read gives one's messages and its effort. Rename, pin or trash one with chats; set its effort with chat_effort; save one to the vault with save_chat.",
+        tool("chats", "Ask's chats", Destroy,
+            "Brainstead's Ask chats (needs the app). list (the default) gives them, newest first, with each one's file, whether it's saved in the vault and whether it's pinned; read gives one's messages and its effort. rename renames one (its tab and, when saved, its note); pin and unpin are History's Pin and Unpin (a pinned chat is kept; closed chats that aren't saved or pinned are deleted once 20 newer ones are in History); trash moves it to the Trash, as History's Move to the Trash does; effort sets the effort it runs at from its next message, as the Effort menu beside its model does, without changing what new chats start with (settings' effort.<cli>). save_chat saves one to the vault. Change one only when the user asks.",
             schema(json!({
-                "action": {"type": "string", "enum": ["list", "read"], "description": "Default list."},
-                "chat": {"type": "string", "description": "For read: the chat's file or title, from list."}
+                "action": {"type": "string", "enum": ["list", "read", "rename", "pin", "unpin", "trash", "effort"], "description": "Default list."},
+                "chat": {"type": "string", "description": "The chat's file or title, from list; for effort, the chat open in Ask when left out."},
+                "title": {"type": "string", "description": "For rename: the new title."},
+                "effort": {"type": "string", "description": "For effort: one of the chat's assistant's levels, by id or name (low, medium, high, xhigh or Extra high, max; Codex has no max; an Ollama model only the thinking levels it names, often none), or empty for Default effort, the assistant's own."}
             }), &[])),
-        tool("chats", "Rename, pin or trash a chat", Destroy,
-            "Changes one of Brainstead's Ask chats (needs the app): rename renames it (its tab and, when saved, its note); pin and unpin are History's Pin and Unpin (a pinned chat is kept whatever happens; closed chats that aren't saved or pinned are deleted once 20 newer ones are in History); trash moves it to the Trash, as History's Move to the Trash does. list_chats lists them; chat_effort sets one's effort. Only when the user asks.",
-            schema(json!({
-                "action": {"type": "string", "enum": ["rename", "pin", "unpin", "trash"]},
-                "chat": {"type": "string", "description": "The chat's file or title, from list_chats."},
-                "title": {"type": "string", "description": "For rename: the new title."}
-            }), &["action", "chat"])),
-        tool("chat_effort", "Set a chat's effort", Change,
-            "Sets the effort one of Brainstead's Ask chats runs at from its next message (needs the app), as the Effort menu beside its model in Ask does, without changing the effort new chats start with (settings' effort.<cli>). list_chats read says a chat's effort. Only when the user asks.",
-            schema(json!({
-                "chat": {"type": "string", "description": "The chat's file or title, from list_chats."},
-                "effort": {"type": "string", "description": "One of the chat's assistant's levels, by id or name (low, medium, high, xhigh or Extra high, max; Codex has no max; an Ollama model only the thinking levels it names, often none), or empty for Default effort, the assistant's own."}
-            }), &["chat", "effort"])),
         tool("list_transcripts", "Transcripts to write up", Read,
             "Teams meeting transcripts in Sources still without a meeting note (needs the app), or with show all every transcript, the done ones saying why (ingested, or linked from a note), as the screen's Show › All does. Each row has the transcript's path and what Brainstead guesses it is: its type, its name or who it was with, and its date, flagged when the date is only the day it was captured; as the screen marks them, the note it would make when that exists already, what to check with the user, and whether a note is being drafted or was drafted from it. Write one up with start_run meeting_note, giving the right date when it's flagged, and another name or date when its note exists. One whose note is made and ingested already (by Brainstead, by hand or in a terminal) has only the transcript left: the daily check moves it to the Trash by itself, as a change in Changes, unless the user reverted that before.",
             schema(json!({"show": {"type": "string", "enum": ["to_do", "all"], "description": "The screen's Show: to_do (To do, the default) or all (All)."}}), &[])),
@@ -773,24 +747,20 @@ pub fn tools() -> Vec<Value> {
                 "check": {"type": "string", "description": "With all: stale-pages or uncited-claims. With show_again (needed): the check's id (orphans, stale-pages…)."}
             }), &[])),
         tool("health_issue", "A Wiki health issue's button", Destroy,
-            "Does what an issue's own button on Wiki health does (needs the app), the issue named by its text as lint gives it. create (Create, on a missing page): writes the page as a new entity page, as Create does (a concept page is edit_page's, in wiki/concepts/); link_to (Link to…, on a missing page): points every link to the missing page at an existing page, given as to; not_duplicates (Not duplicates, on a possible duplicate): the pair isn't listed again; move_to_trash (Move to the Trash, on an image nothing uses; restore_from_trash puts it back); link_to also points a broken source (a page citing a file that isn't there) at a file that is; add_to_index (Add them to index.md, on Orphan pages, no item) brings index.md's catalogue up to date now, which links every wiki page. A missing page whose file is in the Trash has no create, as the screen has no Create for it: put it back with restore_from_trash (lint gives the id), or link_to another page; the same goes for a broken source. A page made is undone with ⌘Z in the app; each relinked page is a change in Changes, with Revert. Only as the user asked.",
+            "Does what an issue's own button on Wiki health does (needs the app), the issue named by its text as lint gives it. create (Create, on a missing page): writes the page as a new entity page, as Create does (a concept page is edit_page's, in wiki/concepts/); link_to (Link to…, on a missing page): points every link to the missing page at an existing page, given as to; not_duplicates (Not duplicates, on a possible duplicate): the pair isn't listed again; move_to_trash (Move to the Trash, on an image nothing uses; trash restore puts it back); link_to also points a broken source (a page citing a file that isn't there) at a file that is; add_to_index (Add them to index.md, on Orphan pages, no item) brings index.md's catalogue up to date now, which links every wiki page. A missing page whose file is in the Trash has no create, as the screen has no Create for it: put it back with trash restore (lint gives the id), or link_to another page; the same goes for a broken source. A page made is undone with ⌘Z in the app; each relinked page is a change in Changes, with Revert. Only as the user asked.",
             schema(json!({
                 "action": {"type": "string", "enum": ["create", "link_to", "not_duplicates", "move_to_trash", "add_to_index"]},
                 "item": {"type": "string", "description": "The issue's text, as lint gives it (not for add_to_index); for create and link_to, the missing page's or cited file's name will do, with or without [[ ]] (a broken source named so is relinked on every page citing it)."},
                 "to": {"type": "string", "description": "For link_to: the page the links should point at, by name or path."}
             }), &["action"])),
-        tool("list_contradictions", "Contradictions", Read,
-            "Wiki health's Contradictions tab's findings (needs the app): when the last check ran, and as the screen's banners say, why it failed or which fixes it couldn't make; then the findings, in the screen's order (real ones by severity, then unclear, then those settled), each with its id, the claims that clash (page, value, as-of date and quote), the model's verdict, and the judge's fix with its change in Changes (waiting there for the user, or made, with the change's id), as the screen's Judge's view and The fix is in Changes show them. Every finding by default, settled ones included (often hundreds): to go through the ones the user has to decide, pass status to_decide, which gives only the real and unclear ones, the screen's first two groups. Settle one or save the report with contradictions; start_run contradictions runs the check again.",
+        tool("contradictions", "Contradictions", Change,
+            "Wiki health's Contradictions tab (needs the app). list (the default) gives when the last check ran, and as the screen's banners say, why it failed or which fixes it couldn't make; then the findings, in the screen's order (real ones by severity, then unclear, then those settled), each with its id, the claims that clash (page, value, as-of date and quote), the model's verdict, and the judge's fix with its change in Changes (held for the user, or made, with its id). Every finding by default, settled ones included (often hundreds): status to_decide gives only the real and unclear ones, the ones the user has to decide. mark settles one as its buttons do (resolved: Mark resolved; ignored: Ignore, not a real contradiction, so it isn't flagged again), only as the user asked; save writes the report as a new note, Contradictions - YYYY-MM-DD, as Save report as note does, recorded in Changes. start_run contradictions runs the check again.",
             schema(json!({
-                "status": {"type": "string", "enum": ["all", "to_decide", "contradiction", "unclear", "settled"], "description": "Which of the screen's groups: all (the default); to_decide, the real and the unclear ones together; contradiction (real), unclear (or not judged yet) or settled (not a conflict, newer superseding older, resolved or ignored) alone."}
-            }), &[])),
-        tool("contradictions", "Settle a contradiction", Change,
-            "Acts on Wiki health's Contradictions tab (needs the app): mark settles a finding as its buttons do (resolved: Mark resolved; ignored: Ignore, not a real contradiction, so it isn't flagged again); save writes the report as a new note, Contradictions - YYYY-MM-DD, as Save report as note does, recorded in Changes. list_contradictions lists the findings. Mark only as the user asked.",
-            schema(json!({
-                "action": {"type": "string", "enum": ["mark", "save"]},
-                "id": {"type": "string", "description": "For mark: the finding's id from list_contradictions."},
+                "action": {"type": "string", "enum": ["list", "mark", "save"], "description": "Default list."},
+                "status": {"type": "string", "enum": ["all", "to_decide", "contradiction", "unclear", "settled"], "description": "For list, which of the screen's groups: all (the default); to_decide, the real and the unclear ones together; contradiction (real), unclear (or not judged yet) or settled (not a conflict, newer superseding older, resolved or ignored) alone."},
+                "id": {"type": "string", "description": "For mark: the finding's id from list."},
                 "as": {"type": "string", "enum": ["resolved", "ignored"], "description": "For mark."}
-            }), &["action"])),
+            }), &[])),
         tool("page_shape", "Page shape", Read,
             "Wiki health's Page shape check: which wiki entity and concept pages aren't in the page shape (opening text, Current state, topical sections, a Timeline of `### YYYY-MM-DD — title` entries newest first, each with a Source: [[…]] line, then See also), which of them Reshape pages can do by itself and why the rest need the user. With page, that page's report: the headings it would rewrite and the lines it would add.",
             schema(json!({"page": page}), &[])),
@@ -820,10 +790,10 @@ pub fn tools() -> Vec<Value> {
             }), &["written_as", "correct_spelling"])),
         // The skill screens.
         tool("triage_bookmarks", "Triage bookmarks", Run,
-            "Asks the model what to do with each bookmark given, as Triage's Suggest (and Suggest again) does (the Inbox's Bookmarks band opens it; needs the app), in its choices: Keep, Ingest into the wiki (with the page to make), Make a task (with the task), Archive, or Remove for one whose note is gone; nothing is changed. list_bookmarks lists them, with how long since each changed. Act on a suggestion as the user decides, as its Accept (or Edit, with the page or task changed) does, or leave it, as Skip does: Keep is bookmarks keep; Archive and Remove are bookmarks remove (by the bookmark's target); Ingest into the wiki is edit_page making the page, and Make a task is capture with kind task (to the Inbox), each then taking the bookmark off with bookmarks remove, as the screen's do.",
-            schema(json!({"items": {"type": "array", "minItems": 1, "description": "The bookmarks to ask about, as list_bookmarks gives them.", "items": schema(json!({
-                "target": {"type": "string", "description": "The bookmark's target, from list_bookmarks."},
-                "path": {"type": "string", "description": "The note it points at, from list_bookmarks."}
+            "Asks the model what to do with each bookmark given, as Triage's Suggest (and Suggest again) does (the Inbox's Bookmarks band opens it; needs the app), in its choices: Keep, Ingest into the wiki (with the page to make), Make a task (with the task), Archive, or Remove for one whose note is gone; nothing is changed. bookmarks lists them, with how long since each changed. Act on a suggestion as the user decides, as its Accept (or Edit, with the page or task changed) does, or leave it, as Skip does: Keep is bookmarks keep; Archive and Remove are bookmarks remove (by the bookmark's target); Ingest into the wiki is edit_page making the page, and Make a task is capture with kind task (to the Inbox), each then taking the bookmark off with bookmarks remove, as the screen's do.",
+            schema(json!({"items": {"type": "array", "minItems": 1, "description": "The bookmarks to ask about, as bookmarks gives them.", "items": schema(json!({
+                "target": {"type": "string", "description": "The bookmark's target, from bookmarks."},
+                "path": {"type": "string", "description": "The note it points at, from bookmarks."}
             }), &["target", "path"])}}), &["items"])),
         tool("draft_reply", "Draft a reply", Run,
             "Drafts a reply to an email thread in sources/ (thread) or to pasted text, as the Draft reply screen does (needs the app). It says how fully the draft answers the thread. With current and change, it revises that reply as asked, as the screen's Ask for a change box does, keeping the rest of it. With place (and thread), it's the screen's Put in Outlook or Put in Teams instead, for the reply the user is happy with: an email's reply becomes a reply-all draft on the thread in Outlook, a synced Teams chat's is typed into the chat's message box by the Teams extension, and the link opens in the browser; the user sends it there. Only when the user asks for it, and refused in an unattended session. Nothing is ever sent and nothing in the vault changes.",
@@ -849,7 +819,7 @@ pub fn tools() -> Vec<Value> {
             }), &["document_a", "document_b"])),
         // Around the vault.
         tool("activity", "Files by day", Read,
-            "Activity's Files by day (needs the app): the days files in the vault last changed on, newest first, each with how many files, as its heatmap shades them (templates aren't counted); detail splits each day into notes, wiki pages and sources. With date, the day picked as on the screen: the files that last changed that day, newest first (detail adds the time). What assistants and Brainstead's runs changed, and the vault's log.md, are Changes' (list_changes, with date for one day).",
+            "Activity's Files by day (needs the app): the days files in the vault last changed on, newest first, each with how many files, as its heatmap shades them (templates aren't counted); detail splits each day into notes, wiki pages and sources. With date, the day picked as on the screen: the files that last changed that day, newest first (detail adds the time). What assistants and Brainstead's runs changed, and the vault's log.md, are Changes' (changes, with date for one day).",
             schema(json!({"date": day("the files that last changed that day."), "detail": detail}), &[])),
         tool("sync_activity", "Sync and ingest activity", Read,
             "What the sync brought in and what each ingest did with it (needs the app), newest first over the last two weeks, as Activity › Sync & ingest shows it: each Teams, Outlook and Slack sync pass (the sources it wrote new or topped up, its problems, or why it couldn't run, counted when the same wall repeats) and each ingest (what it changed, that it found nothing and moved a chat day to the Trash, or why it failed). The first line says when the sync last ran, as the menu-bar window does. filter keeps one service, or problems only, as the screen's chips do; query keeps the rows with all its words. detail adds the files each row names, by what they are, and what went wrong or was left out.",
@@ -857,70 +827,53 @@ pub fn tools() -> Vec<Value> {
         tool("graph", "Links around a page", Read,
             "The pages linked to and from a page (by name, [[link]] or path), to a depth of 1 to 3 (needs the app), as the Graph screen draws it; the whole wiki without page. Like the screen it keeps the nearest 400 pages, and says so when there were more. It lists the links between them, one `from → to` a line. hide leaves out kinds of page, as the screen's chips do (the page itself stays). detail lists the pages too, each with its type, how far it is from the page and how many links it has.",
             schema(json!({"page": page, "depth": {"type": "integer", "minimum": 1, "maximum": 3, "description": "How many links away to go. Default 2, as the Graph screen starts."}, "hide": {"type": "array", "items": {"type": "string", "enum": ["Entities", "Concepts", "Summaries", "Other wiki", "Sources", "Notes", "Not written yet"]}, "description": "The kind chips turned off: those pages and their links are left out."}, "detail": detail}), &[])),
-        tool("list_suggestions", "Suggested tasks and projects", Read,
-            "Find tasks and projects' suggestions (needs the app): tasks and projects a read of the user's notes from the last 90 days found, each with the note and quote it rests on and its id, and how the last look went. Accept or skip one with suggestions, as Tasks' and Projects' Accept, Edit and Skip do; start_run find_tasks is their Suggest again.",
-            schema(json!({}), &[])),
-        tool("suggestions", "Accept or skip a suggestion", Destroy,
-            "Acts on a Find tasks and projects suggestion (needs the app). accept makes it (a task added to its project's Next actions or the To Do list, a project note with its first next actions) as a change recorded in Changes, where the user can revert it (⌘Z in the app undoes it too, as Found's Undo does), with text to reword it (or a project's name) and done_looks_like for a project's, as Edit does; skip leaves it out, as Skip does. Neither comes back. Accept or skip only what the user asked for.",
+        tool("suggestions", "Suggested tasks and projects", Destroy,
+            "Find tasks and projects' suggestions (needs the app): tasks and projects a read of the user's notes from the last 90 days found. list (the default) gives each with the note and quote it rests on and its id, and how the last look went. accept makes one (a task added to its project's Next actions or the To Do list, a project note with its first next actions) as a change recorded in Changes, where the user can revert it (⌘Z in the app undoes it too, as Found's Undo does), with text to reword it (or a project's name) and done_looks_like for a project's, as Edit does; skip leaves it out, as Skip does. Neither comes back. Accept or skip only what the user asked for; start_run find_tasks is Suggest again.",
             schema(json!({
-                "action": {"type": "string", "enum": ["accept", "skip"]},
-                "id": {"type": "string", "description": "The suggestion's id from list_suggestions."},
+                "action": {"type": "string", "enum": ["list", "accept", "skip"], "description": "Default list."},
+                "id": {"type": "string", "description": "For accept and skip: the suggestion's id from list."},
                 "text": {"type": "string", "description": "For accept: the task's wording, or the project's name, if it should differ."},
                 "done_looks_like": {"type": "string", "description": "For accept on a project: what done looks like, if it should differ."}
-            }), &["action", "id"])),
-        tool("list_moving_over", "Moving over's checklist", Read,
-            "Settings › General › Moving over's checklist (needs the app), as the screen lists it while the previous app's own files are in the vault: each item with its id, whether it's done, whether Brainstead checks it itself or the user ticks it, and what it says. moving_over ticks the user's items and retires the previous app's skills.",
-            schema(json!({}), &[])),
+            }), &[])),
         tool("moving_over", "Moving over from another app", Destroy,
-            "Settings › General › Moving over (needs the app). tick and untick tick an item the user ticks by hand (otherSummaries, otherExtensions, otherStopped, as list_moving_over gives them), only once the user says it's done. retire is Retire them: the previous app's skills (.claude/skills/) and scripts (scripts/) go to Brainstead's Trash (restorable from there), the name corrections are kept, and CLAUDE.md tells agents to use these tools; refused, as on the screen, until The other app is stopped is ticked. It says what it removed. Only when the user asks: refused once any call in the session passed unattended: true.",
+            "Settings › General › Moving over (needs the app). list (the default) gives its checklist, as the screen lists it while the previous app's own files are in the vault: each item with its id, whether it's done, whether Brainstead checks it itself or the user ticks it, and what it says. tick and untick tick an item the user ticks by hand (otherSummaries, otherExtensions, otherStopped), only once the user says it's done. retire is Retire them: the previous app's skills (.claude/skills/) and scripts (scripts/) go to Brainstead's Trash (restorable from there), the name corrections are kept, and CLAUDE.md tells agents to use these tools; refused, as on the screen, until The other app is stopped is ticked. It says what it removed. tick, untick and retire only when the user asks, and refused once any call in the session passed unattended: true.",
             schema(json!({
-                "action": {"type": "string", "enum": ["tick", "untick", "retire"]},
-                "item": {"type": "string", "description": "For tick and untick: the item's id from list_moving_over (otherStopped)."}
-            }), &["action"])),
-        tool("list_automated_tools", "Tools that start sessions", Read,
-            "The user's own tools that start Claude Code sessions (Settings › Automations), whose sessions the daily summary counts as automated instead of as the user's work (needs the app). It lists them, then as suggestions the folders whose recent sessions were nearly all one prompt and done. Add or remove one with automated_tools.",
-            schema(json!({}), &[])),
-        tool("automated_tools", "Add or remove a tool that starts sessions", Destroy,
-            "Changes the user's list of tools that start Claude Code sessions (Settings › Automations; needs the app): add lists one (a name, and folder_contains and/or first_message_starts_with, the screen's Folder contains and First message starts with), replacing one of the same name; remove takes one off by name. list_automated_tools lists them. Only when the user asks.",
+                "action": {"type": "string", "enum": ["list", "tick", "untick", "retire"], "description": "Default list."},
+                "item": {"type": "string", "description": "For tick and untick: the item's id from list (otherStopped)."}
+            }), &[])),
+        tool("automated_tools", "Tools that start sessions", Destroy,
+            "The user's own tools that start Claude Code sessions (Settings › Automations), whose sessions the daily summary counts as automated instead of as the user's work (needs the app). list (the default) gives them, then as suggestions the folders whose recent sessions were nearly all one prompt and done. add lists one (a name, and folder_contains and/or first_message_starts_with, the screen's Folder contains and First message starts with), replacing one of the same name; remove takes one off by name. Only when the user asks.",
             schema(json!({
-                "action": {"type": "string", "enum": ["add", "remove"]},
-                "name": {"type": "string", "description": "The tool's name."},
+                "action": {"type": "string", "enum": ["list", "add", "remove"], "description": "Default list."},
+                "name": {"type": "string", "description": "For add and remove: the tool's name."},
                 "folder_contains": {"type": "string", "description": "For add: Folder contains, its sessions run in a folder whose path contains this."},
                 "first_message_starts_with": {"type": "string", "description": "For add: First message starts with, the words its sessions' first message starts with (case doesn't matter)."}
-            }), &["action", "name"])),
-        tool("list_task_lists", "Saved task lists", Read,
-            "Tasks' saved lists (needs the app): each one's name, view, context, effort and grouping. list_tasks with list shows one's tasks; save or remove one with task_lists.",
-            schema(json!({}), &[])),
-        tool("task_lists", "Save or remove a task list", Destroy,
-            "Saves or removes one of Tasks' saved lists: a view with its context, effort and grouping, by name (needs the app). save saves one, as Save this list… does (replacing one of the same name); remove takes one off. list_task_lists lists them. Only when the user asks.",
+            }), &[])),
+        tool("task_lists", "Saved task lists", Destroy,
+            "Tasks' saved lists: a view with its context, effort and grouping, by name (needs the app). list (the default) gives each one's name, view, context, effort and grouping; list_tasks with list shows one's tasks. save saves one, as Save this list… does (replacing one of the same name); remove takes one off. Only when the user asks.",
             schema(json!({
-                "action": {"type": "string", "enum": ["save", "remove"]},
-                "name": {"type": "string", "description": "The list's name."},
+                "action": {"type": "string", "enum": ["list", "save", "remove"], "description": "Default list."},
+                "name": {"type": "string", "description": "For save and remove: the list's name."},
                 "view": {"type": "string", "enum": ["next", "followups", "waiting", "deferred", "someday", "done-this-week", "done-last-week"], "description": "For save: one of the Tasks screen's lists, as list_tasks names it (today and all can't be saved). Default next."},
                 "context": {"type": "string", "description": "For save: a context such as @calls; none or left out for any context."},
                 "effort": {"type": "integer", "enum": [15, 30, 60], "description": "For save: only tasks of this many minutes or less; any effort when left out."},
                 "group": {"type": "string", "enum": ["none", "project", "context", "due"], "description": "For save: default none."}
-            }), &["action", "name"])),
-        tool("list_settings", "Brainstead's settings", Read,
-            "Brainstead's settings that settings can change, as the Settings screen shows them (needs the app): each one's key, pane, label and value, and for a choice its choices; a note's Text size, set from a note's top bar, is among them, and so are the Interface size (the whole window, 80 to 150%) and the pane widths (paneWidths: each pane or table column the user dragged, in px by pane key, with every pane's key, what its screen calls it (a column by its heading), its range and whether it's locked) and the two locks on resizing (resizeLocks.panes, Lock pane widths, for the screens' panes and the sidebar; resizeLocks.columns, Lock column widths, for every table's columns); the sidebar as an icon rail, chosen per width as ⌘\\ chooses it (sidebarRail.wide, Icons only on a wide window, off unless chosen; sidebarRail.narrow, Icons only on a narrow window, 1100 px or less, on unless chosen; the one for the width the window is at now says so); the Accent colour (app or system) is listed on Windows alone, which has a system accent to follow. A job that can run scheduled (summaries, weekprep, ingest, meeting, contradictions) on an Ollama model (jobModels.<job>, its own or one it follows) says which model its scheduled runs use instead. The vault, Read-only and the folders left out aren't listed: they're the user's to change, in the app.",
-            schema(json!({}), &[])),
-        tool("settings", "Change a setting", Change,
-            "Changes one of Brainstead's settings by its key from list_settings, as the Settings screen does (needs the app). The value is checked against the setting's kind: true or false, a time HH:MM, a day (mon…sun), a number from its choices, one of the choices list_settings gives by id or name (a model, a voice, a spelling language such as British English, a document theme or colour), a note's Text size (12 to 24), the Interface size (80 to 150, a percentage of the whole window, in steps of 10), a pane's width (paneWidths.<pane> in px, clamped to the pane's range as dragging it is; null puts that pane back, and paneWidths with null every pane; a pane whose type is locked by resizeLocks.panes or resizeLocks.columns is refused until that lock is off, though paneWidths with null still puts every pane back), a resize lock (resizeLocks.panes or resizeLocks.columns, true or false), the sidebar's icon rail for a width (sidebarRail.wide or sidebarRail.narrow, true or false), the Accent colour (app, or system for the Windows accent, followed as it changes), the quick capture shortcut (Control, Alt, Shift or Super, then a key: Control+Alt+Space; it says whether the system registered it), or text; null puts a setting with a default choice back to it (a job's Default model, As macOS, System voice, As the app, Default effort). A job's effort (jobEffort.<job>) is that job's only and never what a new chat starts with; giving the job a model (jobModels.<job>) whose assistant lacks that level (or, for an Ollama model, that the model doesn't name) puts it back to Default, and the reply says so; while a model it only follows (askModel, or jobModels.summaries for weekprep) is on such an assistant, it reads null and comes back with the model. An effort is offered only for an assistant that is installed, and for an Ollama model only the thinking levels it names (list_settings lists them per job). Ollama runs only in Ask and runs started by hand: a scheduled run of a job on an Ollama model, and a run that writes to the vault started with unattended: true (an ingest, including one an accepted weekly suggestion starts, the daily check, a contradictions check, Write Current state, a summary, a meeting note, and Find tasks and projects or the weekly review's preparation, whose suggestions can then be accepted unattended), goes on askModel instead, or claude:sonnet when that is Ollama's too, at the job's effort where that assistant offers it. start_run's find_tasks and weekly_prep write nothing until the user accepts a suggestion, so they keep the job's model. Change only what the user asked for; ⌘Z doesn't undo it.",
+            }), &[])),
+        tool("settings", "Brainstead's settings", Change,
+            "Brainstead's settings, as the Settings screen shows and changes them (needs the app). list (the default without key) gives each one's key, pane, label and value, and for a choice its choices; a note's Text size, set from a note's top bar, is among them, and so are the Interface size (the whole window, 80 to 150%) and the pane widths (paneWidths: each pane or table column the user dragged, in px by pane key, with every pane's key, what its screen calls it (a column by its heading), its range and whether it's locked) and the two locks on resizing (resizeLocks.panes, Lock pane widths, for the screens' panes and the sidebar; resizeLocks.columns, Lock column widths, for every table's columns); the sidebar as an icon rail, chosen per width as ⌘\\ chooses it (sidebarRail.wide, Icons only on a wide window, off unless chosen; sidebarRail.narrow, Icons only on a narrow window, 1100 px or less, on unless chosen; the one for the width the window is at now says so); the Accent colour (app or system) is listed on Windows alone, which has a system accent to follow. A job that can run scheduled (summaries, weekprep, ingest, meeting, contradictions) on an Ollama model (jobModels.<job>, its own or one it follows) says which model its scheduled runs use instead. The vault, Read-only and the folders left out aren't listed: they're the user's to change, in the app. set (the default with key) changes one by its key. The value is checked against the setting's kind: true or false, a time HH:MM, a day (mon…sun), a number from its choices, one of the choices its list gives by id or name (a model, a voice, a spelling language such as British English, a document theme or colour), a note's Text size (12 to 24), the Interface size (80 to 150, a percentage of the whole window, in steps of 10), a pane's width (paneWidths.<pane> in px, clamped to the pane's range as dragging it is; null puts that pane back, and paneWidths with null every pane; a pane whose type is locked by resizeLocks.panes or resizeLocks.columns is refused until that lock is off, though paneWidths with null still puts every pane back), a resize lock (resizeLocks.panes or resizeLocks.columns, true or false), the sidebar's icon rail for a width (sidebarRail.wide or sidebarRail.narrow, true or false), the Accent colour (app, or system for the Windows accent, followed as it changes), the quick capture shortcut (Control, Alt, Shift or Super, then a key: Control+Alt+Space; it says whether the system registered it), or text; null puts a setting with a default choice back to it (a job's Default model, As macOS, System voice, As the app, Default effort). A job's effort (jobEffort.<job>) is that job's only and never what a new chat starts with; giving the job a model (jobModels.<job>) whose assistant lacks that level (or, for an Ollama model, that the model doesn't name) puts it back to Default, and the reply says so; while a model it only follows (askModel, or jobModels.summaries for weekprep) is on such an assistant, it reads null and comes back with the model. An effort is offered only for an assistant that is installed, and for an Ollama model only the thinking levels it names (its list gives them per job). Ollama runs only in Ask and runs started by hand: a scheduled run of a job on an Ollama model, and a run that writes to the vault started with unattended: true (an ingest, including one an accepted weekly suggestion starts, the daily check, a contradictions check, Write Current state, a summary, a meeting note, and Find tasks and projects or the weekly review's preparation, whose suggestions can then be accepted unattended), goes on askModel instead, or claude:sonnet when that is Ollama's too, at the job's effort where that assistant offers it. start_run's find_tasks and weekly_prep write nothing until the user accepts a suggestion, so they keep the job's model. Change only what the user asked for; ⌘Z doesn't undo it.",
             schema(json!({
-                "key": {"type": "string", "description": "The setting's key from list_settings."},
-                "value": {"type": ["boolean", "number", "string", "null"], "description": "The new value, of the kind list_settings shows: true or false, a number, a time HH:MM, a day, one of its choices, or text; null for its default choice."}
-            }), &["key", "value"])),
-        tool("list_note_looks", "Notes' own looks", Read,
-            "A note's own look, as its Look button shows it (needs the app): with page, that note's theme and colour and whether they're its own or the defaults; without, the notes with a look of their own, as Settings › Notes › Notes with their own look counts them, and the defaults. A note's own look is kept in Brainstead's settings by the note's path, never in the note. note_look changes it.",
-            schema(json!({"page": page}), &[])),
-        tool("note_look", "Change a note's look", Change,
-            "Changes a note's own look, as the note's Look button does (needs the app), in Brainstead's settings, not the note: set gives the note at page its own theme or colour (or both; a choice that matches the default isn't kept), use_defaults is its Use the defaults, and use_defaults_for_all is Settings › Notes' Use the defaults for all, every note's own look dropped. ⌘Z doesn't undo it. list_note_looks reads them; the defaults themselves are settings docStyle and docAccent. Only when the user asks.",
+                "action": {"type": "string", "enum": ["list", "set"], "description": "Default list, or set when key is given."},
+                "key": {"type": "string", "description": "For set: the setting's key from list."},
+                "value": {"type": ["boolean", "number", "string", "null"], "description": "For set: the new value, of the kind list shows: true or false, a number, a time HH:MM, a day, one of its choices, or text; null for its default choice."}
+            }), &[])),
+        tool("note_look", "Notes' own looks", Change,
+            "A note's own look, as its Look button shows and changes it (needs the app), kept in Brainstead's settings by the note's path, never in the note. list (the default) gives, with page, that note's theme and colour and whether they're its own or the defaults; without, the notes with a look of their own, as Settings › Notes › Notes with their own look counts them, and the defaults. set gives the note at page its own theme or colour (or both; a choice that matches the default isn't kept), use_defaults is its Use the defaults, and use_defaults_for_all is Settings › Notes' Use the defaults for all, every note's own look dropped. ⌘Z doesn't undo it. the defaults themselves are settings docStyle and docAccent. Only when the user asks.",
             schema(json!({
-                "action": {"type": "string", "enum": ["set", "use_defaults", "use_defaults_for_all"]},
+                "action": {"type": "string", "enum": ["list", "set", "use_defaults", "use_defaults_for_all"], "description": "Default list."},
                 "page": page,
                 "theme": {"type": "string", "description": "For set: the Look menu's Theme, by id or name: brainstead (Brainstead), business, editorial, modern, minimal, report or technical."},
                 "colour": {"type": "string", "description": "For set: the Look menu's Colour, by id or name: brainstead (Brainstead blue), blue (Dark blue), lightblue (Light blue), green, orange, yellow, red, gray or darkgray (Dark gray)."}
-            }), &["action"])),
+            }), &[])),
         tool("import_sources", "Add files to Sources", Change,
             "Copies files from the Mac into sources/, as Sources' Import does (needs the app): PDFs, Office files, images, notes and the rest, up to 200 MB each. New sources are then ingested as they arrive when the user has that on (Settings › AI assistants). Only files the user named.",
             schema(json!({"paths": {"type": "array", "items": {"type": "string"}, "description": "Absolute paths of the files to add."}}), &["paths"])),
@@ -1014,22 +967,22 @@ const PAGED: [&str; 21] = [
     "backlinks",
     "list_inbox",
     "list_projects",
-    "list_trash",
-    "list_bookmarks",
-    "list_saved_searches",
-    "list_changes",
-    "list_chats",
+    "trash",
+    "bookmarks",
+    "saved_searches",
+    "changes",
+    "chats",
     "list_transcripts",
-    "list_contradictions",
+    "contradictions",
     "page_shape",
     "activity",
     "sync_activity",
     "graph",
-    "list_suggestions",
-    "list_automated_tools",
-    "list_task_lists",
-    "list_settings",
-    "list_note_looks",
+    "suggestions",
+    "automated_tools",
+    "task_lists",
+    "settings",
+    "note_look",
 ];
 
 /// Tools that change something but do the same the second time: setting a value, stopping a run.
@@ -1052,24 +1005,11 @@ fn page_schema(item: Value) -> Value {
 }
 
 /// The listing tools' structuredContent, by tool. A tool with a schema here gives its rows as data
-/// as well as text, every time it succeeds.
+/// as well as text, every time it succeeds. A tool that lists and changes (trash, changes, chats,
+/// bookmarks…) has none, since only its list gives data, though that list still does.
 fn outputs() -> std::collections::HashMap<&'static str, Value> {
     let s = |t: &str| json!({"type": t});
     let sn = || json!({"type": ["string", "null"]});
-    let change = json!({"id": s("string"), "title": s("string"), "page": s("string"), "kind": s("string"), "status": s("string"), "flags": {"type": "array", "items": s("string")}, "origin": s("string"), "group": s("string"), "reason": s("string"), "created": s("string")});
-    let mut changes = json!({"type": "object", "properties": {
-        "held": page_schema(change.clone()),
-        "made": page_schema(change),
-        "log": page_schema(json!({"date": s("string"), "time": sn(), "action": s("string"), "title": s("string"), "description": s("string")})),
-        "change": {"type": "object", "description": "show: the change, with its diff and quotes."},
-        "history": {"type": "object", "properties": {"days": s("integer"), "mb": s("integer")}}
-    }});
-    changes["description"] = json!("list gives held, made and log: one page of the list (held first, then made and log.md's other lines, newest first), split in three, each with its own total and matching and the same offset and next_offset; show gives change; history gives history.");
-    let mut chats = page_schema(
-        json!({"file": s("string"), "title": s("string"), "updated": s("string"), "saved": s("boolean"), "pinned": s("boolean")}),
-    );
-    chats["properties"]["chat"] = json!({"type": "object", "description": "read: the chat's title and messages."});
-    chats["required"] = json!([]);
     std::collections::HashMap::from([
         (
             "search",
@@ -1095,15 +1035,6 @@ fn outputs() -> std::collections::HashMap<&'static str, Value> {
                 json!({"name": s("string"), "path": s("string"), "status": s("string"), "area": sn(), "done_looks_like": sn(), "flag": {"type": ["string", "null"], "enum": ["stuck", "quiet", null], "description": "The Projects screen's flag on an active project: stuck (Stuck, no next action) or quiet (Quiet, nothing has happened for two weeks)."}, "next": s("integer"), "waiting": s("integer"), "someday": s("integer"), "done": s("integer")}),
             ),
         ),
-        ("list_trash", {
-            let mut t = page_schema(
-                json!({"id": s("string"), "path": s("string"), "layer": s("string"), "deleted": s("string"), "bytes": s("integer")}),
-            );
-            t["properties"]["bytes"] = json!({"type": "integer", "description": "Everything in the Trash, in bytes."});
-            t["properties"]["size"] = json!({"type": "string", "description": "The same, as the Trash screen says it."});
-            t
-        }),
-        ("list_changes", changes),
         (
             "activity",
             page_schema(
@@ -1114,13 +1045,6 @@ fn outputs() -> std::collections::HashMap<&'static str, Value> {
             "sync_activity",
             page_schema(
                 json!({"at": s("string"), "kind": s("string"), "status": s("string"), "services": {"type": "array", "items": s("string")}, "title": s("string"), "files": {"type": "object", "description": "The files it names, by what they are (New from Teams, Topped up from Outlook, Source, Changed).", "additionalProperties": {"type": "array", "items": s("string")}}, "detail": {"type": "array", "items": s("string")}}),
-            ),
-        ),
-        ("list_chats", chats),
-        (
-            "list_bookmarks",
-            page_schema(
-                json!({"title": s("string"), "target": s("string"), "path": sn(), "days": {"type": ["integer", "null"], "description": "Days since its note changed."}, "stale": s("boolean")}),
             ),
         ),
         (
@@ -1143,7 +1067,8 @@ fn paging(props: &mut Value) {
     let Some(p) = props.as_object_mut() else { return };
     p.insert("limit".into(), json!({"type": "integer", "minimum": 1, "maximum": 500, "description": "For a list: how many to give (each tool has its own default, said in its reply)."}));
     p.insert("offset".into(), json!({"type": "integer", "minimum": 0, "description": "For a list: how many to skip, for the next page; the reply says which offset comes next."}));
-    p.insert("query".into(), json!({"type": "string", "description": "For a list: only the rows with all of these words."}));
+    // A tool whose other actions take a query too says what it is for each.
+    p.entry("query").or_insert_with(|| json!({"type": "string", "description": "For a list: only the rows with all of these words."}));
 }
 
 /// Rows a page at a time, as the app's listing tools give them (src/mcpActions.ts's pagedRows).
@@ -1222,7 +1147,8 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         serde_json::from_value(v)
             .map_err(|e| CallError::Tool(format!("Those arguments don't fit: {e}. The tool's inputSchema says what it takes.")))
     }
-    if !tools().iter().any(|t| t["name"] == name) {
+    let alias = brainstead_core::ask::MCP_ALIASES.contains(&name);
+    if !alias && !tools().iter().any(|t| t["name"] == name) {
         return Err(CallError::Unknown(format!("Unknown tool: {name}")));
     }
     ctx.follow_vault();
@@ -1251,6 +1177,9 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
     if unwatched {
         obj["unattended"] = json!(true);
     }
+    // A merged tool's action goes to the tool that did it before they were merged, which stays
+    // callable under its old name (D-20261127-16).
+    let (name, mut obj) = if alias { (name, obj) } else { route(name, obj)? };
     let act = |action: &str, a: Value| -> Result<Out, CallError> { Ok(act(ctx, action, a)?) };
     // The app records these in Changes as this session's (D-20261005-10).
     if [
@@ -1331,8 +1260,8 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         "update_project" => act("project.update", obj),
         "rename_area" => act("project.rename_area", obj),
         "move_project" => act("project.move", obj),
-        // The read tools and the change tools beside them share the app's action, each held to its
-        // own actions, so a read tool never changes anything.
+        // The tools a merged tool routes to (route), which share the app's action, each held to
+        // its own actions, so a list never changes anything.
         "list_trash" => act("trash", acting(obj, name, &["list"], "list", &[])?),
         "restore_from_trash" => act("trash", acting(obj, name, &["restore"], "restore", &[])?),
         "list_bookmarks" => act("bookmarks", without(obj, &["page", "keep", "remove"])),
@@ -1340,7 +1269,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
             let given = |k: &str| obj.get(k).and_then(Value::as_str).is_some_and(|v| !v.trim().is_empty());
             if !given("page") && !given("keep") && !given("remove") {
                 return Err(CallError::Tool(
-                    "Give page (to bookmark or unbookmark a note), keep or remove. list_bookmarks lists them.".into(),
+                    "Give page (to bookmark or unbookmark a note), keep or remove; bookmarks with no arguments lists them.".into(),
                 ));
             }
             act("bookmarks", obj)
@@ -1351,7 +1280,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
             let deleting = obj.get("delete").and_then(Value::as_bool) == Some(true);
             if !deleting && obj.get("query").and_then(Value::as_str).is_none_or(|q| q.trim().is_empty()) {
                 return Err(CallError::Tool(
-                    "Give query to save the search, or delete: true to delete it. list_saved_searches lists them.".into(),
+                    "Give query to save the search, or delete: true to delete it; saved_searches with no name lists them.".into(),
                 ));
             }
             act("saved_searches", obj)
@@ -1366,7 +1295,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
             }
             if action == "history" && obj.get("days").is_none() && obj.get("mb").is_none() {
                 return Err(CallError::Tool(
-                    "Give days or mb to set how long Changes keeps its history; list_changes history reads it.".into(),
+                    "Give days or mb to set how long Changes keeps its history; history without them reads it.".into(),
                 ));
             }
             act(
@@ -1420,7 +1349,7 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         "fix_name" => act("fix_name", obj),
         "triage_bookmarks" => {
             if obj.get("items").and_then(Value::as_array).is_none_or(|a| a.is_empty()) {
-                return Err(CallError::Tool("Give items: the bookmarks to ask about, from list_bookmarks.".into()));
+                return Err(CallError::Tool("Give items: the bookmarks to ask about, from bookmarks.".into()));
             }
             act("triage.suggest", obj)
         }
@@ -1461,6 +1390,92 @@ fn call(ctx: &Ctx, name: &str, args: Value) -> Result<Out, CallError> {
         "suggestions" => act("suggestions", acting(obj, name, &["accept", "skip"], "", &[])?),
         _ => Err(CallError::Unknown(format!("Unknown tool: {name}"))),
     }
+}
+
+/// The tools that list something and change it, merged into one with an action (D-20261127-16):
+/// the tool each action was before, now a hidden alias (`ask::MCP_ALIASES`), and its arguments for
+/// that tool. Every other tool is itself.
+fn route(name: &str, mut obj: Value) -> Result<(&str, Value), CallError> {
+    let given = |o: &Value, k: &str| match o.get(k) {
+        Some(Value::String(v)) => !v.trim().is_empty(),
+        Some(Value::Null) | None => false,
+        Some(_) => true,
+    };
+    let action = obj.get("action").and_then(Value::as_str).unwrap_or("").to_string();
+    let has = |o: &Value, ks: &[&str]| ks.iter().any(|k| given(o, k));
+    // The action when none is given, and which tool each one is.
+    let (default, table): (&str, &[(&str, &'static str)]) = match name {
+        "trash" => ("list", &[("list", "list_trash"), ("add", "trash_note"), ("restore", "restore_from_trash")]),
+        "bookmarks" => (if has(&obj, &["page", "remove", "keep"]) { "" } else { "list" }, &[("list", "list_bookmarks"), ("", "bookmarks")]),
+        "saved_searches" => (
+            if given(&obj, "name") {
+                if obj.get("delete").and_then(Value::as_bool) == Some(true) {
+                    "delete"
+                } else {
+                    "save"
+                }
+            } else {
+                "list"
+            },
+            &[("list", "list_saved_searches"), ("save", "saved_searches"), ("delete", "saved_searches")],
+        ),
+        "changes" => (
+            "list",
+            &[
+                ("list", "list_changes"),
+                ("show", "list_changes"),
+                ("history", if has(&obj, &["days", "mb"]) { "changes" } else { "list_changes" }),
+                ("accept", "changes"),
+                ("reject", "changes"),
+                ("accept_run", "changes"),
+                ("reject_run", "changes"),
+                ("revert", "changes"),
+                ("revert_run", "changes"),
+            ],
+        ),
+        "chats" => (
+            "list",
+            &[
+                ("list", "list_chats"),
+                ("read", "list_chats"),
+                ("rename", "chats"),
+                ("pin", "chats"),
+                ("unpin", "chats"),
+                ("trash", "chats"),
+                ("effort", "chat_effort"),
+            ],
+        ),
+        "contradictions" => ("list", &[("list", "list_contradictions"), ("mark", "contradictions"), ("save", "contradictions")]),
+        "suggestions" => ("list", &[("list", "list_suggestions"), ("accept", "suggestions"), ("skip", "suggestions")]),
+        "moving_over" => {
+            ("list", &[("list", "list_moving_over"), ("tick", "moving_over"), ("untick", "moving_over"), ("retire", "moving_over")])
+        }
+        "automated_tools" => ("list", &[("list", "list_automated_tools"), ("add", "automated_tools"), ("remove", "automated_tools")]),
+        "task_lists" => ("list", &[("list", "list_task_lists"), ("save", "task_lists"), ("remove", "task_lists")]),
+        "settings" => (if given(&obj, "key") { "set" } else { "list" }, &[("list", "list_settings"), ("set", "settings")]),
+        "note_look" => (
+            "list",
+            &[("list", "list_note_looks"), ("set", "note_look"), ("use_defaults", "note_look"), ("use_defaults_for_all", "note_look")],
+        ),
+        _ => return Ok((name, obj)),
+    };
+    let action = if action.is_empty() { default.to_string() } else { action };
+    let Some((_, to)) = table.iter().find(|(a, _)| *a == action) else {
+        let list: Vec<&str> = table.iter().map(|(a, _)| *a).filter(|a| !a.is_empty()).collect();
+        return Err(CallError::Tool(format!("{name}'s action is one of {}, not {action}.", list.join(", "))));
+    };
+    // The old tools' own forms: their action named as they named it, or none where they had none.
+    match (name, action.as_str()) {
+        ("trash", "add") | ("bookmarks", _) => obj = without(obj, &["action"]),
+        ("saved_searches", "delete") => {
+            obj = without(obj, &["action"]);
+            obj["delete"] = json!(true);
+        }
+        ("saved_searches", _) => obj = without(obj, &["action"]),
+        ("settings", "list") => obj["action"] = json!("get"),
+        _ => obj["action"] = json!(action),
+    }
+    Ok((to, obj))
 }
 
 /// Holds a tool to its own actions in the app's shared one: `action` must be one of `allowed`

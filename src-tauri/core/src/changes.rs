@@ -398,8 +398,8 @@ impl Change {
 pub const BY_USER: &str = "user";
 
 /// A move to the Trash already made from a screen (`screen`: "Inbox", "File menu"), not through a
-/// change, recorded as applied so Changes, and an assistant reading list_changes, can see what
-/// became of the file. Revert restores its Trash entry (`entry`), as a trash_note change's does.
+/// change, recorded as applied so Changes, and an assistant reading the changes tool's list, can see what
+/// became of the file. Revert restores its Trash entry (`entry`), as a trash tool change's does.
 pub fn trashed_from_screen(page: &str, entry: &str, screen: &str) -> Change {
     let screen = screen.trim();
     let label = if screen.is_empty() { "Brainstead" } else { screen };
@@ -413,7 +413,7 @@ pub fn trashed_from_screen(page: &str, entry: &str, screen: &str) -> Change {
 }
 
 /// The applied moves to the Trash whose entry (`entry`) has just been put back another way (the
-/// Trash screen, a toast's Undo, restore_from_trash), marked reverted: their Revert has nothing
+/// Trash screen, a toast's Undo, the trash tool's restore), marked reverted: their Revert has nothing
 /// left to restore.
 pub fn restored_another_way(list: Vec<Change>, entry: &str) -> Vec<Change> {
     list.into_iter()
