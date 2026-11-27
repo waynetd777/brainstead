@@ -9,6 +9,8 @@
 //! A held change keeps the agent's instruction (replace a section, find and replace, add a task,
 //! the new page's text, a rename, a move to the Trash or back), not a copy of the page: accepting runs it
 //! on the page as it is then, so it never goes stale; it fails only when its target is gone. An
+//! ingest's find-and-replace that only touches the properties is made as property changes on the
+//! properties the page has then ([`rebased`]), since every later ingest rewrites `updated:`. An
 //! applied change keeps the page's text before and after, compressed, each text stored once by its
 //! hash in `changes/text/`, for the feed's diff and for Revert.
 
@@ -88,8 +90,12 @@ impl Instruction {
         match self {
             Instruction::Page { content } => Ok(content.replace("\r\n", "\n")),
             Instruction::Section { section, content } => crate::pageshape::with_section(page, have()?, section, content),
-            Instruction::Replace { edits } => proposals::patched(have()?, &proposals::Patch::Replace { edits: edits.clone() })
-                .map_err(|e| e.replace("isn't in the page", "isn't on the page any more")),
+            Instruction::Replace { edits } => {
+                let text = have()?;
+                proposals::patched(text, &proposals::Patch::Replace { edits: edits.clone() })
+                    .or_else(|e| rebased(text, edits).ok_or(e))
+                    .map_err(|e| e.replace("isn't in the page", "isn't on the page any more"))
+            }
             Instruction::AddTask { line, heading } => {
                 let text = have()?;
                 let (mut lines, eol, trailing) = split_lines(text);
@@ -876,6 +882,214 @@ pub fn migrate(data_dir: &Path, vault: &Path, today: chrono::NaiveDate, days: i6
     Ok(n)
 }
 
+// ── Properties on a page that has moved on ─────────────────────────────────────────────────────
+//
+// An ingest's change is kept as find-and-replace pairs worked out from the page as it was, and one
+// of them nearly always rewrites the properties: `updated:` and the `sources:` list. On a busy page
+// the next ingest rewrites those too, so the pair no longer finds its text and the change, held for
+// the user, could never be accepted. Such a pair says what it does to the properties, not where:
+// it's turned into that (a property set, items added to a list) and made on the page as it is now.
+// The body's pairs must still be found as they were: a change to text that has moved on isn't
+// guessed at.
+
+/// The page with `edits` made, those that only touch the properties made as property changes on
+/// the properties it has now. None when a body edit isn't found, or a properties one can't be read.
+fn rebased(text: &str, edits: &[Edit]) -> Option<String> {
+    let text = text.replace("\r\n", "\n");
+    let (props, body): (Vec<&Edit>, Vec<&Edit>) = edits.iter().partition(|e| properties_only(&e.find) && properties_only(&e.replace));
+    if props.is_empty() {
+        return None;
+    }
+    let mut t = if body.is_empty() {
+        text
+    } else {
+        proposals::patched(&text, &proposals::Patch::Replace { edits: body.into_iter().cloned().collect() }).ok()?
+    };
+    for e in props {
+        t = with_property_edit(&t, &e.find.replace("\r\n", "\n"), &e.replace.replace("\r\n", "\n"))?;
+    }
+    Some(t)
+}
+
+/// Whether every line of `s` reads as part of a page's properties (`---`, `key: value`, a list
+/// item), with at least one `---` or `key:` among them: a run of list items alone may be the body's.
+fn properties_only(s: &str) -> bool {
+    let lines: Vec<&str> = s.split('\n').filter(|l| !l.trim().is_empty()).collect();
+    !lines.is_empty()
+        && lines.iter().all(|l| matches!(prop_line(l), PropLine::Fence | PropLine::Key(..) | PropLine::Item(_)))
+        && lines.iter().any(|l| matches!(prop_line(l), PropLine::Fence | PropLine::Key(..)))
+}
+
+enum PropLine<'a> {
+    Fence,
+    /// `key: value` (the value as written, maybe empty).
+    Key(&'a str, &'a str),
+    /// `- value`, maybe indented (the value as written).
+    Item(&'a str),
+    Other,
+}
+
+fn prop_line(l: &str) -> PropLine<'_> {
+    let t = l.trim_end();
+    if t == "---" || t == "..." {
+        return PropLine::Fence;
+    }
+    if let Some(v) = t.trim_start().strip_prefix("- ").or_else(|| (t.trim_start() == "-").then_some("")) {
+        return PropLine::Item(v.trim());
+    }
+    if !t.starts_with([' ', '\t']) {
+        if let Some((k, v)) = t.split_once(':') {
+            if !k.is_empty() && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
+                return PropLine::Key(k, v.trim());
+            }
+        }
+    }
+    PropLine::Other
+}
+
+/// A property's value as YAML reads it: a string, or a list's strings.
+fn yaml_value(v: &str) -> Value {
+    match serde_yaml_ng::from_str::<serde_json::Value>(&format!("k: {v}")).ok().and_then(|y| y.get("k").cloned()) {
+        Some(serde_json::Value::Array(a)) => Value::List(a.iter().map(as_text).collect()),
+        Some(serde_json::Value::Null) | None => Value::One(v.to_string()),
+        Some(x) => Value::One(as_text(&x)),
+    }
+}
+
+fn as_text(v: &serde_json::Value) -> String {
+    v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum Value {
+    One(String),
+    List(Vec<String>),
+}
+
+/// The properties a snippet of them says, by key, in order; list items before any key (the snippet
+/// starts inside a list) under "".
+fn snippet_props(s: &str) -> Vec<(String, Value)> {
+    let mut out: Vec<(String, Value)> = Vec::new();
+    for l in s.split('\n') {
+        match prop_line(l) {
+            PropLine::Key(k, "") => out.push((k.to_string(), Value::List(Vec::new()))),
+            PropLine::Key(k, v) => out.push((k.to_string(), yaml_value(v))),
+            PropLine::Item(v) => {
+                let item = match yaml_value(v) {
+                    Value::One(x) => x,
+                    Value::List(_) => v.to_string(),
+                };
+                match out.last_mut() {
+                    Some((_, Value::List(items))) => items.push(item),
+                    _ => out.push((String::new(), Value::List(vec![item]))),
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The page with what `find` → `replace` does to the properties made on the properties it has now.
+fn with_property_edit(text: &str, find: &str, replace: &str) -> Option<String> {
+    let old = snippet_props(find);
+    let new = snippet_props(replace);
+    let page = page_props(text)?;
+    let mut t = text.to_string();
+    for (key, value) in &new {
+        let before = old.iter().find(|(k, _)| k == key).map(|(_, v)| v);
+        let key = if key.is_empty() {
+            // Items at the snippet's top: the list on the page that holds the ones around them.
+            let around: Vec<&String> = match before {
+                Some(Value::List(items)) => items.iter().collect(),
+                _ => Vec::new(),
+            };
+            page.iter().find(|(_, v)| matches!(v, Value::List(items) if around.iter().any(|a| items.contains(a))))?.0.clone()
+        } else {
+            key.clone()
+        };
+        let now = page.iter().find(|(k, _)| *k == key).map(|(_, v)| v);
+        match value {
+            Value::One(v) => {
+                if before == Some(value) {
+                    continue;
+                }
+                // The later of two dates: the page may have been updated since, by another change.
+                if key == "updated" && matches!(now, Some(Value::One(n)) if n.as_str() > v.as_str()) {
+                    continue;
+                }
+                t = crate::write::with_property(&t, &key, Some(v)).ok()?;
+            }
+            Value::List(items) => {
+                let had: &[String] = match before {
+                    Some(Value::List(b)) => b,
+                    _ => &[],
+                };
+                let have: &[String] = match now {
+                    Some(Value::List(n)) => n,
+                    _ => &[],
+                };
+                let add: Vec<&String> = items.iter().filter(|i| !had.contains(i) && !have.contains(i)).collect();
+                if add.is_empty() {
+                    continue;
+                }
+                t = with_list_items(&t, &key, &add)?;
+            }
+        }
+    }
+    Some(t)
+}
+
+/// The properties at the top of the page, by key; None when it has none, or they aren't closed.
+fn page_props(text: &str) -> Option<Vec<(String, Value)>> {
+    let (start, end) = fences(text)?;
+    let lines: Vec<&str> = text.split('\n').collect();
+    Some(snippet_props(&lines[start + 1..end].join("\n")))
+}
+
+/// Where the properties' opening and closing `---` are, by line.
+fn fences(text: &str) -> Option<(usize, usize)> {
+    let lines: Vec<&str> = text.split('\n').collect();
+    if lines.first()?.trim_end() != "---" {
+        return None;
+    }
+    let end = (1..lines.len()).find(|&i| matches!(lines[i].trim_end(), "---" | "..."))?;
+    Some((0, end))
+}
+
+/// The page with `add` put at the end of the list property `key`, in the style the page writes it
+/// (`key: [a, b]` on one line, or `- a` lines under `key:`); the list is started when there's none.
+fn with_list_items(text: &str, key: &str, add: &[&String]) -> Option<String> {
+    let (_, end) = fences(text)?;
+    let mut lines: Vec<String> = text.split('\n').map(str::to_string).collect();
+    let quoted = |s: &str| serde_json::to_string(s).unwrap_or_else(|_| format!("\"{s}\""));
+    let at = (1..end).find(|&i| matches!(prop_line(&lines[i]), PropLine::Key(k, _) if k == key));
+    match at {
+        Some(i) => {
+            let PropLine::Key(_, v) = prop_line(&lines[i]) else { return None };
+            if v.starts_with('[') {
+                let Value::List(mut items) = yaml_value(v) else { return None };
+                items.extend(add.iter().map(|s| s.to_string()));
+                lines[i] = format!("{key}: [{}]", items.iter().map(|s| quoted(s)).collect::<Vec<_>>().join(", "));
+            } else if v.is_empty() {
+                let last = (i + 1..end).take_while(|&j| matches!(prop_line(&lines[j]), PropLine::Item(_))).last().unwrap_or(i);
+                let indent = if last > i { lines[last][..lines[last].find('-').unwrap_or(0)].to_string() } else { "  ".to_string() };
+                for (n, s) in add.iter().enumerate() {
+                    lines.insert(last + 1 + n, format!("{indent}- {}", quoted(s)));
+                }
+            } else {
+                // One value, not a list: made a list holding it and the new ones.
+                let Value::One(one) = yaml_value(v) else { return None };
+                let mut items = vec![one];
+                items.extend(add.iter().map(|s| s.to_string()));
+                lines[i] = format!("{key}: [{}]", items.iter().map(|s| quoted(s)).collect::<Vec<_>>().join(", "));
+            }
+        }
+        None => lines.insert(end, format!("{key}: [{}]", add.iter().map(|s| quoted(s)).collect::<Vec<_>>().join(", "))),
+    }
+    Some(lines.join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1260,5 +1474,35 @@ mod tests {
         assert_eq!(st.text(a.after.as_deref().unwrap()).unwrap(), after);
         assert!(data.join("proposals-backup").is_dir() && !data.join("proposals").exists());
         assert_eq!(migrate(&data, &vault, today, 90).unwrap(), 0);
+    }
+
+    #[test]
+    fn an_ingest_change_held_while_the_page_moved_on_still_applies_its_properties_to_the_page_as_it_is() {
+        let held = "---\ntype: entity\nupdated: 2026-11-23\nsources: [\"[[A]]\"]\n---\n# Maya\n\n## Timeline\n- one\n";
+        let after = "---\ntype: entity\nupdated: 2026-11-26\nsources: [\"[[A]]\", \"[[B]]\"]\n---\n# Maya\n\n## Timeline\n- one\n- two\n";
+        let ins = from_texts(Some(held), after);
+        // Since then another ingest updated the page and cited C.
+        let now = "---\ntype: entity\nupdated: 2026-11-25\nsources: [\"[[A]]\", \"[[C]]\"]\n---\n# Maya\n\n## Timeline\n- uno\n";
+        // The body's own text has moved too, so this one stays refused...
+        assert!(ins.text("wiki/entities/Maya.md", Some(now)).is_err());
+        // ...but where the body is as it was, the properties are made on the page as it is now.
+        let now = "---\ntype: entity\nupdated: 2026-11-25\nsources: [\"[[A]]\", \"[[C]]\"]\n---\n# Maya\n\n## Timeline\n- one\n";
+        let got = ins.text("wiki/entities/Maya.md", Some(now)).unwrap();
+        assert_eq!(got, "---\ntype: entity\nupdated: 2026-11-26\nsources: [\"[[A]]\", \"[[C]]\", \"[[B]]\"]\n---\n# Maya\n\n## Timeline\n- one\n- two\n");
+    }
+
+    #[test]
+    fn properties_rebased_keep_the_pages_list_style_and_the_later_date() {
+        let find = "updated: 2026-11-23\nsources:\n  - \"[[A]]\"\n---";
+        let replace = "updated: 2026-11-24\nsources:\n  - \"[[A]]\"\n  - \"[[B]]\"\n---";
+        let now = "---\nupdated: 2026-11-27\nsources:\n  - \"[[A]]\"\n  - \"[[C]]\"\n---\nBody\n";
+        let got = with_property_edit(now, find, replace).unwrap();
+        assert_eq!(got, "---\nupdated: 2026-11-27\nsources:\n  - \"[[A]]\"\n  - \"[[C]]\"\n  - \"[[B]]\"\n---\nBody\n");
+        // A snippet that starts inside the list finds the list by the items around it.
+        let got = with_property_edit(now, "  - \"[[A]]\"\n---", "  - \"[[A]]\"\n  - \"[[D]]\"\n---").unwrap();
+        assert!(got.contains("  - \"[[D]]\"\n---"), "{got}");
+        // Body lines are never taken for properties.
+        assert!(!properties_only("- **2026-11-26** — met"));
+        assert!(properties_only("updated: 2026-11-23\n---"));
     }
 }
