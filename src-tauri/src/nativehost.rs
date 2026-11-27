@@ -442,6 +442,20 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Refreshes the stable folder Chrome loads the extensions from (Load unpacked) from this build's
+/// copy, and says where it is. Run when the app starts as well as when Settings › Capture extensions
+/// opens: Chrome's reload button reloads that folder, so a copy left from an older build kept the
+/// old extension however often it was reloaded.
+pub fn refresh_folder(app: &tauri::AppHandle) -> Option<String> {
+    let to = platform::data_dir().join("extensions");
+    let from = shipped(app)?;
+    ["outlook-capture", "teams-capture", "slack-capture"]
+        .iter()
+        .try_for_each(|d| copy_dir(&from.join(d), &to.join(d)))
+        .ok()
+        .map(|_| to.to_string_lossy().into_owned())
+}
+
 /// What Settings › Capture extensions shows.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -460,15 +474,7 @@ pub struct CaptureStatus {
 pub async fn capture_status(app: tauri::AppHandle) -> Result<CaptureStatus, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let data = platform::data_dir();
-        // A stable folder for Load unpacked, refreshed from this build's copy.
-        let folder = shipped(&app).and_then(|from| {
-            let to = data.join("extensions");
-            ["outlook-capture", "teams-capture", "slack-capture"]
-                .iter()
-                .try_for_each(|d| copy_dir(&from.join(d), &to.join(d)))
-                .ok()
-                .map(|_| to.to_string_lossy().into_owned())
-        });
+        let folder = refresh_folder(&app);
         let mut recent = recent(&data);
         recent.truncate(10);
         let versions = ["outlook-capture", "teams-capture", "slack-capture"]

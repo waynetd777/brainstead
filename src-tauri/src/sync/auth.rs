@@ -164,7 +164,7 @@ fn issued(jwt: &str) -> Option<i64> {
 
 /// What the earlier sign-in had turned down for `svc` (the shared rule: [`refusal`]).
 fn refused_of(old: Option<&SignIn>, svc: Service) -> Refused<'_> {
-    old.map(|o| Refused::of(&o.rejected, &o.rejected_at, svc.key())).unwrap_or_default()
+    old.map(|o| Refused::of(&o.rejected, &o.rejected_at, svc.key(), now_secs())).unwrap_or_default()
 }
 
 /// Reads the sign-in from the Keychain.
@@ -360,7 +360,7 @@ pub fn reject(svc: Service) {
 /// dead token again stays rejected (and the token is dropped); one handed a new token is cleared.
 pub fn keep_rejected(mut new: SignIn, old: Option<&SignIn>) -> SignIn {
     let (rejected, at) = old.map(|o| (o.rejected.clone(), o.rejected_at.clone())).unwrap_or_default();
-    let (still, still_at) = refusal::still(&rejected, &at, |k| new.tokens.get(k).map(|t| (t.token.as_str(), issued(&t.token))));
+    let (still, still_at) = refusal::still(&rejected, &at, now_secs(), |k| new.tokens.get(k).map(|t| (t.token.as_str(), issued(&t.token))));
     for k in still.keys() {
         new.tokens.remove(k);
     }
@@ -528,6 +528,7 @@ mod tests {
         let mut old = first;
         let t = old.tokens.remove(Service::Outlook.key()).unwrap();
         old.rejected.insert(Service::Outlook.key().into(), fingerprint(&t.token));
+        old.rejected_at.insert(Service::Outlook.key().into(), now_secs());
         // The next handover takes the renewed one and clears the refusal.
         let next = keep_rejected(with_mail_handover(Some(old.clone()), &tab).unwrap(), Some(&old));
         assert_eq!(next.tokens[Service::Outlook.key()].token, renewed);
@@ -544,6 +545,7 @@ mod tests {
         ]});
         let mut was = SignIn::default();
         was.rejected.insert(Service::Spaces.key().to_string(), fingerprint(&dead));
+        was.rejected_at.insert(Service::Spaces.key().to_string(), now_secs());
         let s = from_handover_avoiding(&teams, Some(&was)).unwrap();
         assert_eq!(s.tokens[Service::Spaces.key()].token, live);
     }
@@ -591,6 +593,7 @@ mod tests {
         // As reject() does on a 401.
         let t = old.tokens.remove(Service::Spaces.key()).unwrap();
         old.rejected.insert(Service::Spaces.key().into(), fingerprint(&t.token));
+        old.rejected_at.insert(Service::Spaces.key().into(), now_secs());
         // The same dead token handed over again stays out.
         let again = keep_rejected(from_handover(&handover(&dead)).unwrap(), Some(&old));
         assert!(!again.tokens.contains_key(Service::Spaces.key()));

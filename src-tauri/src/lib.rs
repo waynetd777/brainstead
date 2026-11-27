@@ -1169,6 +1169,9 @@ pub fn run() {
             let dev_host = std::env::var("BRAINSTEAD_DEV_HOST").is_ok_and(|v| v == "1");
             if shares_instance_lock() && (!cfg!(debug_assertions) || dev_host) {
                 std::thread::spawn(nativehost::register);
+                // The folder Chrome loads the extensions from, brought up to this build's copy.
+                let h = app.handle().clone();
+                std::thread::spawn(move || nativehost::refresh_folder(&h));
             }
             nativehost::watch(app.handle().clone());
             platform::watch_system_accent(app.handle());

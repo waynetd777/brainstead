@@ -89,8 +89,9 @@ pub fn from_handover(v: &Value, now: i64) -> Result<SignIn, String> {
 /// token again stays refused; one handed a new token is cleared.
 fn keep_rejected(mut new: SignIn, old: Option<&SignIn>) -> SignIn {
     let (rejected, at) = old.map(|o| (o.rejected.clone(), o.rejected_at.clone())).unwrap_or_default();
-    (new.rejected, new.rejected_at) =
-        super::refusal::still(&rejected, &at, |id| new.workspaces.iter().find(|w| w.id == id).map(|w| (w.token.as_str(), None)));
+    (new.rejected, new.rejected_at) = super::refusal::still(&rejected, &at, Utc::now().timestamp(), |id| {
+        new.workspaces.iter().find(|w| w.id == id).map(|w| (w.token.as_str(), None))
+    });
     new
 }
 
@@ -750,10 +751,11 @@ mod tests {
         let hand = |t: &str| json!({"cookie": "xoxd-abc", "workspaces": [{"id": "T1", "name": "Acme", "url": "https://acme.slack.com/", "token": t}]});
         let mut old = from_handover(&hand("xoxc-dead-0123456789abcdef"), 100).unwrap();
         // As reject() records an invalid_auth.
-        super::super::refusal::record(&mut old.rejected, &mut old.rejected_at, "T1", "xoxc-dead-0123456789abcdef", 200);
+        let at = Utc::now().timestamp();
+        super::super::refusal::record(&mut old.rejected, &mut old.rejected_at, "T1", "xoxc-dead-0123456789abcdef", at);
         // The same token again: still refused, so the extension is told to reload the tab.
         let again = keep_rejected(from_handover(&hand("xoxc-dead-0123456789abcdef"), 300).unwrap(), Some(&old));
-        assert!(again.rejected.contains_key("T1") && again.rejected_at.get("T1") == Some(&200));
+        assert!(again.rejected.contains_key("T1") && again.rejected_at.get("T1") == Some(&at));
         // A new one clears it.
         let fresh = keep_rejected(from_handover(&hand("xoxc-live-0123456789abcdeX"), 400).unwrap(), Some(&again));
         assert!(fresh.rejected.is_empty() && fresh.rejected_at.is_empty());
