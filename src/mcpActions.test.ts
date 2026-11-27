@@ -336,6 +336,19 @@ describe("MCP actions", () => {
     expect(calls).toEqual([["inbox_task_to_todo", { line: 33, lineText: "- [ ] ring the venue", text: "Ring the venue" }]]);
   });
 
+  it("keeps a weekly suggestion's capture in Sources as the Inbox does, a transcript recorded as kept", async () => {
+    const capture: InboxItem = {
+      kind: "capture",
+      path: "sources/Teams. Transcript. Orbit App standup.md",
+      line: 0,
+      text: "Orbit App standup",
+      lineText: "",
+      stamp: null,
+    };
+    expect(await clarifyItem(capture, { becomes: "reference" })).toBe("kept in Sources");
+    expect(calls).toEqual([["inbox_capture_kept", { path: capture.path }]]);
+  });
+
   it("clarifies an initiative's action: the task made and the action marked, or done or dropped", async () => {
     const act: InboxItem = {
       kind: "action",
@@ -458,9 +471,17 @@ describe("MCP actions", () => {
     expect(done).toContain("Fetched again from 2026-11-09: 0 chat day(s), 3 email thread(s)");
     expect(done).toContain("- sources/Email. Thread. Acme - 2026-11-12.md");
     await expect(run("run.status", { id: "sync-9" })).rejects.toThrow(/No sync run sync-9/);
+    // One dropped from the last few kept finished earlier: not to be started again.
+    answers.sync_jobs = () => [syncJob({ id: "sync-12", status: "done" })];
+    await expect(run("run.status", { id: "sync-1" })).rejects.toThrow(/sync-1 finished earlier and is no longer kept/);
     // One refused while a pass is going says where to look.
     answers.sync_start = () => Promise.reject("A sync is already running (sync-1).");
     await expect(run("sync", { action: "now" })).rejects.toThrow(/already running \(sync-1\)\. run_status shows/);
+    // The timer's pass isn't one run_status lists, and a bad date isn't a run at all: no pointer there.
+    for (const m of ["A scheduled sync pass (the one every 15 minutes) is running; try again shortly.", "from can't be in the future."]) {
+      answers.sync_start = () => Promise.reject(m);
+      await expect(run("sync", { action: "now" })).rejects.toThrow(new Error(m));
+    }
   });
 
   it("pulls a topic in the background, answering with the sources once it's done", async () => {

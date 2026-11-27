@@ -830,17 +830,25 @@ fn find_gives_the_lines_their_heading_and_a_start_to_read_on_from() {
     }
     text.push_str("Maya: ORBIT launch moves to March.\n");
     // All the words, case aside, on one line; each start reads on from that line.
-    let f = find_lines(&text, "orbit launch").unwrap();
+    let f = find_lines(&text, "orbit launch", None).unwrap();
     assert!(f.starts_with("[1 line with all the words “orbit launch”."), "{f}");
     let at: usize = f.split("- start ").nth(1).unwrap().split(' ').next().unwrap().parse().unwrap();
     assert!(f.contains(", under “Actions”): Maya: ORBIT launch moves to March."), "{f}");
     assert!(part(&text, at).contains("]\n\nMaya: ORBIT launch moves to March."));
     // A phrase in quotes; more than the cap is counted and cut.
-    let f = find_lines(&text, "\"orbit app budget\"").unwrap();
+    let f = find_lines(&text, "\"orbit app budget\"", None).unwrap();
     assert!(f.starts_with("[60 lines with the phrase “orbit app budget”. The first 40 are shown"), "{f}");
     assert_eq!(f.matches("\n- start ").count(), FIND_CAP);
-    assert!(find_lines(&text, "\"app orbit\"").unwrap().starts_with("[No line has the phrase"));
-    assert!(find_lines(&text, "  ").is_err());
+    assert!(find_lines(&text, "\"app orbit\"", None).unwrap().starts_with("[No line has the phrase"));
+    assert!(find_lines(&text, "  ", None).is_err());
+    // A quote left open is a phrase to the end, the quote not a part of the word.
+    assert!(find_lines(&text, "\"orbit app", None).unwrap().starts_with("[60 lines with the phrase “orbit app”."));
+    // With start, only the lines from there on: past the first 40, to the rest.
+    let f40 = find_lines(&text, "\"orbit app budget\"", None).unwrap();
+    let last: usize = f40.rsplit("- start ").next().unwrap().split(' ').next().unwrap().parse().unwrap();
+    let f = find_lines(&text, "\"orbit app budget\"", Some(last + 1)).unwrap();
+    assert!(f.starts_with(&format!("[20 lines from start {} with the phrase", last + 1)), "{f}");
+    assert!(f.contains("item 41.") && !f.contains("item 40."), "{f}");
 
     let f = fixture();
     let r = ok(&f.ctx, "read_section", json!({"page": "Orbit App", "find": "PILOT"}));
@@ -848,6 +856,9 @@ fn find_gives_the_lines_their_heading_and_a_start_to_read_on_from() {
     let r = ok(&f.ctx, "read_section", json!({"page": "Orbit App", "heading": "Current state", "find": "soft launch"}));
     assert!(r.contains("· Current state") && r.contains("- start 18 (line 3, under “Current state”): Soft launch"), "{r}");
     assert!(ok(&f.ctx, "read_section", json!({"page": "Orbit App", "heading": "Current state", "find": "pilot"})).contains("No line has"));
+    // start with find looks from there on; a blank find is refused, not a read of the whole page.
+    assert!(ok(&f.ctx, "read_section", json!({"page": "Orbit App", "find": "pilot", "start": 100_000})).contains("No line from start"));
+    assert!(refused(&f.ctx, "read_section", json!({"page": "Orbit App", "find": "   "})).contains("Give find some words"));
 }
 
 #[test]

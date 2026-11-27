@@ -1075,7 +1075,8 @@ export async function clarifyItem(i: InboxItem, a: Args, unattended = false): Pr
       break;
     case "reference": {
       if (i.kind === "capture") {
-        await markCaptureDone(i.path);
+        // The Inbox's Keep in Sources, as clarifyChanges: a transcript kept so is recorded as kept.
+        await keepInSources(i.path);
         said = "kept in Sources";
         break;
       }
@@ -1884,11 +1885,23 @@ function updateLines(): string[] {
   ].filter(Boolean);
 }
 
+/** Whether sync run `id` was started and has since dropped out of the list: ids count up from
+ *  sync-1 (src-tauri/src/sync/jobs.rs, which keeps only the last few finished), so one below the
+ *  newest kept was there once. */
+export function syncRunGone(id: string, kept: { id: string }[]): boolean {
+  const n = (x: string) => Number(/^sync-(\d+)$/.exec(x)?.[1] ?? NaN);
+  const newest = Math.max(...kept.map((j) => n(j.id)).filter((x) => !Number.isNaN(x)));
+  return n(id) >= 1 && n(id) < newest;
+}
+
 async function runStatus(a: Args = {}): Promise<string> {
   // A sync run's id (teams_sync now or fetch_again, pull_teams_outlook): that run, with what it did.
   const id = str(a, "id")?.trim();
   if (id) {
-    const j = (await api.syncJobs()).find((x) => x.id === id);
+    const all = await api.syncJobs();
+    const j = all.find((x) => x.id === id);
+    if (!j && syncRunGone(id, all))
+      throw new Error(`Sync run ${id} finished earlier and is no longer kept (only the last few finished are): don't start it again.`);
     if (!j)
       throw new Error(
         `No sync run ${id} since the app opened: run_status lists them (ingests and meeting notes give their own ids for stop_run).`,
@@ -2763,7 +2776,9 @@ async function syncTool(a: Args): Promise<string> {
     // In the background, as Settings › Sync's buttons run it: a long back-fill would outlast the
     // bridge's wait (D-20261127-19). A pass done within the grace answers with what it did.
     const j = await api.syncStart(from).catch((e: unknown) => {
-      throw new Error(`${String(e)} run_status shows the sync going; try again once it has finished.`);
+      const m = String(e);
+      // Only a run started by hand is one run_status lists; the timer's pass and a bad date say so themselves.
+      throw new Error(/already running \(sync-\d+\)/.test(m) ? `${m} run_status shows the sync going; try again once it has finished.` : m);
     });
     return syncJobText((await waitJob(j.id, SYNC_GRACE_MS)) ?? j);
   }

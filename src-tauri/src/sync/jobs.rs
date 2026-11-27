@@ -17,7 +17,8 @@ use tauri::Emitter;
 use super::{pull, run};
 use crate::platform;
 
-/// How many finished runs are kept.
+/// How many finished runs are kept. Ids count up from `sync-1`, so `run_status` tells one dropped
+/// from the list (finished earlier) from one never started (`syncRunGone` in src/mcpActions.ts).
 const KEEP: usize = 10;
 
 /// What a run is.
@@ -125,7 +126,8 @@ pub fn sync_start(app: tauri::AppHandle, from: Option<String>) -> Result<Job, St
             return Err(format!("A sync is already running ({}).", j.id));
         }
         if run::running() {
-            return Err("A sync is already running (the one every 15 minutes); try again when it's finished.".into());
+            // Not a run run_status lists: say so, rather than send the caller there.
+            return Err("A scheduled sync pass (the one every 15 minutes) is running; try again shortly.".into());
         }
         let mut j = blank(if from.is_some() { Kind::FetchAgain } else { Kind::Now });
         j.from = from.map(|d| d.format("%Y-%m-%d").to_string());

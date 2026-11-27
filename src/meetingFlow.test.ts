@@ -304,6 +304,16 @@ describe("one step", () => {
       }),
     );
   });
+  it("doesn't count a move held in Changes as made: a later follow-through tries again, not trashed", async () => {
+    settings.update({ meetingIngest: false });
+    changeSubmit.mockResolvedValue({ id: "c1", applied: false, page: ACME, flags: ["held"], message: "" });
+    const note = { type: "Meeting", name: "Acme sync", date: "2026-10-03" };
+    meetingRunEnded(run({ id: "r9", source: ACME, note, trigger: "scheduled" }), true);
+    for (let i = 0; i < 5; i++) await flush();
+    meetingRunEnded(run({ id: "r9", source: ACME, note, trigger: "scheduled" }), true);
+    for (let i = 0; i < 5; i++) await flush();
+    expect(changeSubmit).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("a transcript in the Inbox", () => {

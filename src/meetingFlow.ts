@@ -402,11 +402,12 @@ async function trash(transcript: string, note: string, ingested: boolean, by?: T
   if (handled.has(transcript)) return finish(transcript, { note, ingested, trashed: true });
   try {
     const t = await trashTranscript(transcript, note, by);
-    handled.add(transcript);
-    trashByOf.delete(transcript);
-    // An unattended run's move held in Changes (a check failed): the transcript is still there.
+    // An unattended run's move held in Changes (a check failed): the transcript is still there, so
+    // it isn't handled yet, and a later follow-through doesn't report it trashed.
     if (t.outcome && !t.outcome.applied)
       return finish(transcript, { note, ingested, trashed: false, error: "its move to the Trash is held in Changes for you" });
+    handled.add(transcript);
+    trashByOf.delete(transcript);
     finish(transcript, { note, ingested, trashed: true });
   } catch (e) {
     // Gone already (trashed another way meanwhile): that's what was wanted, not a failure.

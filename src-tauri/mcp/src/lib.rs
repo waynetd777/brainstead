@@ -413,8 +413,8 @@ pub fn tools() -> Vec<Value> {
                 "detail": detail
             }), &["query"])),
         tool("read_section", "Read a page", Read,
-            "Reads a page, or one section of it by heading (to the next heading of the same level). A long page or section is shown in part, its sections by heading; start reads it all instead, as it is, a part at a time: give start 0, then the start each part says to continue at, until it says it's the end. find looks within the page (or the section) instead of reading it: the lines holding every word of it, or a phrase in quotes, case aside, each with its line number, the heading it's under and its start, to read on from with start; the first 40, and how many in all. For a PDF or Office source, heading picks a page (page=6), slide (Slide 2) or sheet by name.",
-            schema(json!({"page": page, "heading": {"type": "string", "description": "The section's heading text (Current state), or for a PDF or Office file a page, slide or sheet. The whole page when left out."}, "start": {"type": "integer", "minimum": 0, "description": "Read the page (or the section) as it is, from this character on, a part at a time: 0 for the beginning, then the start the last part said to continue at."}, "find": {"type": "string", "description": "Words to find in the page (or the section) instead of reading it, case aside: the lines holding all of them, or a phrase given in double quotes. Each line found gives its start."}}), &["page"])),
+            "Reads a page, or one section of it by heading (to the next heading of the same level). A long page or section is shown in part, its sections by heading; start reads it all instead, as it is, a part at a time: give start 0, then the start each part says to continue at, until it says it's the end. find looks within the page (or the section) instead of reading it: the lines holding every word of it, or a phrase in quotes, case aside, each with its line number, the heading it's under and its start, to read on from with start; the first 40, and how many in all. With find, start looks only at the lines starting at that character or after it: one past the 40th's start shows the rest. A quote left open makes the rest a phrase. For a PDF or Office source, heading picks a page (page=6), slide (Slide 2) or sheet by name.",
+            schema(json!({"page": page, "heading": {"type": "string", "description": "The section's heading text (Current state), or for a PDF or Office file a page, slide or sheet. The whole page when left out."}, "start": {"type": "integer", "minimum": 0, "description": "Read the page (or the section) as it is, from this character on, a part at a time: 0 for the beginning, then the start the last part said to continue at."}, "find": {"type": "string", "description": "Words to find in the page (or the section) instead of reading it, case aside: the lines holding all of them, or a phrase given in double quotes. Each line found gives its start. With start too, only the lines from there on."}}), &["page"])),
         tool("backlinks", "Pages linking here", Read,
             "The notes and pages that link to a page, each with the line its link is on. Use it to see where something is mentioned before renaming or changing it, or to find the notes about an entity. Links are resolved as the app resolves them: by name, alias or path.",
             schema(json!({"page": page}), &["page"])),
@@ -700,7 +700,7 @@ pub fn tools() -> Vec<Value> {
                 "date": {"type": "string", "pattern": DATE, "description": "For meeting_note: the meeting's day, YYYY-MM-DD; needed when list_transcripts says the date is only the capture day (ask the user). For daily_summary: the day to summarise (default yesterday); for weekly_summary: a day in a week that has ended (default the week just ended, as Run now; this week is refused)."}
             }), &["run"])),
         tool("run_status", "How runs are going", Read,
-            "How Brainstead's runs are going (needs the app): ingests running and lately done, the daily check, the daily and weekly summaries, the weekly review's preparation, Find tasks and projects, the contradictions check, meeting notes being written and Write Current state. Each says whether it's running, done or failed, with its progress; ingests and meeting notes give their ids, for stop_run, the meeting notes lately finished or failed are listed with the note made, and an ingest or meeting note says what the checks left out of it and why. Then the last eight summary runs, as Settings › Automations' Recent runs lists them: kind, day, when, how it was started, its status and its note, and the id of its change in Changes (changes revert with that id undoes it, as Recent runs' Undo does). A summary run and the weekly review's last preparation give their chat with the model (Automations' Open), which list_chats with action read and that chat reads. With query, the ingests listed are those the Sources screen's Ingest runs search finds (every word in the source or meeting note's name, its state, model or day), up to 20. Then the Teams, Outlook and Slack sync runs started by hand since the app opened (Sync now, Fetch again and pulls, from Settings › Sync or teams_sync and pull_teams_outlook), each with its id; with id, that sync run alone: still going, or what it wrote or gathered, as teams_sync or pull_teams_outlook would have said. Use it after start_run, teams_sync or pull_teams_outlook, rather than starting a run again; stop_run stops one (not a sync run, which finishes by itself).",
+            "How Brainstead's runs are going (needs the app): ingests running and lately done, the daily check, the daily and weekly summaries, the weekly review's preparation, Find tasks and projects, the contradictions check, meeting notes being written and Write Current state. Each says whether it's running, done or failed, with its progress; ingests and meeting notes give their ids, for stop_run, the meeting notes lately finished or failed are listed with the note made, and an ingest or meeting note says what the checks left out of it and why. Then the last eight summary runs, as Settings › Automations' Recent runs lists them: kind, day, when, how it was started, its status and its note, and the id of its change in Changes (changes revert with that id undoes it, as Recent runs' Undo does). A summary run and the weekly review's last preparation give their chat with the model (Automations' Open), which list_chats with action read and that chat reads. With query, the ingests listed are those the Sources screen's Ingest runs search finds (every word in the source or meeting note's name, its state, model or day), up to 20. Then the Teams, Outlook and Slack sync runs started by hand since the app opened (Sync now, Fetch again and pulls, from Settings › Sync or teams_sync and pull_teams_outlook), each with its id (those going and the last 10 finished); with id, that sync run alone: still going, or what it wrote or gathered, as teams_sync or pull_teams_outlook would have said, or, for one finished before those, that it's no longer kept (not to be started again). Use it after start_run, teams_sync or pull_teams_outlook, rather than starting a run again; stop_run stops one (not a sync run, which finishes by itself).",
             schema(json!({"query": {"type": "string", "description": "Words to find ingest runs by, as the Ingest runs pane's search box: Steerco failed."}, "id": {"type": "string", "description": "A sync run's id (sync-…), as teams_sync now or fetch_again or pull_teams_outlook gave it: that run's state and result."}}), &[])),
         tool("stop_run", "Stop a run", Destroy,
             "Stops a run that's going, or an ingest or meeting note waiting its turn (needs the app), as its Stop button does. What it already changed stays, listed in Changes; the part not yet done is dropped, so start it again with start_run to finish. Stopping a run that isn't going does nothing. Only when the user asks.",
@@ -2162,12 +2162,13 @@ struct ReadArgs {
 const FIND_CAP: usize = 40;
 
 /// The lines of `text` (a page, or a section as read_section reads it) holding `find`, case aside:
-/// every word of it, or, in quotes, the phrase. Each with its line, the heading it's under and the
-/// character it starts at, which read_section's start reads from; the first `FIND_CAP` of them, and
-/// how many there are in all.
-fn find_lines(text: &str, find: &str) -> Result<String, String> {
+/// every word of it, or, in quotes, the phrase (a quote left open runs to the end). Each with its
+/// line, the heading it's under and the character it starts at, which read_section's start reads
+/// from; the first `FIND_CAP` of them, and how many there are in all. With `from`, only the lines
+/// starting at that character or after it (read_section's start with find).
+fn find_lines(text: &str, find: &str, from: Option<usize>) -> Result<String, String> {
     let q = find.trim();
-    let quoted = q.strip_prefix(['"', '“']).and_then(|r| r.strip_suffix(['"', '”'])).map(str::trim);
+    let quoted = q.strip_prefix(['"', '“']).map(|r| r.strip_suffix(['"', '”']).unwrap_or(r)).map(str::trim);
     let phrase = quoted.map(str::to_lowercase);
     let q = quoted.unwrap_or(q);
     let words: Vec<String> = match &phrase {
@@ -2184,11 +2185,12 @@ fn find_lines(text: &str, find: &str) -> Result<String, String> {
         while let Some((_, _, t)) = next.next_if(|(n, _, _)| *n <= i) {
             under = Some(t.as_str());
         }
+        let len = line.chars().count();
         let low = line.to_lowercase();
-        if words.iter().all(|w| low.contains(w.as_str())) {
+        if from.is_none_or(|f| at >= f) && words.iter().all(|w| low.contains(w.as_str())) {
             found.push((at, i + 1, under, line.trim_end_matches('\r')));
         }
-        at += line.chars().count() + 1;
+        at += len + 1;
     }
     let how = if phrase.is_some() {
         "the phrase"
@@ -2197,16 +2199,17 @@ fn find_lines(text: &str, find: &str) -> Result<String, String> {
     } else {
         "the word"
     };
+    let after = from.map(|f| format!(" from start {f}")).unwrap_or_default();
     if found.is_empty() {
-        return Ok(format!("[No line has {how} “{q}”.]"));
+        return Ok(format!("[No line{after} has {how} “{q}”.]"));
     }
     let more = if found.len() > FIND_CAP {
-        format!(" The first {FIND_CAP} are shown: find more words, or a phrase, to narrow it.")
+        format!(" The first {FIND_CAP} are shown: find more words, or a phrase, to narrow it, or give start one past the last one's for the rest.")
     } else {
         String::new()
     };
     let mut out = format!(
-        "[{} line{} with {how} “{q}”.{more} Each says where it starts: read on from there with start.]\n",
+        "[{} line{}{after} with {how} “{q}”.{more} Each says where it starts: read on from there with start.]\n",
         found.len(),
         if found.len() == 1 { "" } else { "s" }
     );
@@ -2275,12 +2278,16 @@ fn read_section(ctx: &Ctx, a: ReadArgs) -> Result<String, String> {
         }
         return read_parts(ctx, &ix, &rel, a.heading.as_deref());
     }
-    let find = a.find.as_deref().map(str::trim).filter(|f| !f.is_empty());
+    // Blank, it's a find with nothing to look for, not a read of the whole page.
+    let find = a.find.as_deref().map(str::trim);
+    if find == Some("") {
+        return Err("Give find some words to look for.".into());
+    }
     let text = read_text(ctx, &rel)?;
     let hs = headings(&text);
     let list = || hs.iter().map(|(_, n, t)| format!("{}{t}", "  ".repeat(n.saturating_sub(1)))).collect::<Vec<_>>().join("\n");
     match a.heading.as_deref().map(|h| h.trim().trim_start_matches('#').trim()).filter(|h| !h.is_empty()) {
-        None if find.is_some() => Ok(format!("{rel}\n\n{}", find_lines(&text, find.unwrap_or_default())?)),
+        None if find.is_some() => Ok(format!("{rel}\n\n{}", find_lines(&text, find.unwrap_or_default(), a.start)?)),
         None if a.start.is_some() => Ok(format!("{rel}\n\n{}", part(&text, a.start.unwrap_or(0)))),
         None => Ok(format!("{rel}\n\n{}", fit(&text, text.chars().count(), !hs.is_empty()))),
         Some(h) => {
@@ -2292,7 +2299,7 @@ fn read_section(ctx: &Ctx, a: ReadArgs) -> Result<String, String> {
             let lines: Vec<&str> = text.split('\n').collect();
             let section = lines[start..end.unwrap_or(lines.len())].join("\n");
             if let Some(f) = find {
-                return Ok(format!("{rel} · {}\n\n{}", hs[at].2, find_lines(section.trim_end(), f)?));
+                return Ok(format!("{rel} · {}\n\n{}", hs[at].2, find_lines(section.trim_end(), f, a.start)?));
             }
             if let Some(o) = a.start {
                 return Ok(format!("{rel}\n\n{}", part(section.trim_end(), o)));

@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { captureDone, useInbox } from "./gtd";
+import { captureDone, keepInSources as keepCapture, useInbox } from "./gtd";
 import { Icon } from "./icons";
 import { ingest, meetingProgress, runs, startRuns } from "./Ingest";
 import { changes, startKnowledge } from "./knowledge";
@@ -22,10 +22,12 @@ export function useInInbox(path: string | null | undefined): boolean {
   return !!path && !!items?.some((i) => i.kind === "capture" && i.path === path);
 }
 
-/** Takes the capture out of the Inbox, kept in Sources: what's left once a reply is copied. True
- *  once it's out; on an error it's said and the capture stays. */
+/** Takes the capture out of the Inbox, kept in Sources: what's left once a reply is copied. It's the
+ *  Inbox's own Keep in Sources, so a transcript kept here is recorded as kept and the daily check's
+ *  catch-up never moves it to the Trash. True once it's out; on an error it's said and the capture
+ *  stays. */
 export const keepInSources = (path: string): Promise<boolean> =>
-  captureDone(path)
+  keepCapture(path)
     .then(() => {
       toast("Out of the Inbox, kept in Sources", undefined, "ok");
       return true;
