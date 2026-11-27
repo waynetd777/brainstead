@@ -43,6 +43,8 @@ import {
   reviewKindName,
   Settings,
   ChatSummary,
+  SyncJob,
+  SyncPulled,
   TaskDateKind,
   TaskLineEdit,
   TaskRow,
@@ -85,6 +87,7 @@ import {
 } from "./inboxActions";
 import { acceptSkip, unskipChat } from "./skips";
 import { mailOn } from "./syncStatus";
+import { waitJob } from "./syncJobs";
 import {
   ADVISORY,
   IN_INBOX,
@@ -1876,7 +1879,17 @@ function updateLines(): string[] {
 }
 
 async function runStatus(a: Args = {}): Promise<string> {
-  const [runs, check, reviews, prep, find, contra, cs, changes] = await Promise.all([
+  // A sync run's id (teams_sync now or fetch_again, pull_teams_outlook): that run, with what it did.
+  const id = str(a, "id")?.trim();
+  if (id) {
+    const j = (await api.syncJobs()).find((x) => x.id === id);
+    if (!j)
+      throw new Error(
+        `No sync run ${id} since the app opened: run_status lists them (ingests and meeting notes give their own ids for stop_run).`,
+      );
+    return syncJobText(j);
+  }
+  const [runs, check, reviews, prep, find, contra, cs, changes, syncJobs] = await Promise.all([
     api.ingestRuns(),
     api.dailyCheckStatus(),
     api.reviewsStatus(),
@@ -1885,6 +1898,7 @@ async function runStatus(a: Args = {}): Promise<string> {
     api.contradictionsReport().catch(() => null),
     api.currentStateStatus().catch(() => null),
     api.changesList().catch(() => [] as ChangeRow[]),
+    api.syncJobs().catch(() => [] as SyncJob[]),
   ]);
   const f = find?.run;
   const summaries = (reviews.runs ?? []).slice(0, RECENT_SUMMARIES);
@@ -1943,6 +1957,7 @@ async function runStatus(a: Args = {}): Promise<string> {
     `Write Current state: ${
       !cs?.total ? "not run" : `${cs.running ? "running" : "last run"}: ${cs.done} of ${cs.total} pages done, ${cs.written} written`
     }`,
+    syncJobsLine(syncJobs ?? []),
     summaries.length
       ? `Recent summary runs (Settings › Automations), newest first:\n${summaries.map((r) => summaryRunLine(r, changes ?? [])).join("\n")}`
       : "Recent summary runs: none yet.",
@@ -2725,24 +2740,16 @@ async function syncTool(a: Args): Promise<string> {
     settings.update({ syncOutlook: action === "outlook_on" });
     return `Outlook mail sync turned ${action === "outlook_on" ? "on" : "off"}.`;
   }
-  if (action === "now") {
-    const r = await api.syncNow();
-    if (r.blocked) return `Didn't run: ${r.blocked}`;
-    return `Synced: ${r.chats} chat day(s), ${r.mail} email(s), ${r.transcripts} transcript(s).${r.problems.length ? ` Problems: ${r.problems.join("; ")}.` : ""}`;
-  }
-  if (action === "fetch_again") {
-    const from = str(a, "from")?.trim();
-    if (!from || !/^\d{4}-\d{2}-\d{2}$/.test(from)) throw new Error("from is the first day to fetch Teams and Slack from, as YYYY-MM-DD.");
-    const r = await api.syncNow(from);
-    if (r.blocked) return `Didn't run: ${r.blocked}`;
-    const paths = [...new Set(r.paths)];
-    return [
-      `Fetched again from ${from}: ${r.chats} chat day(s), ${r.mail} email thread(s). They wait in the Inbox, not ingested on arrival.`,
-      r.problems.length ? `Problems: ${r.problems.join("; ")}.` : "",
-      paths.length ? `Sources written or topped up:\n${paths.map((p) => `- ${p}`).join("\n")}` : "Nothing new.",
-    ]
-      .filter(Boolean)
-      .join("\n");
+  if (action === "now" || action === "fetch_again") {
+    const from = action === "fetch_again" ? str(a, "from")?.trim() : undefined;
+    if (action === "fetch_again" && (!from || !/^\d{4}-\d{2}-\d{2}$/.test(from)))
+      throw new Error("from is the first day to fetch Teams and Slack from, as YYYY-MM-DD.");
+    // In the background, as Settings › Sync's buttons run it: a long back-fill would outlast the
+    // bridge's wait (D-20261127-11). A pass done within the grace answers with what it did.
+    const j = await api.syncStart(from).catch((e: unknown) => {
+      throw new Error(`${String(e)} run_status shows the sync going; try again once it has finished.`);
+    });
+    return syncJobText((await waitJob(j.id, SYNC_GRACE_MS)) ?? j);
   }
   if (action === "ignore" || action === "unignore") {
     const sender = str(a, "sender")?.trim().toLowerCase();
@@ -2817,8 +2824,56 @@ async function syncPull(a: Args): Promise<string> {
   const query = str(a, "query") ?? "";
   const days = typeof a.days === "number" ? Math.max(1, Math.min(90, Math.floor(a.days))) : 7;
   const kindsArg = Array.isArray(a.kinds) ? (a.kinds as string[]).filter((k) => ["chats", "mail", "transcripts"].includes(k)) : undefined;
-  const r = await api.syncPull(query, days, kindsArg);
-  if (r.blocked) throw new Error(r.blocked);
+  // In the background, like teams_sync's now: answered at once once the grace is up (D-20261127-11).
+  const j = await api.syncPullStart(query, days, kindsArg);
+  const done = (await waitJob(j.id, SYNC_GRACE_MS)) ?? j;
+  if (done.status === "failed") throw new Error(done.error ?? "The pull didn't finish.");
+  return syncJobText(done);
+}
+
+/** How long teams_sync's now and fetch_again and pull_teams_outlook wait for their run before
+ *  answering with its id instead: well inside the bridge's two minutes. */
+export const SYNC_GRACE_MS = 10_000;
+
+const syncJobWhat = (j: SyncJob) =>
+  j.kind === "pull"
+    ? `The pull of ${j.query ? `"${j.query}"` : "everything"} over the last ${j.days ?? 7} days`
+    : j.kind === "fetch_again"
+      ? `Fetch again from ${j.from}`
+      : "Sync now";
+
+/** A sync run started by hand, as teams_sync and pull_teams_outlook answer and run_status with its id
+ *  gives it: what it did once done, else that it's going and how to follow it. */
+export function syncJobText(j: SyncJob): string {
+  if (j.status === "running")
+    return `${syncJobWhat(j)} has started (run ${j.id}, since ${j.started.slice(11, 16)}). It goes on in the background; run_status with id ${j.id} says how it went and lists what it ${j.kind === "pull" ? "gathered" : "wrote"} once it's finished. Don't start it again meanwhile.`;
+  if (j.kind === "pull")
+    return j.pulled ? pullText(j.pulled, j.query ?? "", j.days ?? 7) : `${syncJobWhat(j)} failed: ${j.error ?? "it didn't finish"}.`;
+  const r = j.report;
+  if (!r) return `${syncJobWhat(j)} failed: ${j.error ?? "it didn't finish"}.`;
+  if (r.blocked) return `Didn't run: ${r.blocked}`;
+  if (j.kind === "now")
+    return `Synced: ${r.chats} chat day(s), ${r.mail} email(s), ${r.transcripts} transcript(s).${r.problems.length ? ` Problems: ${r.problems.join("; ")}.` : ""}`;
+  const paths = [...new Set(r.paths)];
+  return [
+    `Fetched again from ${j.from}: ${r.chats} chat day(s), ${r.mail} email thread(s). They wait in the Inbox, not ingested on arrival.`,
+    r.problems.length ? `Problems: ${r.problems.join("; ")}.` : "",
+    paths.length ? `Sources written or topped up:\n${paths.map((p) => `- ${p}`).join("\n")}` : "Nothing new.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** run_status's line for the sync runs started by hand: those going, and the last few done. */
+function syncJobsLine(jobs: SyncJob[]): string {
+  if (!jobs.length) return "Teams, Outlook and Slack sync runs: none started by hand since the app opened.";
+  const one = (j: SyncJob) =>
+    `${syncJobWhat(j)} — ${j.status}${j.status === "failed" && j.error ? ` (${j.error})` : ""}, started ${j.started.replace("T", " ").slice(0, 16)} (id ${j.id})`;
+  return `Teams, Outlook and Slack sync runs started by hand, newest first (run_status with id gives one's result): ${jobs.slice(0, 5).map(one).join("; ")}`;
+}
+
+function pullText(r: SyncPulled, query: string, days: number): string {
+  if (r.blocked) return `Didn't run: ${r.blocked}`;
   // What a skip list kept out is said, apart from what went wrong.
   const leftOut = r.leftOut ?? [];
   if (!r.items.length)

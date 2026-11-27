@@ -389,25 +389,107 @@ describe("MCP actions", () => {
     await expect(run("inbox.clarify", { item: "action:a-2", becomes: "reference" })).rejects.toThrow(/doesn't offer reference/);
   });
 
+  const syncJob = (over: Record<string, unknown>) => ({
+    id: "sync-1",
+    kind: "fetch_again",
+    status: "running",
+    started: "2026-11-27T09:00:00",
+    finished: null,
+    from: "2026-11-09",
+    query: null,
+    days: null,
+    kinds: [],
+    report: null,
+    pulled: null,
+    error: null,
+    ...over,
+  });
+
   it("fetches again from a day, as Settings › Sync's Fetch again does, and lists what it wrote", async () => {
-    answers.sync_now = () => ({
-      chats: 2,
-      mail: 1,
-      transcripts: 0,
-      problems: [],
-      blocked: null,
-      paths: [
-        "sources/Slack. Chat. Lena - 2026-11-10.md",
-        "sources/Email. Thread. Plan - 2026-11-03.md",
-        "sources/Slack. Chat. Lena - 2026-11-10.md",
-      ],
-    });
+    answers.sync_start = () => syncJob({});
+    answers.sync_jobs = () => [
+      syncJob({
+        status: "done",
+        report: {
+          chats: 2,
+          mail: 1,
+          transcripts: 0,
+          problems: [],
+          blocked: null,
+          paths: [
+            "sources/Slack. Chat. Lena - 2026-11-10.md",
+            "sources/Email. Thread. Plan - 2026-11-03.md",
+            "sources/Slack. Chat. Lena - 2026-11-10.md",
+          ],
+        },
+      }),
+    ];
     calls.length = 0;
     const out = (await run("sync", { action: "fetch_again", from: "2026-11-09" })) as string;
-    expect(calls.filter(([c]) => c === "sync_now").map(([, x]) => x)).toEqual([{ from: "2026-11-09" }]);
+    expect(calls.filter(([c]) => c === "sync_start").map(([, x]) => x)).toEqual([{ from: "2026-11-09" }]);
     expect(out).toContain("Fetched again from 2026-11-09: 2 chat day(s), 1 email thread(s)");
     expect(out.match(/Lena - 2026-11-10/g)).toHaveLength(1);
     await expect(run("sync", { action: "fetch_again", from: "last week" })).rejects.toThrow(/YYYY-MM-DD/);
+  });
+
+  it("answers a long sync at once with its run id, and run_status gives its result once it's done", async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => void vi.useRealTimers());
+    let job = syncJob({});
+    answers.sync_start = () => job;
+    answers.sync_jobs = () => [job];
+    const answer = run("sync", { action: "fetch_again", from: "2026-11-09" });
+    await vi.advanceTimersByTimeAsync(10_000);
+    const out = (await answer) as string;
+    expect(out).toContain("Fetch again from 2026-11-09 has started (run sync-1, since 09:00)");
+    expect(out).toContain("run_status with id sync-1");
+    // Not a second pass started while the grace was waited out.
+    expect(calls.filter(([c]) => c === "sync_start")).toHaveLength(1);
+    vi.useRealTimers();
+    for (const k of ["ingest_runs", "daily_check_status", "reviews_status", "weekprep_job"])
+      answers[k] = () => (k === "ingest_runs" ? [] : k === "reviews_status" ? { running: [], next: {} } : {});
+    expect(await run("run.status")).toContain("Teams, Outlook and Slack sync runs started by hand, newest first");
+    expect(await run("run.status")).toContain("Fetch again from 2026-11-09 — running, started 2026-11-27 09:00 (id sync-1)");
+    job = syncJob({
+      status: "done",
+      report: { chats: 0, mail: 3, transcripts: 0, problems: [], blocked: null, paths: ["sources/Email. Thread. Acme - 2026-11-12.md"] },
+    });
+    const done = (await run("run.status", { id: "sync-1" })) as string;
+    expect(done).toContain("Fetched again from 2026-11-09: 0 chat day(s), 3 email thread(s)");
+    expect(done).toContain("- sources/Email. Thread. Acme - 2026-11-12.md");
+    await expect(run("run.status", { id: "sync-9" })).rejects.toThrow(/No sync run sync-9/);
+    // One refused while a pass is going says where to look.
+    answers.sync_start = () => Promise.reject("A sync is already running (sync-1).");
+    await expect(run("sync", { action: "now" })).rejects.toThrow(/already running \(sync-1\)\. run_status shows/);
+  });
+
+  it("pulls a topic in the background, answering with the sources once it's done", async () => {
+    answers.sync_pull_start = () => syncJob({ id: "sync-2", kind: "pull", from: null, query: "Orbit App", days: 7 });
+    answers.sync_jobs = () => [
+      syncJob({
+        id: "sync-2",
+        kind: "pull",
+        from: null,
+        query: "Orbit App",
+        days: 7,
+        status: "done",
+        pulled: {
+          items: [
+            { kind: "chat", title: "Maya", date: "2026-11-25", path: "sources/Teams. Chat. Maya - 2026-11-25.md", alreadyHad: false },
+          ],
+          problems: [],
+          leftOut: [],
+          blocked: null,
+        },
+      }),
+    ];
+    calls.length = 0;
+    const out = (await run("sync.pull", { query: "Orbit App", days: 7, kinds: ["chats"] })) as string;
+    expect(calls.find(([c]) => c === "sync_pull_start")?.[1]).toEqual({ query: "Orbit App", days: 7, kinds: ["chats"] });
+    expect(out).toContain('1 source(s) for "Orbit App" over the last 7 days — 1 newly pulled');
+    expect(out).toContain("- 2026-11-25 · Maya → sources/Teams. Chat. Maya - 2026-11-25.md [new]");
+    answers.sync_jobs = () => [syncJob({ id: "sync-2", kind: "pull", status: "failed", error: "Sync is off." })];
+    await expect(run("sync.pull", { query: "Orbit App" })).rejects.toThrow("Sync is off.");
   });
 
   it("ingests for actions only, or chooses by whether the wiki has the source", async () => {
